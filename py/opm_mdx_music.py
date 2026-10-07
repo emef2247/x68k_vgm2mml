@@ -118,10 +118,15 @@ def level_for_tone(state, tone):
     ops,alg,_,_ = tone
     carrier = CARRIERS[alg]
     observed = tuple(op.tl for op in state.operators)
-    deltas = {observed[i]-ops[i][5] for i in range(4) if carrier & (1<<i)}
-    if len(deltas)!=1:
+    deltas = {observed[i]-ops[i][5] for i in range(4)
+              if carrier & (1<<i) and observed[i]<127}
+    minimum = max((127-ops[i][5] for i in range(4)
+                   if carrier & (1<<i) and observed[i]==127),default=0)
+    if len(deltas)>1:
         return None
-    delta = deltas.pop()
+    delta = deltas.pop() if deltas else minimum
+    if delta<minimum:
+        return None
     expected = tuple(min(127,row[5]+delta) if carrier & (1<<i) else row[5]
                      for i,row in enumerate(ops))
     raw_matches=all(value==expected[(reg-0x60)//8] for reg,value in state.channel_registers
@@ -402,12 +407,25 @@ def build_music(projection, segments, *, title='OPM music', loops=True):
         if cursor<projection.end_mdx_tick:
             units.append(make([],cursor,projection.end_mdx_tick,'rest',timed('r',projection.end_mdx_tick-cursor)))
         unit_tracks[track]=tuple(units)
+    return render_music_tracks(unit_tracks,tuple(voices),title=title,
+        sample_multiplier=projection.sample_multiplier,loops=loops,inner_reports=inner_reports,
+        comments=('; Musical OPM notes and source-linked control trajectories.',
+                  f'; Tempo inferred from VGM; @t{256-projection.sample_multiplier} = {256*projection.sample_multiplier} us/tick.'))
+
+
+def render_music_tracks(unit_tracks, voices, *, title, sample_multiplier=1,
+                        loops=True, inner_reports=(), comments=None):
+    """Assemble track units with exact loops and shared MDX compaction.
+
+    Units supply command, unlooped_command and key; their source evidence
+    remains owned by the caller. Voice order determines emitted voice IDs.
+    """
+    voices=tuple(voices)
     title=''.join(c for c in ' '.join(str(title).replace('"',"'").split()) if ord(c)>=32 and ord(c)!=127)
-    header=[f'#title "{title}"','; Musical OPM notes and source-linked control trajectories.',
-            f'; Tempo inferred from VGM; @t{256-projection.sample_multiplier} = {256*projection.sample_multiplier} us/tick.']
-    for (ops,alg,fb,mask),vid in voices.items():
+    header=[f'#title "{title}"',*(comments or ())]
+    for vid,(ops,alg,fb,mask) in enumerate(voices):
         header += [f'@{vid} = {{',*['  '+','.join(map(str,ops[i]))+',' for i in (0,2,1,3)],f'  {alg},{fb},{mask}','}']
-    header += ['/* Track A */', f'A @t{256-projection.sample_multiplier}']
+    header += ['/* Track A */', f'A @t{256-sample_multiplier}']
     def wrapped(track,body):
         lines=[];line=track
         for word in body.split():

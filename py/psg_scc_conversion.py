@@ -1,6 +1,10 @@
 """PSG/SCC to OPM target orchestration, shared by the CLI and diagnostics."""
 import shutil
 import tempfile
+import csv
+import hashlib
+import json
+from dataclasses import dataclass
 from pathlib import Path
 from vgm_io import read_vgm_bytes, read_vgm_header
 from vgm_timing import command_times
@@ -8,6 +12,13 @@ from vgm_reader import parse_vgm
 from psg import build_segments as build_psg
 from scc import build_segments as build_scc
 from psg_scc_opm import project
+
+
+@dataclass(frozen=True)
+class StructuredContext:
+    performance: object
+    analysis: object
+    projection: object
 
 def source_facts(raw):
     header = read_vgm_header(raw)
@@ -47,7 +58,58 @@ def source_facts(raw):
                 ay_type=ay_type, ay_flags=ay_flags, silent_opll_writes=silent_opll_writes, absent_scc_writes=absent_scc_writes)
 
 
-def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model='fm', pitch_policy=None):
+def _mark_projected_evidence(folder, source, target, performance, projection):
+    """Label generated OPM evidence; original PSG/SCC CSVs remain unchanged."""
+    mapping = folder / (source.stem + '.source_map.csv')
+    with mapping.open(encoding='utf-8', newline='') as stream:
+        reader = csv.DictReader(stream)
+        columns, rows = list(reader.fieldnames), list(reader)
+    errors = []
+    for row in rows:
+        tick = projection.mdx_tick(int(row['target_vgmticks']))
+        sample = projection.projected_samples(tick)
+        row.update(final_mdx_tick=tick, final_projected_vgmticks=sample,
+                   source_to_final_error_samples=sample-int(row['vgmticks']))
+        errors.append(row['source_to_final_error_samples'])
+    errors.append(projection.end_projected_vgmticks-performance.source_end)
+    for name in ('final_mdx_tick', 'final_projected_vgmticks', 'source_to_final_error_samples'):
+        columns.append(name)
+    with mapping.open('w', encoding='utf-8', newline='') as stream:
+        writer = csv.DictWriter(stream, fieldnames=columns, lineterminator='\n')
+        writer.writeheader()
+        writer.writerows(rows)
+    for path in folder.glob('*.csv'):
+        with path.open(encoding='utf-8', newline='') as stream:
+            reader = csv.DictReader(stream)
+            fields, records = list(reader.fieldnames or ()), list(reader)
+        if not fields:
+            continue
+        if 'state_origin' not in fields:
+            fields.append('state_origin')
+        with path.open('w', encoding='utf-8', newline='') as stream:
+            writer = csv.DictWriter(stream, fieldnames=fields, lineterminator='\n')
+            writer.writeheader()
+            writer.writerows(dict(row, state_origin='projected_opm') for row in records)
+    provenance = dict(state_origin='projected_opm', source_vgm=str(source.resolve()),
+                      source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+                      projected_opm_vgm=str(target.resolve()),
+                      projected_sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
+                      source_chip_evidence='PSG/SCC; no native OPM claimed',
+                      opm_pipeline='opm_conversion.convert', settings=performance.settings,
+                      source_end_vgmticks=performance.source_end,
+                      projected_opm_end_vgmticks=projection.source_end_vgmticks,
+                      final_mdx_end_vgmticks=projection.end_projected_vgmticks,
+                      max_abs_source_to_final_error_samples=max(map(abs, errors), default=0),
+                      source_to_final_timing_bound_samples=12, mapping_csv=mapping.name)
+    (folder / 'provenance.json').write_text(json.dumps(provenance, indent=2) + '\n', encoding='utf-8')
+    if provenance['max_abs_source_to_final_error_samples'] > 12:
+        raise ValueError('Projected note clock exceeds the combined source timing bound')
+
+
+def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model='fm', pitch_policy=None,
+             notation='structured', loops=True):
+    if notation not in ('structured', 'registers'):
+        raise ValueError('PSG/SCC OPM notation must be structured or registers')
     source, out = Path(source), Path(out)
     facts = source_facts(read_vgm_bytes(source))
     out.mkdir(parents=True, exist_ok=True)
@@ -61,21 +123,40 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
                          silent_opll_writes=facts['silent_opll_writes'], absent_scc_writes=facts['absent_scc_writes'])
     plan.dump(out, source.stem)
     mml = out / (source.stem + '.mdx.mml')
-    mml.write_text(plan.render(title or source.stem + ' - PSG/SCC OPM (' + psg_model + ')'), encoding='utf-8')
+    title = title or source.stem + ' - PSG/SCC OPM (' + psg_model + ')'
+    if notation == 'structured':
+        from opm_performance import build_performance
+        from opm_target_vgm import write_target_vgm
+        from opm_conversion import convert as convert_opm
+        performance = build_performance(plan)
+        performance.dump(out, source.stem)
+        folder = out / 'projected_opm'
+        folder.mkdir(exist_ok=True)
+        target = write_target_vgm(performance, folder / (source.stem + '.vgm'),
+                                  mapping_csv=folder / (source.stem + '.source_map.csv'))
+        native_mml, analysis, projection = convert_opm(target, folder, dump_passes=True, title=title, loops=loops)
+        plan.structured_context = StructuredContext(performance, analysis, projection)
+        _mark_projected_evidence(folder, source, target, performance, projection)
+        text = native_mml.read_text(encoding='utf-8')
+        text = '; PSG/SCC OPM target; PSG model=' + psg_model + '.\n; Musical onsets inferred from audibility; oscillator phase differs from the held baseline.\n' + text
+        mml.write_text(text, encoding='utf-8')
+    else:
+        mml.write_text(plan.render(title), encoding='utf-8')
     return mml, plan
 
 
 
-def convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model='fm', pitch_policy=None, dump_passes=True):
+def convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model='fm', pitch_policy=None,
+            dump_passes=True, notation='structured', loops=True):
     """Keep native evidence on request; default standalone audit keeps all passes."""
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     if dump_passes:
         return _convert(source, out, psg_gain=psg_gain, scc_gain=scc_gain, title=title,
-                        psg_model=psg_model, pitch_policy=pitch_policy)
+                        psg_model=psg_model, pitch_policy=pitch_policy, notation=notation, loops=loops)
     with tempfile.TemporaryDirectory(prefix='psg-scc-opm-') as temp:
         mml, plan = _convert(source, temp, psg_gain=psg_gain, scc_gain=scc_gain, title=title,
-                        psg_model=psg_model, pitch_policy=pitch_policy)
+                        psg_model=psg_model, pitch_policy=pitch_policy, notation=notation, loops=loops)
         result = out / mml.name
         shutil.copyfile(mml, result)
     return result, plan

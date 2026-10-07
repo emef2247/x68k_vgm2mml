@@ -9,7 +9,7 @@ import unittest
 ROOT=Path(__file__).resolve().parents[2]
 sys.path[:0]=[str(ROOT/'py'),str(ROOT/'scripts')]
 from opm_mdx import project_segments
-from opm_mdx_music import build_music,infer_clock,duration_spelling,tone_and_level,source_plan
+from opm_mdx_music import build_music,infer_clock,duration_spelling,tone_and_level,level_for_tone,source_plan,render_music_tracks
 from source_loop_plan import SourceLoopPlan
 from opm_conversion import convert
 from source_loop_plan import expanded_tokens
@@ -18,6 +18,40 @@ from test_opm_reader import vgm
 
 
 class MusicalMdxTests(unittest.TestCase):
+    def test_channel_volume_exactly_reproduces_saturated_carriers_and_retains_other_tl(self):
+        from types import SimpleNamespace
+        # Algorithm 4 carriers C1/C2: C2 is inactive at TL127 throughout.
+        tone=(tuple((0,0,0,0,0,tl,0,0,0,0,0) for tl in (17,23,0,119)),4,0,15)
+        def state(levels,raw=None):
+            return SimpleNamespace(operators=tuple(SimpleNamespace(tl=tl) for tl in levels),
+                channel_registers=tuple((0x60+i*8,tl) for i,tl in enumerate(levels if raw is None else raw)))
+        self.assertEqual(level_for_tone(state((17,23,40,127)),tone),40)
+        self.assertEqual(level_for_tone(state((17,23,127,127)),tone),127)
+        self.assertIsNone(level_for_tone(state((17,23,40,120)),tone))
+        self.assertIsNone(level_for_tone(state((17,23,4,127)),tone))
+        self.assertIsNone(level_for_tone(state((18,23,40,127)),tone))
+        self.assertIsNone(level_for_tone(state((17,23,40,127),(17,23,168,127)),tone))
+        # When every carrier is saturated, select the least exact attenuation.
+        saturated=(tuple((0,0,0,0,0,tl,0,0,0,0,0) for tl in (17,23,100,119)),4,0,15)
+        self.assertEqual(level_for_tone(state((17,23,127,127)),saturated),27)
+
+    def test_shared_track_renderer_accepts_source_independent_control_units(self):
+        from types import SimpleNamespace
+        units=tuple(SimpleNamespace(command='y40,48 r16',
+                                    unlooped_command='y40,48 r16',key=('held_control',12))
+                    for _ in range(4))
+        result=render_music_tracks({'B':units},(),title=' projected "OPM"\ncontrols ',
+                                   comments=('; State origin: projected_opm',))
+        self.assertTrue(result.text.startswith('#title "projected \'OPM\' controls"\n'))
+        self.assertIn('; State origin: projected_opm',result.text)
+        self.assertIn('/* Track A */\nA @t255',result.text)
+        self.assertIn('/* Track B */',result.text)
+        self.assertEqual(result.voices,())
+        self.assertTrue(any(row['status']=='applied' for row in result.reports['B']))
+        folded,_=result.plans['B'].render([u.command for u in units])
+        self.assertEqual(expanded_tokens(folded),expanded_tokens(' '.join(u.command for u in units)))
+        self.assertEqual(result.units['B'],units)
+
     def test_unique_source_leaves_do_not_change_any_shared_planner_candidate_or_tree(self):
         import random
         rng=random.Random(20261007)

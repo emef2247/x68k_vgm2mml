@@ -32,8 +32,14 @@ def compile_and_verify(generator, mml, plan, out, stem):
     init = controls(generate(generator.resolve(), initial, base, 'initialization'))
     if any(sample != 0 or reg == 8 for sample, reg, data in init):
         raise ValueError('Unexpected compiler initialization; comparison refused')
-    actual = generate(generator.resolve(), mml, out, stem, max_ticks=max(2, plan.end_tick + 1))
-    report = verify_writes(plan, controls(actual), init, actual.source_end_vgmticks)
+    context = plan.structured_context
+    limit = context.projection.end_mdx_tick if context else plan.end_tick
+    actual = generate(generator.resolve(), mml, out, stem, max_ticks=max(2, limit + 1))
+    if context:
+        from opm_performance_verify import compare_performance
+        report = compare_performance(context, actual, initialization=init)
+    else:
+        report = verify_writes(plan, controls(actual), init, actual.source_end_vgmticks)
     (out / (stem + '.verification.json')).write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
     if not report['passed']:
         raise RuntimeError('Generated target controls did not survive the MDX roundtrip')
@@ -50,6 +56,8 @@ def main():
     parser.add_argument('--opm-pitch-policy', choices=['clamp', 'error'], default=None,
                         help='Range policy: default fm=clamp, additive=error')
     parser.add_argument('--scc-gain', type=float, default=.125)
+    parser.add_argument('--notation', choices=['structured', 'registers'], default='structured')
+    parser.add_argument('--no-loops', action='store_true')
     parser.add_argument('--generator', type=Path, help='External MDX compiler/player; retain MDX/VGM and verify')
     parser.add_argument('--comparison-dir', type=Path, help='Optional existing OPM VGM tree, matched by relative path')
     args = parser.parse_args()
@@ -68,7 +76,8 @@ def main():
         row = dict(input=str(source), status='', detail='', mml='', mdx='', vgm='', comparison_vgm='')
         try:
             mml, plan = convert(source, out, psg_gain=args.psg_gain, scc_gain=args.scc_gain,
-                                psg_model=args.psg_model, pitch_policy=args.opm_pitch_policy)
+                                psg_model=args.psg_model, pitch_policy=args.opm_pitch_policy,
+                                notation=args.notation, loops=not args.no_loops)
             row.update(status='mml_only', mml=str(mml))
             if args.generator:
                 report = compile_and_verify(args.generator, mml, plan, out, source.stem)

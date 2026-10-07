@@ -1,8 +1,10 @@
-# Experimental PSG/SCC OPM output
+# PSG/SCC to structured OPM MDX output
 
-This separate prototype projects existing, unchanged native PSG/SCC Segments to
-an explicit OPM target plan. It does not fabricate native OPM Segments or change
-the normal vgm2mml.py conversion. No composite-channel merging is performed.
+The canonical frontend projects unchanged PSG/SCC Segments to an explicit OPM
+target plan, infers musical gates, and serializes a generated OPM VGM. That real
+intermediate stream goes through the existing `opm_conversion.convert` path.
+Its OPM analysis is explicitly projected evidence, not native OPM observed in
+the original PSG/SCC input. No composite-channel merging is performed.
 
 ## Usage
 
@@ -16,8 +18,9 @@ The OPM target uses an independently implemented **FM/feedback PSG tone profile*
 by default. `--psg-model additive` selects the previous four-sine PSG model.
 SCC continues to use waveform-derived additive synthesis in either case:
 vgm-conv's AY-to-OPM profile is not a mapping for arbitrary SCC waves.
-`--target opm-additive` is a compatibility spelling that explicitly selects the
-old additive model; the MGSDRV default target remains `mgs`.
+`--target opm-additive` explicitly selects the additive model. The main entry
+point defaults to native OPM input with `--target mdx`; use `--target opm`
+for PSG/SCC input.
 
 ```sh
 python vgm2mml.py INPUT.vgm --target opm --psg-model additive --outdir outputs/opm/ADDITIVE
@@ -42,11 +45,65 @@ future multi-chip or OPL3 allocation comparisons. FM tone tables describe
 algorithm, feedback and native operator-bank parameters rather than fictional
 DFT components.
 
+### Projected OPM state trajectory
+
+With `--dump-passes`, two additional target diagnostics are saved:
+
+- `<stem>.opm_target.state.csv`: decoded OPM state after every ordered target
+  write, including same-tick writes, nonchanges, initialization and terminal
+  controls. Source chip/channel/row/sample and target write IDs remain attached.
+- `<stem>.opm_target.intervals.csv`: positive-duration target state intervals
+  from tick zero through the explicit end for each used channel. Boundary event
+  and write IDs link each interval back to the state trace.
+
+Both identify `state_origin=projected_opm`. They use the shared OPM register
+decoder without constructing fictional native OPM source events or Segments.
+Unwritten register parameters remain unknown; cleared initial Key gates are an
+explicit reset assumption. Key edges describe target oscillator controls, not
+inferred musical attacks. Muted pitch, operator and level updates remain visible.
+
+The `projected_state_trajectory` object in `<stem>.opm_target.json` records the
+trace/interval counts and projected origin. These held-oscillator writes remain
+the baseline for musical interpretation. Source PSG/SCC Segments and established
+target CSVs are retained.
+
 Only `<stem>.mdx.mml` remains by default. Add `--dump-passes` to retain native
 PSG/SCC Segments and target mapping/voice/write CSVs. `--title` and GD3 title
 selection are shared with the main entry point. `--psg-gain` and `--scc-gain`
-adjust the two source-chip gains. The default target remains MGSDRV;
-MGSDRV allocation/normalization/compression switches are rejected for this target.
+adjust the two source-chip gains. Structured notation is the default;
+`--notation registers` selects the old held-oscillator register replay.
+`--no-loops` disables finite repeat folding. Length normalization and MGSDRV
+allocation/compression switches remain unsupported for this target.
+
+### Musical projection and the ordinary OPM pipeline
+
+Audibility rising/falling edges become inferred OPM Key-On/Off events. Pitch
+and level updates within a sounding interval remain continuations. This is a
+target interpretation: PSG/SCC do not supply native OPM Keys. The user selected
+musical articulation over preserving the previous held oscillator phase.
+No periodic retriggers are added for GUI animation. Noise and hardware EG remain
+unsupported; timbre, gain, pitch policy and source interpretation are unchanged.
+
+With `--dump-passes`, `<stem>.opm_performance.csv`, `.writes.csv`, `.state.csv`,
+`.intervals.csv` and `.json` record inferred gates, baseline write membership,
+source row/sample evidence and phase non-preservation. The `projected_opm/`
+directory contains the generated OPM VGM, `<stem>.source_map.csv`, `provenance.json`
+and the ordinary OPM pipeline's analysis, note/voice units and loop diagnostics.
+All OPM CSVs there identify `state_origin=projected_opm`. Source/hash, target/hash
+and settings are recorded; command address and global event ID link the generated
+stream to unchanged PSG/SCC evidence, including nonchange writes.
+
+The mapping distinguishes original sample, projected OPM sample and final MDX
+sample. The two existing six-sample projection bounds combine to a checked
+12-sample bound from original evidence to final target timing. This does not
+enable length normalization. Structured verification checks all known states,
+including muted intervals, exact Key command times/values and known state just
+before/after every Key. Ordinary MDX expansion may change non-Key write order;
+it is not raw-stream equality or source waveform equivalence.
+
+Minimum public validation covers three tonal inputs and nine native OPM inputs.
+All-silent input currently fails the structured route and is the first restart
+task. Local song capacity, listening and MMDSP GUI behavior still need validation.
 
 For an external compiler/player roundtrip and a listening catalog:
 
@@ -94,7 +151,9 @@ in the unified target CSV. Source CSVs remain integrated per chip.
 - Relative SCC wave amplitudes are retained; waves are not individually normalized.
   DC, arbitrary phase and unselected harmonics are not reproduced. Stored DFT phases
   and retained AC energy are diagnostics, not perceptual quality measurements.
-- One held KeyOn per used part avoids introducing attacks at each Segment.
+- The register replay baseline uses one held KeyOn per used part. Structured
+  output infers attacks only at audibility edges; oscillator/envelope phase can
+  differ from that baseline. It does not restart at each Segment.
   Pitch and carrier TL follow source changes; output routing handles mute intervals.
   SCC volume is linear. Additive PSG uses approximate 3 dB/level steps; FM PSG
   uses the fixed attenuation curve. PSG gain defaults to FM=1, additive=0.125;
@@ -221,7 +280,7 @@ YUMADV18 passed audible positive-duration register-state and key-edge comparison
 against the existing additive target plan. It has not yet been verified in
 MMDSP on the user's system. Player meters/keyboard display and listening remain
 required; do not claim this preview fixes the display until that is confirmed.
-The original additive renderer remains the default during this preview.
+This preview is separate from the normal register-control renderer.
 
 ## FM default validation (2026-10-06)
 
@@ -235,9 +294,10 @@ immutability, not source acoustic identity or MMDSP animation.
 
 WAV comparisons for GRA1_05/DSLY4_04 confirm higher partial energy than the
 finite additive profile and similar measured levels/spectral trends to external
-vgm-conv. See `field_notes/2026-10-06_psg_fm_default.md`. Existing MDX note-renderer
-work remains paused; `scripts/render_additive_mdx_notes.py` handles AL7 additive
-plans only and must not be applied to FM plans expecting identical notation.
+vgm-conv. See `field_notes/2026-10-06_psg_fm_default.md`.
+`scripts/render_additive_mdx_notes.py` handles AL7 additive plans only and must
+not be applied to FM plans expecting identical notation. Native OPM structured
+MDX generation is available, but the PSG/SCC target plan is not connected to it.
 
 For a local FM listening batch:
 

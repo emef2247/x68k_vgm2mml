@@ -21,6 +21,8 @@
 - `py/opm.py`: immutable native OPM state/Segment types, Segment construction, and state/Segment CSV dumping.
 - `py/opm_conversion.py`: native OPM-to-MDX pipeline orchestration.
 - `py/opm_mdx.py`, `py/opm_mdx_music.py`: native OPM target projection and structured MDX rendering.
+- `py/opm_target_state.py`: explicitly projected OPM state/write trajectories and interval CSVs for PSG/SCC targets.
+- `py/opm_performance.py`, `py/opm_target_vgm.py`: inferred PSG/SCC musical gates and inspectable OPM target VGM feeding the ordinary OPM converter.
 - `py/opll.py`, `py/opll_mml.py`: OPLL processing and MML generation.
 - `py/psg.py`, `py/scc.py`: event analysis and Segment construction.
 - `py/chip_segments.py`: immutable PSG/SCC Segment types and CSV dumping.

@@ -1,76 +1,60 @@
 Project: x68k_vgm2mml
 
-Latest layout change: all 62 top-level test/helper Python files moved to
-tests/scripts/. Repository-root references and documented discovery commands
-were updated; fixtures remain in place. Run
-python -m unittest discover -s tests/scripts -v.
-Before/after discovery has the same 444 test IDs with no import errors.
-After moving, 75 OPM, six SCC-header and ten external replay tests passed.
-This change is already visible from the same WSL working tree.
+Status (2026-10-08): PAUSED at the user's explicit request after minimum public
+OPM/MDX checks passed. Stop further implementation/research until the user asks
+to resume. Workspace is shared with WSL; no separate synchronization is needed.
+Current changes are local and uncommitted.
 
-Current task: readable native MDX MML, optional length correction and short
-relative octave/volume setters. Implementation and focused tests are complete;
-final user-facing replay and focused architect review passed. Work is complete.
+Current implementation:
+- PSG/SCC default --target opm now feeds musical projected OPM VGM into the
+  ordinary opm_conversion.convert path; no parallel Segment-to-MML renderer.
+- User rejected raw y/whole-song tie mapping and explicitly chose musical
+  articulation with documented oscillator phase changes.
+- Audibility rise/fall infer Key-On/Off. Pitch/volume changes stay continuous.
+  No periodic Keys for GUI. Source Segments and held baseline are preserved.
+- py/opm_performance.py records inferred gates, baseline IDs and source rows.
+  py/opm_target_vgm.py emits an actual target VGM and global command/address map.
+- --dump-passes retains performance CSVs and projected_opm/ containing target
+  VGM, source_map.csv, provenance.json and canonical OPM analysis/structure.
+  Generated OPM CSVs mark state_origin=projected_opm. Original -> target -> final
+  timing is mapped and checked directly within 12 samples, including the end.
+- --notation registers preserves held replay; --no-loops is supported.
+- Saturation-aware carrier volume spelling reproduces all TL/raw values exactly.
+  The common native final renderer was extracted without initial output changes.
+- scripts/export_mdx.py remains available for MML/MDX/VGM output-only listening.
 
-User decisions:
-- Reuse established MGSDRV/shared processing where native semantics fit.
-- Length correction is opt-in with --normalize-lengths.
-- Track comments and exact musical length spelling apply to normal output.
-- Use at most two relative octave/volume symbols when no longer than absolute.
-- Exclude MDX macroization; preserve compatibility-target macro support.
+Evidence:
+- field_notes/2026-10-08_psg_opm_musical_connection.md: decisions, MSX/assets
+  review, implementation, test scope and restart task. Read before resuming.
+- Related 115 automated tests passed; modified validator regression separately
+  passed in the five target-VGM checks. Full inherited suite was not rerun.
+- Public native OPM/from_mdx 9/9 external roundtrips passed.
+- Public PSG volume_sweep, scale_chromatic, short_pulses passed external known
+  state/muted-state, exact Key command/time, Key-point state and end checks.
+  Respectively 16/13/4 note units, no fallback; MDX bytes 1533/1329/546.
+- Each PSG case's 27 original source/pass/held-baseline files are byte-identical.
+- Results: outputs/opm/structured_psg_2026-10-08/final_public/ and final_native/.
+- No local song, audio listening, MMDSP GUI or new vgm-conv size comparison was
+  performed. No private fixtures/outputs are to be committed.
 
-Implemented:
-- /* Track A */ through /* Track H */ comments in native renderers.
-- Shared exact MDX duration spelling and tied whole-note chunks.
-- OPM adapters for the existing shared clock estimator. One actual MDX timer
-  uses absolute nearest ticks, with all control/Segment/Key/end/loop boundary
-  errors bounded and positive intervals retained. Whole-song fallback with
-  explicit reasons; no source mutation, phase/grid onset snapping or pruning.
-- Normalization JSON; with dump-passes, candidate/control CSV, before-MML and
-  before/after structure counts, plus all established native/pass dumps.
-- Target compaction uses known-state relative o/v/@v changes of one/two steps.
-  Absolute loop entries, volume mode changes and voice/raw-state invalidation
-  remain visible. Relative setter decisions are saved in compaction CSV.
-- Optional compiler/player tests for long duration/tie and relative-state
-  equivalence, with clean skips if the external Linux tool is unavailable.
+First allowed action AFTER user resumes:
+Fix the all-silent-input regression in the new structured path. Performance
+has no OPM writes, and project_segments cannot infer a chip from empty native
+Segments. Represent silence through its explicit end without inventing attacks
+or source OPM evidence, and add one focused conversion-level regression test.
+This was identified in final review and deliberately left for resumption at the
+user's requested public-test stopping point; README records the limitation.
 
-Validation:
-- OPM discovery 75 methods and compaction 16 methods pass after relative changes.
-- Independent external comparisons: four duration and six relative cases pass.
-- Final public native compiler/replay checks: all nine from_mdx cases pass.
-- Normalization checks on three selected local sources and jittered original
-  synthetic source pass; one local candidate is correctly rejected.
-- Selected long case retains 2,159 note units, max correction 135 samples under
-  587 bound, zero collapses. Source-unit loop applications remain 244.
-- Actual output at outputs/python/M_G2_01S.mdx.mml was regenerated with
-  --normalize-lengths --dump-passes after the relative change. Final replay
-  comparison in outputs/mdx-note-lengths/final-output-replay/ passed: Key/state/
-  projected end exact; native raw/state bytes and Segment cells unchanged.
-  Relative setters: 361; step note/rest tokens 1,650 -> 165; chars 41,856 -> 33,577.
-- Details: docs/opm_note_lengths.md and
-  field_notes/2026-10-07_mdx_note_lengths.md.
+Then:
+Validate the already established local tonal cases (GRA1_03/05, DSLY4_04 and
+GRA2_17), capacities, all known/muted states and Key points. Inspect player/audio
+results from the user. Only then consider noise/mixed tone/EG and explicit
+resource allocation; none were implemented here.
 
-Next allowed action:
-User is preparing to add all related files and commit. The working tree is
-directly shared with WSL at /mnt/i/wsl/repositories/emef2247/test/x68k_vgm2mml;
-changes and final tests are already reflected there. No separate copy is
-needed for that path. An English commit message is supplied in chat; staging,
-commit and publication have not been performed.
-
-Must not happen next:
-Do not feed reference MDX/MML into VGM conversion, force reference-text matching,
-change native Segments/traces to pass, discard dumps, apply MGS gate/pruning
-rules to OPM, or claim fitted-clock error equals actual timer error. Do not
-commit private fixtures or their MML. Macroization remains excluded.
-
-Prior context:
-MDX independent reference preparation is complete; see
-field_notes/2026-10-07_mdx_decompiler_references.md. Canonical frontend migration
-is complete. Eight inherited failure records in seven methods remain
-(allocation/private OPLL/GD3), reproduced in source repo. Do not describe the
-full inherited suite as passing; see 2026-10-07_x68k_frontend_baseline.md.
-
-Environment:
-WSL available; I: access works through approved commands. External generator
-uses pinned mmlx 0.2.0 / soundlog 0.15.0. mdxtools reference tool remains pinned
-at 9c8539fec2757fcf7c85d1986171b50ebe2ef1e5 under ignored outputs.
+Do not:
+- Resume work merely because a review tool or agent has further suggestions.
+- Reintroduce whole-song snapshot/tie/raw mapping as the new normal renderer.
+- Claim inferred OPM Keys were observed in source PSG/SCC or phase is preserved.
+- Add arbitrary Keys to animate meters, rewrite source Segments, discard muted
+  controls or zero-time evidence, or feed reference MDX/MML into conversion.
+- Confuse minimum public success with GUI/audio/full-suite/capacity validation.

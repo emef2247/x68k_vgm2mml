@@ -1,7 +1,8 @@
-# Development and diagnostic tools
+# Export and diagnostic tools
 
 Normal single-file conversion uses `python vgm2mml.py`; conversion implementations live in `py/`.
 
+- `export_mdx.py`: single-file or recursive folder export for listening. Calls the canonical frontend and external compiler/player, writes MML/MDX/VGM per song, and records failures without comparing playback. See [usage](../README.md#mmlmdxvgmを生成して聴く).
 - `verify_opm_mdx_roundtrip.py`, `mdx_fixture_generator/`, `generate_opm_public_fixtures.py`: OPM compiler roundtrip and authored fixture preparation.
 - `decompile_mdx_references.py`: external mdxtools MDX-to-MML reference preparation, provenance and limited structural audit. See `docs/mdx_reference_mml.md`; references are separate from normal VGM conversion.
 - `psg_scc_to_mdx.py`: batch projection audit with optional compiler verification and reference comparison; shares `py/psg_scc_conversion.py`.

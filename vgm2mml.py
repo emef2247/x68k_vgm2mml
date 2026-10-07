@@ -172,8 +172,10 @@ def main():
                                   (']' in value if field == 'name' else '"' in value)):
             parser.error(f'--{field} contains a character that would break the MML header')
 
-    if args.target != 'mdx' and (args.notation != 'structured' or args.track_layout != 'channels' or args.no_loops):
-        parser.error('MDX notation/track/loop options require --target mdx')
+    if args.target == 'mgs' and (args.notation != 'structured' or args.track_layout != 'channels' or args.no_loops):
+        parser.error('MDX notation/track/loop options require an MDX/OPM target')
+    if args.target in ('opm', 'opm-additive') and (args.notation == 'legacy' or args.track_layout != 'channels'):
+        parser.error('PSG/SCC OPM targets support structured/registers notation and channel tracks')
     if args.target == 'mdx' and args.track_layout == 'conductor' and args.notation != 'registers':
         parser.error('Conductor tracks require --notation registers')
     if args.target == 'mdx' and args.normalize_lengths and args.notation != 'structured':
@@ -211,7 +213,8 @@ def main():
                                 scc_gain=.125 if args.scc_gain is None else args.scc_gain, title=args.title,
                                 psg_model=args.psg_model or ('additive' if args.target == 'opm-additive' else 'fm'),
                                 pitch_policy=args.opm_pitch_policy,
-                                dump_passes=args.dump_passes or args.debug)
+                                dump_passes=args.dump_passes or args.debug,
+                                notation=args.notation, loops=not args.no_loops)
         except ValueError as error:
             parser.error(str(error))
         print(f'MDX MML: {mml}')

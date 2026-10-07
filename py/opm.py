@@ -148,7 +148,9 @@ def _bits(value, shift, mask):
     return None if value is None else (value >> shift) & mask
 
 
-class _ChipState:
+class OpmRegisterState:
+    """Decode ordered OPM controls; callers identify source or projected origin."""
+
     def __init__(self):
         self.regs = {}
         self.keys = [0] * 8
@@ -256,7 +258,7 @@ def build_segments(trace_csv, *, end_vgmticks):
         previous_id, previous_address, previous_time = event_id, address, tick
         identity = (row['chip_type'], clock, clock_raw)
         if instance not in chips:
-            chips[instance] = _ChipState()
+            chips[instance] = OpmRegisterState()
             facts[instance] = identity
             for ch in range(8):
                 current[instance, ch] = OpmStateEvent(
@@ -314,7 +316,7 @@ def _flatten(event):
 def dump_analysis(analysis, *, state_csv, segments_csv):
     """Self-contained CSVs; all channel/common snapshots remain together."""
     initial = OpmStateEvent(None, None, None, None, None, 0, 'YM2151', 0, 0, 0,
-                            0, 'initial', False, 0, 0, 0, _ChipState().snapshot(0))
+                            0, 'initial', False, 0, 0, 0, OpmRegisterState().snapshot(0))
     empty_segment = OpmSegment(**initial.__dict__, segment_id=0, vgmticks_end=0)
     for path, records, empty in ((state_csv, analysis.events, initial),
                                  (segments_csv, analysis.segments, empty_segment)):
