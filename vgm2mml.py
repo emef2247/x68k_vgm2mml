@@ -1,0 +1,378 @@
+#!/usr/bin/env python3
+"""Canonical VGM CLI: native OPM to MDX; --target mgs selects MGSDRV compatibility."""
+import sys
+import os
+import argparse
+import json
+
+# Allow importing py/ siblings from the repository root
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(_SCRIPT_DIR, 'py'))
+
+from vgm_reader import parse_vgm
+from scc_mml import process_scc_csv
+from psg_mml import process_psg_csv
+from opll_mml import process_opll_csv
+from mml_sync import annotate_sync_points
+from mml_macros import compress_macros
+from gd3 import title_from_gd3
+from mml_alloc import parse_alloc, override_alloc
+from mml_envelopes import EnvelopeBank
+from psg_scc_target import TUNING_HEADER
+
+
+def _has_chip_data(csv_path: str) -> bool:
+    """Return True if *csv_path* contains at least one non-header data row."""
+    try:
+        with open(csv_path, 'r', newline='') as fh:
+            for line in fh:
+                line = line.rstrip('\r\n')
+                if line and not line.startswith('#') and line.strip():
+                    return True
+    except OSError:
+        pass
+    return False
+
+
+def _extract_from_alloc(mml_path: str) -> str:
+    """Read *mml_path* and return the content starting from the first ``#alloc`` line.
+
+    Lines before the first ``#alloc`` (i.e., the chip-level header:
+    ``;[name=...]``, ``#opll_mode``, ``#tempo``, ``#title``) are stripped.
+    The returned string starts with the first ``#alloc`` line.
+    """
+    try:
+        with open(mml_path, 'r', newline='') as fh:
+            lines = fh.readlines()
+    except OSError:
+        return ''
+
+    for i, line in enumerate(lines):
+        if line.startswith('#alloc'):
+            return ''.join(lines[i:])
+    # No #alloc found – return full content as fallback
+    return ''.join(lines)
+
+
+def _build_merged_mml(stem: str, song_dir: str,
+                      has_psg: bool, has_scc: bool, has_opll: bool,
+                      raw_ticks: bool = False, sync_min_gap: int = 1000,
+                      target: bool = True, name: str | None = None,
+                      title: str | None = None, tempo: int | None = None, opll_mode: int = 1) -> str:
+    """Build the merged MML text from per-chip compress outputs.
+
+    The merged file has a single global header followed by PSG, SCC, and OPLL
+    parts (in that order) when the corresponding chip is present.  Each part
+    begins with a separator comment and includes the chip MML content starting
+    from the ``#alloc`` line (chip-level header is stripped).
+    """
+    lines = []
+    lines.append(f';[name={stem if name is None else name} lpf=1]')
+    lines.append(f'#opll_mode {opll_mode}')
+    if target and (has_psg or has_scc):
+        lines.append(TUNING_HEADER)
+    lines.append(f'#tempo {tempo}' if tempo is not None else '#tempo 75' if raw_ticks else '#tempo 225')
+    lines.append(f'#title {{ "{stem if title is None else title}"}}')
+    lines.append('')
+
+    parts = [
+        ('psg',  'psg',
+         "\n;-----------------------  psg part -------------------------------"),
+        ('scc',  'scc',
+         "\n;-----------------------  scc part -------------------------------"),
+        ('opll', 'opll',
+         "\n;-----------------------  OPLL part -------------------------------"),
+    ]
+    flags = {'psg': has_psg, 'scc': has_scc, 'opll': has_opll}
+
+    header_text = '\n'.join(lines) + '\n'
+    body_parts = [header_text]
+
+    suffix = 'pass3.compress.MGS_pct.mml' if raw_ticks else 'pass3.compress.MGS.mml'
+
+    for chip_key, chip_ext, separator in parts:
+        if not flags[chip_key]:
+            continue
+        mml_path = os.path.join(song_dir,
+                                f'{stem}.{chip_ext}.{suffix}')
+        target_path = os.path.join(song_dir, f'{stem}.{chip_ext}.target.mml')
+        if target and chip_key in ('psg', 'scc', 'opll') and os.path.exists(target_path):
+            mml_path = target_path
+        body_parts.append(separator + '\n')
+        body_parts.append(_extract_from_alloc(mml_path))
+
+    result = ''.join(body_parts)
+    if not result.endswith('\n'):
+        result += '\n'
+    formatted = annotate_sync_points(result, min_gap=sync_min_gap, drop_silent=target)
+    return compress_macros(formatted) if target else formatted
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Convert native OPM VGM to MDX MML, or select a compatibility target')
+    parser.add_argument('vgm', help='Input VGM file')
+    parser.add_argument('--target', choices=['mdx', 'mgs', 'opm', 'opm-additive'], default='mdx',
+                        help='mdx: native OPM (default); mgs: PSG/SCC/OPLL; opm/opm-additive: PSG/SCC to OPM MDX')
+    parser.add_argument('--notation', choices=['structured', 'legacy', 'registers'], default='structured',
+                        help='Native MDX notation (default: structured)')
+    parser.add_argument('--track-layout', choices=['channels', 'conductor'], default='channels',
+                        help='Native MDX tracks; conductor requires --notation registers')
+    parser.add_argument('--no-loops', action='store_true', help='Disable native MDX finite loops')
+    parser.add_argument('--psg-gain', type=float, default=None, help='OPM PSG gain: default fm=1, additive=0.125')
+    parser.add_argument('--psg-model', choices=['fm', 'additive'], default=None,
+                        help='PSG tone model for --target opm (default: fm)')
+    parser.add_argument('--opm-pitch-policy', choices=['clamp', 'error'], default=None,
+                        help='OPM range policy: default fm=clamp, additive=error')
+    parser.add_argument('--scc-gain', type=float, default=None, help='PSG/SCC OPM additive SCC gain (default: 0.125)')
+    parser.add_argument('--outdir', default=None,
+                        help='Output directory (default: input file directory)')
+    parser.add_argument('--name', help='MGSDRV player metadata name (default: input stem)')
+    parser.add_argument('--enhance-macros', action='store_true', default=True,
+                        help='Enable enhanced macros (now the default)')
+    parser.add_argument('--legacy-macros', dest='enhance_macros', action='store_false',
+                        help='Use the previous greedy macro compressor')
+    parser.add_argument('--legacy-loops', action='store_true',
+                        help='Use previous loop/envelope projection for PSG, SCC and OPLL')
+    parser.add_argument('--title', dest='title',
+                        help='Override #title (default: GD3 metadata, then input stem)')
+    parser.add_argument('--gd3-language', choices=['ja', 'en'], default='ja',
+                        help='Preferred GD3 language, with per-field fallback (default: ja)')
+    parser.add_argument('--dump-passes', action='store_true',
+                        help='Keep source/state/Segment CSVs and target-specific analysis passes')
+    parser.add_argument('--vgmticks', action='store_true',
+                        help='Append absolute VGM sample positions to trace/Segment evidence; does not retime MML')
+    parser.add_argument('--normalize-lengths', action='store_true',
+                        help='Infer a shared musical clock and normalize target note lengths; retain source samples')
+    parser.add_argument('--debug', action='store_true',
+                        help='Keep target diagnostics (MGSDRV also keeps all chip-specific MML variants)')
+    parser.add_argument('--scc-input', choices=['trace', 'log'], default='trace',
+                        help='SCC intermediate format: trace (default, chronological)'
+                             ' or log (per-channel grouped)')
+    parser.add_argument('--psg-input', choices=['trace', 'log'], default='trace',
+                        help='PSG intermediate format: trace (default, chronological)'
+                             ' or log (per-channel grouped)')
+    parser.add_argument('--raw-ticks', action='store_true',
+                        help='Output note lengths as raw tick %% notation '
+                             '(e.g. c%%N). '
+                             'Default is note-value/divisor notation (e.g. c16, d8.).')
+    parser.add_argument('--sync-min-gap', type=int, default=1000,
+                        help='Minimum target-MML steps between sync comments '
+                             '(default: 1000; 0: all shared boundaries; end always shown)')
+    parser.add_argument('--alloc', type=parse_alloc,
+                        help='Override selected track allocations, e.g. "9=1800, a=3780"')
+    args = parser.parse_args()
+    if args.sync_min_gap < 0:
+        parser.error('--sync-min-gap must be nonnegative')
+    if args.normalize_lengths and args.raw_ticks:
+        parser.error('--normalize-lengths cannot be combined with --raw-ticks')
+
+    for field, value in (('name', args.name), ('title', args.title)):
+        if value is not None and (any(c in value for c in '\r\n') or
+                                  (']' in value if field == 'name' else '"' in value)):
+            parser.error(f'--{field} contains a character that would break the MML header')
+
+    if args.target != 'mdx' and (args.notation != 'structured' or args.track_layout != 'channels' or args.no_loops):
+        parser.error('MDX notation/track/loop options require --target mdx')
+    if args.target == 'mdx' and args.track_layout == 'conductor' and args.notation != 'registers':
+        parser.error('Conductor tracks require --notation registers')
+    if args.target == 'mdx' and args.normalize_lengths and args.notation != 'structured':
+        parser.error('Native MDX length normalization requires --notation structured')
+
+    vgm_path = args.vgm
+    if not os.path.isfile(vgm_path):
+        print(f"Error: {vgm_path!r} not found", file=sys.stderr)
+        sys.exit(1)
+
+    # Determine base name: "02_StartingPoint"
+    base_name = os.path.splitext(os.path.basename(vgm_path))[0]
+    if args.title is None and args.target != 'mdx':
+        args.title = title_from_gd3(vgm_path, base_name, args.gd3_language)
+
+    if args.outdir:
+        song_dir = args.outdir
+    else:
+        song_dir = os.path.join(
+            os.path.dirname(os.path.abspath(vgm_path)),
+        )
+
+    os.makedirs(song_dir, exist_ok=True)
+
+    if args.target == 'opm-additive' and args.psg_model not in (None, 'additive'):
+        parser.error('--target opm-additive requires the additive PSG model')
+    if args.target == 'mgs' and (args.psg_model or args.opm_pitch_policy):
+        parser.error('OPM model/pitch switches require an OPM target')
+    if args.target in ('opm', 'opm-additive'):
+        if args.alloc or args.normalize_lengths or args.raw_ticks or not args.enhance_macros or args.legacy_loops:
+            parser.error('MGSDRV allocation/normalization/compression options do not apply to OPM targets')
+        from psg_scc_conversion import convert
+        try:
+            mml, plan = convert(vgm_path, song_dir, psg_gain=args.psg_gain,
+                                scc_gain=.125 if args.scc_gain is None else args.scc_gain, title=args.title,
+                                psg_model=args.psg_model or ('additive' if args.target == 'opm-additive' else 'fm'),
+                                pitch_policy=args.opm_pitch_policy,
+                                dump_passes=args.dump_passes or args.debug)
+        except ValueError as error:
+            parser.error(str(error))
+        print(f'MDX MML: {mml}')
+        return
+
+    if args.target == 'mdx':
+        if (args.alloc or args.raw_ticks or not args.enhance_macros
+                or args.legacy_loops or args.psg_model or args.opm_pitch_policy
+                or args.psg_gain is not None or args.scc_gain is not None):
+            parser.error('MGSDRV and PSG/SCC projection options do not apply to native MDX')
+        from opm_conversion import convert
+        try:
+            mml, _, _ = convert(vgm_path, song_dir, dump_passes=args.dump_passes or args.debug,
+                                track_layout=args.track_layout, notation=args.notation,
+                                loops=not args.no_loops, title=args.title,
+                                gd3_language=args.gd3_language, normalize_lengths=args.normalize_lengths)
+        except ValueError as error:
+            parser.error(str(error))
+        print(f'MDX MML: {mml}')
+        if args.normalize_lengths:
+            with open(os.path.join(song_dir, base_name + '.mdx.normalization.json'), encoding='utf-8') as stream:
+                report = json.load(stream)
+            print('Note normalization: ' + report['status'] + ' (' + report['reason'] + ')')
+        return
+
+    # ── Step 1: Parse VGM → SCC + PSG + OPLL log/trace CSVs ──────
+    opm_metadata = {}
+    (psg_log_csv, scc_log_csv, psg_trace_csv, scc_trace_csv,
+     opll_log_csv, opll_trace_csv, opll_voice_csv, opll_regs_csv) = parse_vgm(
+         vgm_path, song_dir, dump_loop=args.debug or args.dump_passes,
+         include_vgmticks=args.vgmticks or args.normalize_lengths,
+         opm_metadata=opm_metadata, dump_opm_segments=args.debug or args.dump_passes)
+
+    if args.debug:
+        print(f"PSG log:       {psg_log_csv}")
+        print(f"PSG trace:     {psg_trace_csv}")
+        print(f"SCC log:       {scc_log_csv}")
+        print(f"SCC trace:     {scc_trace_csv}")
+        print(f"OPLL log:      {opll_log_csv}")
+        print(f"OPLL trace:    {opll_trace_csv}")
+        print(f"OPLL voice:    {opll_voice_csv}")
+        print(f"OPLL regs:     {opll_regs_csv}")
+        if opm_metadata['csv_path']:
+            print(f"OPM regs:      {opm_metadata['csv_path']}")
+            print(f"OPM state:     {opm_metadata['state_csv_path']}")
+            print(f"OPM Segments:  {opm_metadata['segments_csv_path']}")
+
+    # Detect chip presence from trace CSVs
+    has_psg  = _has_chip_data(psg_trace_csv)
+    has_scc  = _has_chip_data(scc_trace_csv)
+    has_opll = _has_chip_data(opll_trace_csv)
+
+    # ── Step 2: SCC MML pipeline ─────────────────────────────────
+    if args.legacy_loops:
+        envelope_bank = EnvelopeBank(deferred=True)
+    else:
+        from pre_envelope_loops import LoopFirstEnvelopeBank
+        envelope_bank = LoopFirstEnvelopeBank(deferred=True)
+    scc_csv = scc_trace_csv if args.scc_input == 'trace' else scc_log_csv
+
+    scc_mml_path = process_scc_csv(scc_csv, song_dir, stem=base_name,
+                                   dump_passes=args.dump_passes,
+                                   debug=args.debug,
+                                   raw_ticks=args.raw_ticks,
+                                   envelope_bank=envelope_bank)
+    if args.debug:
+        print(f"SCC MML: {scc_mml_path}")
+
+    # ── Step 3: PSG MML pipeline ─────────────────────────────────
+    psg_csv = psg_trace_csv if args.psg_input == 'trace' else psg_log_csv
+
+    psg_mml_path = process_psg_csv(psg_csv, song_dir, stem=base_name,
+                                   dump_passes=args.dump_passes,
+                                   debug=args.debug,
+                                   raw_ticks=args.raw_ticks,
+                                   envelope_bank=envelope_bank)
+    if args.debug:
+        print(f"PSG MML: {psg_mml_path}")
+
+    envelope_bank.flush()
+
+    from opll_mode import mode_from_trace
+    opll_mode = mode_from_trace(opll_trace_csv)
+
+    # ── Step 4: OPLL MML pipeline ────────────────────────────────
+    opll_mml_path = process_opll_csv(opll_trace_csv, song_dir, stem=base_name,
+                                     dump_passes=args.dump_passes,
+                                     debug=args.debug,
+                                     voice_csv_path=opll_voice_csv,
+                                     raw_ticks=args.raw_ticks, source_loops=not args.legacy_loops,
+                                     opll_mode=opll_mode)
+    if args.debug:
+        print(f"OPLL MML: {opll_mml_path}")
+
+    # Optional target-only normalization; legacy passes and Segment dumps stay native.
+    normalized_tempo = None
+    if args.normalize_lengths:
+        from note_normalization import normalize_outputs
+        from psg import build_segments as build_psg
+        from scc import build_segments as build_scc
+        controls = {}
+        if has_psg:
+            controls['psg'] = build_psg(psg_csv, song_dir, base_name, dump_passes=False)
+        if has_scc:
+            controls['scc'] = build_scc(scc_csv, song_dir, dump_passes=False, stem=base_name).segments
+        normalized_tempo = normalize_outputs(opll_trace_csv, opll_voice_csv, song_dir,
+                                             base_name, args.dump_passes or args.debug, controls,
+                                             opll_mode=opll_mode, source_loops=not args.legacy_loops)
+        if normalized_tempo is not None:
+            print(f'Note normalization: applied (tempo {normalized_tempo})')
+        else:
+            with open(os.path.join(song_dir, f'{base_name}.normalization.json'), encoding='utf-8') as stream:
+                reason = json.load(stream)['reason']
+            print(f'Note normalization: unchanged ({reason})')
+
+    # ── Step 5: Build merged MML ──────────────────────────────────
+    merged_text = _build_merged_mml(base_name, song_dir,
+                                    has_psg, has_scc, has_opll,
+                                    raw_ticks=args.raw_ticks,
+                                    sync_min_gap=args.sync_min_gap,
+                                    name=args.name, title=args.title, tempo=normalized_tempo, opll_mode=opll_mode)
+    merged_text = override_alloc(merged_text, args.alloc)
+    if args.enhance_macros:
+        from structured_macros import enhance_macros
+        merged_text = enhance_macros(merged_text,
+            dump_prefix=os.path.join(song_dir, base_name) if args.dump_passes else None)
+    merged_path = os.path.join(song_dir, f'{base_name}.mml')
+    with open(merged_path, 'w', encoding='cp932', errors='replace', newline='\n') as fh:
+        fh.write(merged_text)
+    print(f"Merged MML: {merged_path}")
+    if not args.debug and not args.dump_passes:
+        for chip in ('psg', 'scc', 'opll'):
+            os.remove(os.path.join(song_dir, f'{base_name}.{chip}.target.mml'))
+
+    # ── Step 6: Clean up intermediate files in non-debug mode ─────
+    if not args.debug:
+        # Remove log/trace CSVs written by parse_vgm (intermediate inputs)
+        if not args.dump_passes:
+            for csv_path in (psg_log_csv, psg_trace_csv,
+                             scc_log_csv, scc_trace_csv,
+                             opll_log_csv, opll_trace_csv,
+                             opll_voice_csv, opll_regs_csv,
+                             opm_metadata['csv_path']):
+                if csv_path is None:
+                    continue
+                try:
+                    os.remove(csv_path)
+                except OSError:
+                    pass
+        # Every pipeline writes these variants, including absent chips.
+        # Debug mode retains them; normal output must not leak empty-chip files.
+        chips_to_clean = ('psg', 'scc', 'opll')
+
+        for chip in chips_to_clean:
+            for suffix in ('pass3.compress.MGS.mml', 'pass3.compress.MGS_pct.mml'):
+                chip_path = os.path.join(song_dir, f'{base_name}.{chip}.{suffix}')
+                try:
+                    os.remove(chip_path)
+                except OSError:
+                    pass
+
+
+if __name__ == '__main__':
+    main()
