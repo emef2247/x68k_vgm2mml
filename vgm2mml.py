@@ -127,6 +127,10 @@ def main():
     parser.add_argument('--scc-gain', type=float, default=None, help='PSG/SCC OPM additive SCC gain (default: 0.125)')
     parser.add_argument('--outdir', default=None,
                         help='Output directory (default: input file directory)')
+    parser.add_argument('--pcm-generator',
+                        help='Built MDX helper for native typed PCM MDX and PDX construction')
+    parser.add_argument('--pcm-policy', choices=['strict', 'best-effort'],
+                        help='Native PCM target policy: strict (default) blocks known loss; best-effort reports defined loss')
     parser.add_argument('--name', help='MGSDRV player metadata name (default: input stem)')
     parser.add_argument('--enhance-macros', action='store_true', default=True,
                         help='Enable enhanced macros (now the default)')
@@ -174,6 +178,10 @@ def main():
 
     if args.target == 'mgs' and (args.notation != 'structured' or args.track_layout != 'channels' or args.no_loops):
         parser.error('MDX notation/track/loop options require an MDX/OPM target')
+    if args.pcm_generator and args.target != 'mdx':
+        parser.error('--pcm-generator requires --target mdx')
+    if args.pcm_policy is not None and args.target != 'mdx':
+        parser.error('--pcm-policy requires --target mdx')
     if args.target in ('opm', 'opm-additive') and (args.notation == 'legacy' or args.track_layout != 'channels'):
         parser.error('PSG/SCC OPM targets support structured/registers notation and channel tracks')
     if args.target == 'mdx' and args.track_layout == 'conductor' and args.notation != 'registers':
@@ -230,10 +238,28 @@ def main():
             mml, _, _ = convert(vgm_path, song_dir, dump_passes=args.dump_passes or args.debug,
                                 track_layout=args.track_layout, notation=args.notation,
                                 loops=not args.no_loops, title=args.title,
-                                gd3_language=args.gd3_language, normalize_lengths=args.normalize_lengths)
+                                gd3_language=args.gd3_language, normalize_lengths=args.normalize_lengths,
+                                pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'strict')
         except ValueError as error:
             parser.error(str(error))
         print(f'MDX MML: {mml}')
+        pcm_report = os.path.join(song_dir, base_name + '.pcm.timing.json')
+        if os.path.isfile(pcm_report):
+            with open(pcm_report, encoding='utf-8') as stream:
+                pcm_output = json.load(stream)['pcm_pdx_file']
+            print(f'PDX: {os.path.join(song_dir, pcm_output)}')
+            print(f'MDX: {os.path.join(song_dir, base_name + ".mdx")}')
+        assessment_path = os.path.join(song_dir, base_name + '.pcm.assessment.json')
+        if os.path.isfile(assessment_path):
+            with open(assessment_path, encoding='utf-8') as stream:
+                assessment = json.load(stream)
+            print(f'PCM projection: {assessment["assessment_status"]}; validation: {assessment["validation_status"]} ({assessment["validation_run"]})')
+            for loss in assessment['known_losses'][:5]:
+                print(f'PCM known loss {loss["code"]}: samples {loss["start_vgmticks"]}..{loss["end_vgmticks"]}, '
+                      f'{loss["source_value"]} -> {loss["projected_value"]} ({loss["fallback"]})')
+            if len(assessment['known_losses']) > 5:
+                print(f'PCM known losses: {len(assessment["known_losses"])} total')
+            print(f'PCM assessment: {assessment_path}')
         if args.normalize_lengths:
             with open(os.path.join(song_dir, base_name + '.mdx.normalization.json'), encoding='utf-8') as stream:
                 report = json.load(stream)

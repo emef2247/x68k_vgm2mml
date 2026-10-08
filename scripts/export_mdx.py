@@ -1,6 +1,7 @@
-"""Export VGM files as MML, MDX and OPM VGM for listening, without comparison."""
+"""Export VGM as MML, MDX, replay VGM and optional PDX, without comparison."""
 import argparse
 import csv
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -38,7 +39,9 @@ def _bounded(path, output):
 
 
 def _save_results(output, rows):
-    fields = ('input', 'status', 'detail', 'max_ticks', 'mml', 'mdx', 'vgm', 'error_log')
+    fields = ('input', 'status', 'detail', 'max_ticks', 'mml', 'mdx', 'vgm', 'pdx',
+              'pcm_policy', 'pcm_projection_status', 'pcm_validation_status',
+              'pcm_validation_run', 'pcm_known_losses', 'pcm_assessment', 'error_log')
     with _bounded(output / 'results.csv', output).open('w', encoding='utf-8', newline='') as stream:
         writer = csv.DictWriter(stream, fieldnames=fields, lineterminator='\n')
         writer.writeheader()
@@ -47,10 +50,14 @@ def _save_results(output, rows):
 
 def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
               max_ticks=None, psg_model=None, psg_gain=None, scc_gain=None,
-              opm_pitch_policy=None):
+              opm_pitch_policy=None, pcm_policy=None):
     source, output = Path(source).resolve(), Path(output).resolve()
     if target not in ('mdx', 'opm', 'opm-additive'):
         raise ValueError('Target must be mdx, opm or opm-additive')
+    if pcm_policy not in (None, 'strict', 'best-effort'):
+        raise ValueError('PCM policy must be strict or best-effort')
+    if pcm_policy is not None and target != 'mdx':
+        raise ValueError('--pcm-policy requires --target mdx')
     if timeout <= 0 or (max_ticks is not None and not 0 < max_ticks <= 0xffffffff):
         raise ValueError('Timeout and playback tick limit must be positive and representable')
     if not source.exists():
@@ -86,18 +93,26 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
         # Retain the input suffix to distinguish same-stem VGM and VGZ files.
         folder = _bounded(output / 'tracks' / relative, output)
         artifacts = [folder / (path.stem + suffix) for suffix in ('.mdx.mml', '.mdx', '.vgm')]
+        pdx = _bounded(folder / (path.stem + '.pdx'), output)
+        assessment = _bounded(folder / (path.stem + '.pcm.assessment.json'), output)
         error_log = _bounded(output / '_errors' / relative.with_suffix(relative.suffix + '.log'), output)
         row = dict(input=str(relative), status='', detail='', max_ticks='',
-                   mml='', mdx='', vgm='', error_log='')
+                   mml='', mdx='', vgm='', pdx='', error_log='', pcm_policy='',
+                   pcm_projection_status='', pcm_validation_status='',
+                   pcm_validation_run='', pcm_known_losses='', pcm_assessment='')
         stage = 'conversion'
         try:
             folder.mkdir(parents=True, exist_ok=True)
-            # Only our three generated files are replaced. Old binaries must
+            # Only our generated files are replaced. Old binaries must
             # not look like current successes if this run fails.
-            for artifact in artifacts:
+            for artifact in [*artifacts, pdx, assessment,
+                             folder / (path.stem + '.pcm.assessment.csv')]:
                 artifact.unlink(missing_ok=True)
             command = [sys.executable, str(ROOT / 'vgm2mml.py'), str(path),
                        '--target', target, '--outdir', str(folder), *options]
+            if target == 'mdx':
+                command.extend(['--pcm-generator', str(generator),
+                                '--pcm-policy', pcm_policy or 'strict'])
             run = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
                                  encoding='utf-8', errors='replace', timeout=timeout)
             if run.returncode:
@@ -107,7 +122,14 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
             stage = 'generation'
             limit = max_ticks if max_ticks is not None else tick_budget(path)
             row['max_ticks'] = limit
-            command = [str(generator), *(str(p) for p in artifacts), '--max-ticks', str(limit)]
+            if pdx.is_file() and artifacts[1].is_file():
+                stage = 'replay'
+                command = [str(generator), '--from-mdx', str(artifacts[1]),
+                           str(artifacts[2]), '--max-ticks', str(limit)]
+            else:
+                command = [str(generator), *(str(p) for p in artifacts), '--max-ticks', str(limit)]
+                if pdx.is_file():
+                    command.extend(['--pcm-mode', 'standard'])
             run = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
                                  encoding='utf-8', errors='replace', timeout=timeout)
             if run.returncode:
@@ -123,13 +145,32 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
             error_log.write_text(_text(error.stdout) + _text(error.stderr) + '\n' + row['detail'] + '\n',
                                  encoding='utf-8')
         except (OSError, RuntimeError, ValueError) as error:
-            row['status'] = stage + '_failed'
             row['detail'] = str(error).strip()
+            row['status'] = ('pcm_replay_unavailable' if stage in ('generation', 'replay')
+                             and 'PCM replay unavailable:' in row['detail'] else stage + '_failed')
             error_log.parent.mkdir(parents=True, exist_ok=True)
             error_log.write_text(row['detail'] + '\n', encoding='utf-8')
+        if assessment.is_file():
+            row['pcm_assessment'] = str(assessment.relative_to(output))
+            try:
+                report = json.loads(assessment.read_text(encoding='utf-8'))
+                row.update(pcm_policy=report['policy'],
+                           pcm_projection_status=report['assessment_status'],
+                           pcm_validation_status=report['validation_status'],
+                           pcm_validation_run=report['validation_run'],
+                           pcm_known_losses=len(report['known_losses']))
+                if stage == 'conversion' and report['artifact_status'] == 'blocked':
+                    row['status'] = 'pcm_projection_blocked'
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                row['status'] = 'assessment_failed'
+                row['detail'] += f'\nCannot read PCM assessment: {error}'
+                error_log.parent.mkdir(parents=True, exist_ok=True)
+                error_log.write_text(row['detail'].strip() + '\n', encoding='utf-8')
         for label, artifact in zip(('mml', 'mdx', 'vgm'), artifacts):
             if artifact.is_file() and artifact.stat().st_size:
                 row[label] = str(artifact.relative_to(output))
+        if pdx.is_file() and pdx.stat().st_size:
+            row['pdx'] = str(pdx.relative_to(output))
         if row['status'] != 'success':
             row['error_log'] = str(error_log.relative_to(output))
         rows.append(row)
@@ -158,12 +199,14 @@ def main():
     parser.add_argument('--psg-gain', type=float)
     parser.add_argument('--scc-gain', type=float)
     parser.add_argument('--opm-pitch-policy', choices=('clamp', 'error'))
+    parser.add_argument('--pcm-policy', choices=('strict', 'best-effort'),
+                        help='Native PCM projection policy; default strict')
     args = parser.parse_args()
     try:
         rows = run_batch(args.input, args.outdir, target=args.target, generator=args.generator,
                          timeout=args.timeout, max_ticks=args.max_ticks, psg_model=args.psg_model,
                          psg_gain=args.psg_gain, scc_gain=args.scc_gain,
-                         opm_pitch_policy=args.opm_pitch_policy)
+                         opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     success = sum(row['status'] == 'success' for row in rows)

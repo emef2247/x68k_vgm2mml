@@ -904,6 +904,61 @@ meaning differs.
 
 ---
 
+# Native PCM source evidence and target placement
+
+OKIM6258 encoded sample identity uses codec plus exact supplied bytes. Decoder
+reset/continuation, rational nibble rate, raw pan and source timing belong to
+playback evidence, not sample identity. Hashes index candidates; actual bytes
+resolve equality. Observed STOP/PLAY resets and a fresh-VGM initialization
+assumption must remain distinguishable. Supplied bytes and nominal duration
+do not establish measured decoder consumption or waveform equivalence.
+
+Target-independent PCM records preserve source options, blocks/commands,
+ordered B7 transfers and control/playback spans. MDX PDX bank/slot limits and
+allocation belong to the target. PCM MML text is optional: target MDX commands,
+PDX and any readable rendering must consume the same immutable binding.
+Future Z_MUSIC output must consume source evidence with its own
+placement; neither MDX text nor PDX slot numbers become the common IR.
+
+PCM validation separates target note/gate intent, IOCS/DMA playback requests,
+chip PLAY/STOP/decoder state and VGM stream scheduling. A stream stop is not
+a chip stop; cursor restart is not by itself decoder reset. Use a versioned
+MXDRV/IOCS profile and an independent playback baseline. Matching A/B after
+reusing an uncertified player is internal consistency, not standard playback
+proof. Unknown consumption/reset/effective-control fields remain unverified.
+
+MDX target projection owns fidelity/eligibility and explicit approximation;
+never rewrite common PCM evidence to fit target limits. Strict conversion
+disallows known semantic loss. An explicitly selected best-effort policy may
+emit usable MDX+PDX using a defined fallback with source-linked loss diagnostics.
+Separate pass, lossy (known target loss), unverified and fail, and keep artifact
+generation status separate. Unknown IOCS behavior is not a confirmed target
+constraint; unexpected mismatches are not acceptable best-effort loss. Known
+losses and unresolved items can coexist and must both remain visible. Lossy
+artifacts do not pass strict roundtrip validation. Target projection success
+does not certify runtime equivalence; unexecuted runtime comparisons stay
+unverified/not_run even when all requested artifacts were generated.
+
+For MXDRV 2.06+17 Rel.X5-S PCM1, held FC pan changes do not request an immediate
+IOCS update. The defined best-effort projection retains onset pan until the
+next attack, records each affected source interval, and inserts no artificial
+retrigger. F7 precedes the note whose gate keyoff it suppresses; readable ties
+follow that note. One typed PCM target command list drives both MDX construction
+and readable rendering. Native PCM1 uses the low length word, so sample lengths
+above 65535 have a known target limitation and no defined fallback yet.
+
+OPM and PCM share one MDX clock and common source end. Target-only
+normalization cannot move one chip's boundaries independently. PCM pan
+operands 1/2 have the opposite left/right meaning from MDX FM. Standard X68000
+PCM uses 4-bit encoding and 10-bit output; preserving bytes alone cannot
+represent a 12-bit decoder clamp. Keep unsupported source values inspectable
+and diagnose them in the target.
+
+See `docs/pcm_pdx.md` for current eligibility and tool limitations and
+`docs/pcm_roundtrip_validation.md` for the independent validation design.
+
+---
+
 # 22. Final Rule
 
 When uncertain whether to simplify, merge, split, normalize, quantize,

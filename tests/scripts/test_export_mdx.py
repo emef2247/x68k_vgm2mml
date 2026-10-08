@@ -1,6 +1,7 @@
 """Output-only batch export routing, continuation and stale-file handling."""
 import csv
 import gzip
+import json
 from pathlib import Path
 import struct
 import subprocess
@@ -81,7 +82,7 @@ class ExportMdxTests(unittest.TestCase):
             source, out, generator = self.prepare(Path(tmp))
             folder = out / 'tracks/a.vgm'
             folder.mkdir(parents=True)
-            for suffix in ('.mdx.mml', '.mdx', '.vgm'):
+            for suffix in ('.mdx.mml', '.mdx', '.vgm', '.pdx'):
                 (folder / ('a' + suffix)).write_bytes(b'stale')
             (folder / 'keep.txt').write_text('keep')
             def run(command, **kwargs):
@@ -94,6 +95,96 @@ class ExportMdxTests(unittest.TestCase):
             self.assertEqual(sorted(p.name for p in folder.iterdir()), ['keep.txt'])
             self.assertIn('noise unsupported', (out / rows[0]['error_log']).read_text())
             self.assertEqual(rows[0]['vgm'], '')
+            self.assertEqual(rows[0]['pdx'], '')
+
+    def test_pcm_export_reports_fourth_artifact_and_selected_helper(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, out, generator = self.prepare(Path(tmp), ('pcm.vgm', 'fm.vgm'))
+            def run(command, **kwargs):
+                result = successful_run(command, **kwargs)
+                if command[1] == str(ROOT / 'vgm2mml.py') and Path(command[2]).stem == 'pcm':
+                    folder = Path(command[command.index('--outdir') + 1])
+                    (folder / 'pcm.pdx').write_bytes(b'current encoded sample package')
+                return result
+            with patch('export_mdx.subprocess.run', side_effect=run) as calls:
+                rows = run_batch(source, out, generator=generator)
+            self.assertEqual([row['status'] for row in rows], ['success', 'success'])
+            self.assertEqual(rows[0]['pdx'], '')
+            self.assertTrue(rows[1]['pdx'].endswith('pcm.pdx'))
+            converters = [call.args[0] for call in calls.call_args_list
+                          if call.args[0][1] == str(ROOT / 'vgm2mml.py')]
+            for command in converters:
+                self.assertEqual(command[command.index('--pcm-generator') + 1], str(generator))
+            playback = [call.args[0] for call in calls.call_args_list if call.args[0][0] == str(generator)]
+            self.assertNotIn('--pcm-mode', playback[0])
+            self.assertEqual(playback[1][-2:], ['--pcm-mode', 'standard'])
+            with (out / 'results.csv').open(encoding='utf-8', newline='') as stream:
+                self.assertEqual(list(csv.DictReader(stream))[1]['pdx'], rows[1]['pdx'])
+
+    def test_pcm_replay_limit_keeps_compiled_pair_and_concrete_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, out, generator = self.prepare(Path(tmp), ('pcm.vgm',))
+            def run(command, **kwargs):
+                if command[1] == str(ROOT / 'vgm2mml.py'):
+                    successful_run(command, **kwargs)
+                    folder = Path(command[command.index('--outdir') + 1])
+                    (folder / 'pcm.pdx').write_bytes(b'PDX')
+                    return subprocess.CompletedProcess(command, 0, '', '')
+                Path(command[2]).write_bytes(b'compiled standard MDX')
+                return subprocess.CompletedProcess(command, 1, '',
+                                                   'PCM replay unavailable: pinned helper limitation')
+            with patch('export_mdx.subprocess.run', side_effect=run):
+                row = run_batch(source, out, generator=generator)[0]
+            self.assertEqual(row['status'], 'pcm_replay_unavailable')
+            self.assertTrue(row['mml'] and row['mdx'] and row['pdx'])
+            self.assertEqual(row['vgm'], '')
+            self.assertIn('PCM replay unavailable:', (out / row['error_log']).read_text())
+
+    def test_canonical_pcm_pair_is_replayed_without_recompiling_readable_pcm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, out, generator = self.prepare(Path(tmp), ('pcm.vgm',))
+            def run(command, **kwargs):
+                if command[1] == str(ROOT / 'vgm2mml.py'):
+                    successful_run(command, **kwargs)
+                    folder = Path(command[command.index('--outdir') + 1])
+                    (folder / 'pcm.pdx').write_bytes(b'PDX')
+                    (folder / 'pcm.mdx').write_bytes(b'typed PCM MDX')
+                    (folder / 'pcm.pcm.assessment.json').write_text(json.dumps(dict(
+                        policy='best-effort', assessment_status='lossy', validation_status='unverified',
+                        validation_run='not_run', artifact_status='generated', known_losses=[{}])))
+                    return subprocess.CompletedProcess(command, 0, '', '')
+                self.assertEqual(command[1], '--from-mdx')
+                self.assertEqual(Path(command[2]).read_bytes(), b'typed PCM MDX')
+                return subprocess.CompletedProcess(command, 1, '', 'PCM replay unavailable: guarded')
+            with patch('export_mdx.subprocess.run', side_effect=run) as calls:
+                row = run_batch(source, out, generator=generator, pcm_policy='best-effort')[0]
+            self.assertEqual(calls.call_args_list[0].args[0][-2:], ['--pcm-policy', 'best-effort'])
+            self.assertEqual(row['status'], 'pcm_replay_unavailable')
+            self.assertEqual(row['pcm_projection_status'], 'lossy')
+            self.assertEqual(row['pcm_validation_status'], 'unverified')
+            self.assertEqual(row['pcm_validation_run'], 'not_run')
+            self.assertEqual(row['pcm_known_losses'], 1)
+            self.assertTrue(row['mml'] and row['mdx'] and row['pdx'] and row['pcm_assessment'])
+            self.assertFalse(row['vgm'])
+
+    def test_blocked_strict_result_has_loss_diagnostics_and_skips_player(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, out, generator = self.prepare(Path(tmp), ('pcm.vgm',))
+            def run(command, **kwargs):
+                folder = Path(command[command.index('--outdir') + 1])
+                (folder / 'pcm.pcm.assessment.json').write_text(json.dumps(dict(
+                    policy='strict', assessment_status='lossy', validation_status='unverified',
+                    validation_run='not_run', artifact_status='blocked', known_losses=[{}])))
+                return subprocess.CompletedProcess(command, 2, '', 'known held-pan loss')
+            with patch('export_mdx.subprocess.run', side_effect=run) as calls:
+                row = run_batch(source, out, generator=generator)[0]
+            self.assertEqual(calls.call_count, 1)
+            self.assertEqual(row['status'], 'pcm_projection_blocked')
+            self.assertEqual(row['pcm_projection_status'], 'lossy')
+            self.assertEqual(row['pcm_validation_status'], 'unverified')
+            self.assertEqual(row['pcm_known_losses'], 1)
+            self.assertTrue(row['pcm_assessment'])
+            self.assertFalse(row['mdx'] or row['pdx'])
 
     def test_failed_generation_retains_current_mml_and_partial_mdx(self):
         with tempfile.TemporaryDirectory() as tmp:

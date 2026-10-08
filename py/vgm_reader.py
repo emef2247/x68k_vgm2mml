@@ -776,6 +776,7 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
               loop_metadata: dict | None = None, dump_loop: bool = False,
               include_vgmticks: bool = False,
               opm_metadata: dict | None = None,
+              pcm_metadata: dict | None = None,
               dump_opm_segments: bool = False) -> tuple[str, str, str, str, str, str, str, str]:
     """
     Parse a VGM file and write PSG/SCC/OPLL traces plus declared OPM raw writes.
@@ -807,6 +808,11 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
 
     # ── Header ──────────────────────────────────────────────────
     header = read_vgm_header(raw)
+    if pcm_metadata is not None:
+        from okim6258 import analyze
+        pcm_metadata.update(analysis=analyze(raw),
+                            clock_raw=header['okim6258_clock_raw'],
+                            flags=header['okim6258_flags'])
     vgm_version = header['version']
     data_start = header['data_start']
     # Clock zero means absent; extended fields never read command bytes.

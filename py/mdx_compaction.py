@@ -114,7 +114,7 @@ def compact(text, track, *, durations=True):
                                       reason='same ordered 128-tick rest chunks', bytes_saved=saved))
                 index += 1
                 continue
-        if re.fullmatch(r'[a-g][+#-]?(?:%256|1)', token):
+        if re.fullmatch(r'(?:[a-g][+#-]?|n\d+,)(?:%256|1)', token):
             stop = index
             while (stop + 1 < len(retained) and retained[stop][1] == token
                    and retained[stop+1][1] == '&'):

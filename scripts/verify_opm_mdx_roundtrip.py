@@ -32,11 +32,10 @@ def source_facts(path, *, include_pcm=False):
     # Reuse the native reader's version-aware clock/variant interpretation.
     trace = _OpmTrace(raw, struct.unpack_from('<I', raw, 8)[0])
     header=read_vgm_header(raw)
-    pcm_clock=(int.from_bytes(raw[0x98:0x9c],'little') if header['version']>=0x161
-               and header['data_start']>=0x9c else 0)
+    pcm_clock=header['okim6258_clock_raw'] & 0x3fffffff
     result=dict(clock_hz=trace.clock_hz, chip_type=trace.chip_type, dual_chip=trace.dual_chip)
     if include_pcm:
-        result.update(source_pcm_present=bool(pcm_clock), comparison_scope='OPM only; PCM/PDX is not projected')
+        result.update(source_pcm_present=bool(pcm_clock), comparison_scope='OPM only; PCM is not compared')
     return result
 
 
@@ -128,7 +127,8 @@ def main():
                 raise ValueError('MDX control replay requires one 4 MHz YM2151; source clock/state is not retuned')
             mml, source_analysis, projection = convert(source, folder, dump_passes=True, track_layout=args.track_layout,
                                                         notation=args.notation, loops=not args.no_loops,title=args.title,
-                                                        normalize_lengths=args.normalize_lengths)
+                                                        normalize_lengths=args.normalize_lengths,
+                                                        pcm_generator=args.generator)
             tolerance = 6
             if args.normalize_lengths:
                 correction = json.loads((folder / (source.stem + '.mdx.normalization.json')).read_text(encoding='utf-8'))

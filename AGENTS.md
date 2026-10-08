@@ -2,7 +2,7 @@
 
 ## What this repo is
 - Convert X68000 OPM/YM2151 VGM into inspectable structured MDX MML; retain PSG/SCC/OPLL to MGSDRV compatibility.
-- Main native source: OPM/YM2151. Compatibility sources: PSG, YM2413/OPLL, and SCC.
+- Main native sources: OPM/YM2151 and scoped OKIM6258 PCM. Compatibility sources: PSG, YM2413/OPLL, and SCC.
 - Main language: Python 3.
 - Primary working environment: WSL.
 - Goal: preserve observable VGM/chip behavior and make every important transformation inspectable, not merely produce compact or musically cleaner MML.
@@ -21,6 +21,8 @@
 - `py/opm.py`: immutable native OPM state/Segment types, Segment construction, and state/Segment CSV dumping.
 - `py/opm_conversion.py`: native OPM-to-MDX pipeline orchestration.
 - `py/opm_mdx.py`, `py/opm_mdx_music.py`: native OPM target projection and structured MDX rendering.
+- `py/okim6258.py`: backend-neutral PCM source evidence, encoded samples and playback spans.
+- `py/pcm_mdx.py`: standard PCM1 binding/projection and externally packed PDX byte verification.
 - `py/opm_target_state.py`: explicitly projected OPM state/write trajectories and interval CSVs for PSG/SCC targets.
 - `py/opm_performance.py`, `py/opm_target_vgm.py`: inferred PSG/SCC musical gates and inspectable OPM target VGM feeding the ordinary OPM converter.
 - `py/opll.py`, `py/opll_mml.py`: OPLL processing and MML generation.
@@ -32,6 +34,7 @@
 - `tests/scripts/`: automated checks and shared test helpers; `tests/fixtures/`: source/reference material.
 - `docs/project_knowledge.md`: project design context and transformation rules. Read before changing conversion behavior.
 - `docs/opm_segments.md`: native OPM state/Segment fields, source evidence and validation rules.
+- `docs/pcm_pdx.md`: PCM eligibility, pass artifacts, shared clock, external-tool limits and future backend boundary.
 - `docs/psg_scc_segments.md`: current PSG/SCC pipeline, Segment fields and validation limits.
 - `inputs/`: source/reference material if present locally. Do not commit private game-derived material.
 - `outputs/`: generated artifacts and intermediate results if present locally.
