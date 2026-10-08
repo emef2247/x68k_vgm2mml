@@ -108,6 +108,8 @@ class AdditivePlan:
     voices: dict
     source_end: int
     settings: dict
+    # Optional result of the separate musical projection and canonical OPM path.
+    structured_context: object = None
 
     @property
     def end_tick(self):
@@ -154,6 +156,11 @@ class AdditivePlan:
         voice_rows = [asdict(v) for v in self.voices.values()]
         columns = tuple(dict.fromkeys(k for r in voice_rows for k in r))
         csv_file('.opm_voices.csv', [{k: r.get(k, '') for k in columns} for r in voice_rows])
+        from opm_target_state import build_target_trajectory
+        trajectory = build_target_trajectory(self.scheduled_writes(), end_tick=self.end_tick,
+                                             source_end_vgmticks=self.source_end)
+        trajectory.dump(state_csv=out / (stem + '.opm_target.state.csv'),
+                        intervals_csv=out / (stem + '.opm_target.intervals.csv'))
         report = dict(self.settings, source_end_vgmticks=self.source_end,
                       end_mdx_tick=self.end_tick, returned_end_expected=projected_samples(self.end_tick),
                       target_writes=len(self.writes), source_rows=len(self.rows), voices=len(self.voices),
@@ -162,7 +169,8 @@ class AdditivePlan:
                       psg_volume_model=('fixed TL curve with 8-step headroom' if self.settings.get('psg_model') == 'fm'
                                         else 'approximate 3 dB per level'),
                       range_clamped_rows=sum('clamped' in r['approximation'] for r in self.rows),
-                      scc_volume_model='linear volume/15', source_loop_policy='one stored traversal')
+                      scc_volume_model='linear volume/15', source_loop_policy='one stored traversal',
+                      projected_state_trajectory=trajectory.summary())
         (out / (stem + '.opm_target.json')).write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 
 

@@ -85,6 +85,15 @@ class MdxCompactionTests(unittest.TestCase):
         self.assertIn('[c1 &]8', result)
         self.assertEqual(report[-1]['action'], 'tied_chunks')
 
+    def test_pcm_numeric_notes_fold_with_the_same_sample_and_hold_sequence(self):
+        original = 'n95,1 & ' * 8 + 'n95,8'
+        result, report = compact(original, 'P')
+        self.assertEqual(expanded_tokens(original), expanded_tokens(result))
+        self.assertIn('[n95,1 &]8', result)
+        self.assertEqual(report[-1]['action'], 'tied_chunks')
+        different = 'n0,1 & n1,1 & ' * 4 + 'n0,8'
+        self.assertEqual(expanded_tokens(different), expanded_tokens(compact(different, 'P')[0]))
+
     def test_different_pitches_or_raw_controls_stop_duration_run(self):
         original = 'c%256 & d%256 & y40,78 c%256 & c%256'
         self.assertEqual(tokens(compact(original, 'A')[0]), tokens(original))

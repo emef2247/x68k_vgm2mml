@@ -63,7 +63,7 @@ def source_plan(keys):
     return SourceLoopPlan(structure.tree,keys,structure)
 
 
-def infer_clock(segments, end_vgmticks):
+def infer_clock(segments, end_vgmticks, *, additional_times=()):
     """Choose a score clock only when every observed boundary remains intact.
 
     The six-sample bound is the existing @t255 projection resolution. It is
@@ -72,7 +72,10 @@ def infer_clock(segments, end_vgmticks):
     Equivalent clocks are retained in the report; conventional note lengths
     and proximity to quarter=120 only choose notation among safe candidates.
     """
-    times = sorted({0, end_vgmticks} | {s.vgmticks for s in segments})
+    additional_times = tuple(additional_times)
+    if any(not isinstance(t, int) or not 0 <= t <= end_vgmticks for t in additional_times):
+        raise ValueError('Additional source clock boundaries must be within the song')
+    times = sorted({0, end_vgmticks} | {s.vgmticks for s in segments} | set(additional_times))
     attacks = {}
     for s in segments:
         if s.rising_mask:
@@ -99,7 +102,9 @@ def infer_clock(segments, end_vgmticks):
     chosen = max(candidates,key=lambda c:(c['conventional_intervals'],
                  -abs(c['inferred_bpm']-120), c['multiplier']))
     return dict(chosen=chosen, candidates=candidates,
-                basis='all native control times and common song end; notation tie-break only')
+                basis=('all OPM and PCM control times and common song end; notation tie-break only'
+                       if additional_times else
+                       'all native control times and common song end; notation tie-break only'))
 
 
 def tone_and_level(state):
@@ -118,10 +123,15 @@ def level_for_tone(state, tone):
     ops,alg,_,_ = tone
     carrier = CARRIERS[alg]
     observed = tuple(op.tl for op in state.operators)
-    deltas = {observed[i]-ops[i][5] for i in range(4) if carrier & (1<<i)}
-    if len(deltas)!=1:
+    deltas = {observed[i]-ops[i][5] for i in range(4)
+              if carrier & (1<<i) and observed[i]<127}
+    minimum = max((127-ops[i][5] for i in range(4)
+                   if carrier & (1<<i) and observed[i]==127),default=0)
+    if len(deltas)>1:
         return None
-    delta = deltas.pop()
+    delta = deltas.pop() if deltas else minimum
+    if delta<minimum:
+        return None
     expected = tuple(min(127,row[5]+delta) if carrier & (1<<i) else row[5]
                      for i,row in enumerate(ops))
     raw_matches=all(value==expected[(reg-0x60)//8] for reg,value in state.channel_registers
@@ -174,7 +184,7 @@ class MusicalMdx:
         flat = [u for units in self.units.values() for u in units]
         depth=maximum=0
         for line in self.text.splitlines():
-            if not (len(line)>1 and line[0] in 'ABCDEFGH' and line[1]==' '): continue
+            if not (len(line)>1 and line[0] in self.units and line[1]==' '): continue
             for ch in line:
                 if ch=='[': depth+=1; maximum=max(maximum,depth)
                 elif ch==']': depth-=1
@@ -183,7 +193,7 @@ class MusicalMdx:
                     raw_units=sum(bool(u.fallback_reason) for u in flat), voices=len(self.voices),
                     fallback_reasons=dict(Counter(u.fallback_reason for u in flat if u.fallback_reason)),
                     emitted_loop_commands=sum(line.count('[') for line in self.text.splitlines()
-                        if len(line)>1 and line[0] in 'ABCDEFGH' and line[1]==' '),
+                        if len(line)>1 and line[0] in self.units and line[1]==' '),
                     max_loop_depth=maximum,
                     applied_loops=sum(r['status']=='applied' for rows in self.reports.values() for r in rows),
                     applied_inner_loops=sum(r['status']=='applied' for r in self.inner_reports),
@@ -211,12 +221,14 @@ class MusicalMdx:
                 row['trajectory']=json.dumps([(offset,reg,data,asdict(state)) for offset,reg,data,state in u.trajectory],separators=(',',':'))
                 for field in ('source_event_ids','source_segment_ids','loop_path'):
                     row[field]=json.dumps(row[field],separators=(',',':'))
+                if 'source_pcm_playback_ids' in row:
+                    row['source_pcm_playback_ids']=json.dumps(row['source_pcm_playback_ids'],separators=(',',':'))
                 rows.append(row)
                 for sid in u.source_segment_ids: annotation.setdefault(sid,[]).append(row['unit_id'])
             self.plans[track].dump(str(prefix)+f'.{track}.loops.csv',
                                   [u.source_segment_ids for u in units],self.reports[track])
         with Path(str(prefix)+'.units.csv').open('w',newline='',encoding='utf-8') as stream:
-            fields=list(rows[0]) if rows else ['unit_id']
+            fields=list(dict.fromkeys(field for row in rows for field in row)) if rows else ['unit_id']
             writer=csv.DictWriter(stream,fieldnames=fields);writer.writeheader();writer.writerows(rows)
         with Path(str(prefix)+'.voices.csv').open('w',newline='',encoding='utf-8') as stream:
             writer=csv.writer(stream);writer.writerow(('voice_id','algorithm','feedback','key_mask','operator_rows'))
@@ -238,7 +250,8 @@ class MusicalMdx:
                 target.replace(path)
 
 
-def build_music(projection, segments, *, title='OPM music', loops=True):
+def build_music(projection, segments, *, title='OPM music', loops=True,
+                additional_tracks=None, additional_headers=()):
     by_event = {}
     for s in segments:
         if s.source_event_id is not None:
@@ -402,12 +415,31 @@ def build_music(projection, segments, *, title='OPM music', loops=True):
         if cursor<projection.end_mdx_tick:
             units.append(make([],cursor,projection.end_mdx_tick,'rest',timed('r',projection.end_mdx_tick-cursor)))
         unit_tracks[track]=tuple(units)
+    if additional_tracks:
+        if set(unit_tracks).intersection(additional_tracks):
+            raise ValueError('Additional MDX tracks overlap the native OPM tracks')
+        unit_tracks.update(additional_tracks)
+    return render_music_tracks(unit_tracks,tuple(voices),title=title,
+        sample_multiplier=projection.sample_multiplier,loops=loops,inner_reports=inner_reports,
+        additional_headers=additional_headers,
+        comments=(('; Musical OPM/PCM notes and source-linked control trajectories.' if additional_tracks
+                   else '; Musical OPM notes and source-linked control trajectories.'),
+                  f'; Tempo inferred from VGM; @t{256-projection.sample_multiplier} = {256*projection.sample_multiplier} us/tick.'))
+
+
+def render_music_tracks(unit_tracks, voices, *, title, sample_multiplier=1,
+                        loops=True, inner_reports=(), comments=None, additional_headers=()):
+    """Assemble track units with exact loops and shared MDX compaction.
+
+    Units supply command, unlooped_command and key; their source evidence
+    remains owned by the caller. Voice order determines emitted voice IDs.
+    """
+    voices=tuple(voices)
     title=''.join(c for c in ' '.join(str(title).replace('"',"'").split()) if ord(c)>=32 and ord(c)!=127)
-    header=[f'#title "{title}"','; Musical OPM notes and source-linked control trajectories.',
-            f'; Tempo inferred from VGM; @t{256-projection.sample_multiplier} = {256*projection.sample_multiplier} us/tick.']
-    for (ops,alg,fb,mask),vid in voices.items():
+    header=[f'#title "{title}"',*(comments or ()),*additional_headers]
+    for vid,(ops,alg,fb,mask) in enumerate(voices):
         header += [f'@{vid} = {{',*['  '+','.join(map(str,ops[i]))+',' for i in (0,2,1,3)],f'  {alg},{fb},{mask}','}']
-    header += ['/* Track A */', f'A @t{256-projection.sample_multiplier}']
+    header += ['/* Track A */', f'A @t{256-sample_multiplier}']
     def wrapped(track,body):
         lines=[];line=track
         for word in body.split():
