@@ -101,9 +101,14 @@ including muted intervals, exact Key command times/values and known state just
 before/after every Key. Ordinary MDX expansion may change non-Key write order;
 it is not raw-stream equality or source waveform equivalence.
 
-Minimum public validation covers three tonal inputs and nine native OPM inputs.
-All-silent input currently fails the structured route and is the first restart
-task. Local song capacity, listening and MMDSP GUI behavior still need validation.
+Public checks cover tonal inputs, silent-only projection and native OPM
+regressions. The 2026-10-09 private export audit generated 57/82 triples after
+fixing large provenance CSV reads; 24 noise/hardware-EG inputs remain unsupported
+and one input exceeds the compiler's track-offset limit. Artifact generation
+does not imply semantic verification: one additional representative fails the
+strict state-at-Key-Off check despite matching positive-duration states.
+Native MMDSP display behavior and source loop seams remain unverified. See
+`field_notes/2026-10-09_psg_export_data_audit.md` for evidence and next data work.
 
 For an external compiler/player roundtrip and a listening catalog:
 
