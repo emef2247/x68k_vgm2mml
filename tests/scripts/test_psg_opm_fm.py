@@ -114,7 +114,8 @@ class FmTargetTests(unittest.TestCase):
                                   '--target','opm','--outdir',str(Path(tmp)/'main')],
                                  capture_output=True,text=True)
             self.assertEqual(run.returncode,0,run.stderr)
-            self.assertEqual([p.name for p in (Path(tmp)/'main').iterdir()],['volume_sweep.mdx.mml'])
+            self.assertEqual(sorted(p.name for p in (Path(tmp)/'main').iterdir()),
+                             ['volume_sweep.conversion.json', 'volume_sweep.mdx.mml', 'volume_sweep.mdx.normalization.json'])
             self.assertIn('PSG model=fm', (Path(tmp)/'main/volume_sweep.mdx.mml').read_text())
 
 

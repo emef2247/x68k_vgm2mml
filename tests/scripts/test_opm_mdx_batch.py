@@ -18,6 +18,21 @@ from test_opm_reader import vgm
 
 
 class OpmMdxBatchTests(unittest.TestCase):
+    def test_roundtrip_forwards_auto_on_and_off_normalization_choices(self):
+        for flags, expected in [([], None), (['--normalize-lengths'], True), (['--no-normalize-lengths'], False)]:
+            with self.subTest(flags=flags), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                source = root / 'source.vgm'
+                source.write_bytes(vgm(bytes.fromhex('54 08 78 62 54 08 00')))
+                generator = root / 'helper'
+                generator.touch()
+                argv = ['verify', str(source), '--generator', str(generator), '--outdir', str(root / 'out'), *flags]
+                with patch.object(sys, 'argv', argv), patch.object(batch, 'generate', return_value=SimpleNamespace(events=[])), \
+                        patch.object(batch, 'convert', side_effect=ValueError('stop after option resolution')) as convert, \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    self.assertEqual(batch.main(), 1)
+                self.assertIs(convert.call_args.kwargs['normalize_lengths'], expected)
+
     def test_mxc_roundtrip_compiles_then_replays_without_recompiling_mml(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

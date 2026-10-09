@@ -31,7 +31,10 @@ require the helper; their source control evidence is still available in dumps.
   deduplication, resampling or ADPCM re-encoding is used.
 - PCM-only songs and native OPM+PCM songs use the same inferred MDX clock and
   common source end. The existing six-VGM-sample boundary error bound includes
-  PCM start/end and controls. Normalization is rejected for PCM for now.
+  PCM start/end and controls. Structured MDX normalization defaults ON, but
+  PCM-containing inputs retain this baseline shared clock until PCM-aware
+  correction is verified. Non-adoption and its reason are recorded in
+  `*.mdx.normalization.json`; they are not PCM eligibility/runtime failure.
 
 Other modes are diagnosed before a successful MML is produced. These include
 VGM data-bank/stream playback, 3-bit encoding, 12-bit output, multiple chips,

@@ -38,6 +38,21 @@ def successful_run(command, **kwargs):
 
 
 class ExportMdxTests(unittest.TestCase):
+    def test_normalization_choice_is_forwarded_without_resolving_the_default(self):
+        for requested, flag in [(None, None), (True, '--normalize-lengths'), (False, '--no-normalize-lengths')]:
+            with self.subTest(requested=requested), tempfile.TemporaryDirectory() as temporary:
+                source, out, generator = self.prepare(Path(temporary), ('a.vgm',))
+                with patch('export_mdx.subprocess.run', side_effect=successful_run) as run:
+                    row = run_batch(source, out, generator=generator, compiler='mmlx',
+                                    normalize_lengths=requested)[0]
+                self.assertEqual(row['status'], 'success')
+                command = run.call_args_list[0].args[0]
+                if flag:
+                    self.assertIn(flag, command)
+                else:
+                    self.assertNotIn('--normalize-lengths', command)
+                    self.assertNotIn('--no-normalize-lengths', command)
+
     def test_default_mxc_compiles_then_replays_existing_mdx(self):
         with tempfile.TemporaryDirectory() as tmp:
             source, out, generator = self.prepare(Path(tmp), ('a.vgm',))

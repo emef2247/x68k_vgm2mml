@@ -11,19 +11,19 @@ the original PSG/SCC input. No composite-channel merging is performed.
 For MDX MML through the main entry point:
 
 ```sh
-python vgm2mml.py INPUT.vgm --target opm --outdir outputs/opm/NAME
+python vgm2mml.py INPUT.vgm --outdir outputs/opm/NAME
 ```
 
 The OPM target uses an independently implemented **FM/feedback PSG tone profile**
 by default. `--psg-model additive` selects the previous four-sine PSG model.
 SCC continues to use waveform-derived additive synthesis in either case:
 vgm-conv's AY-to-OPM profile is not a mapping for arbitrary SCC waves.
-`--target opm-additive` explicitly selects the additive model. The main entry
-point defaults to native OPM input with `--target mdx`; use `--target opm`
-for PSG/SCC input.
+The main entry point defaults to MDX format and selects the projection from
+actual source commands. Deprecated `--target opm`/`opm-additive` aliases remain
+available with their original model/gain/pitch defaults.
 
 ```sh
-python vgm2mml.py INPUT.vgm --target opm --psg-model additive --outdir outputs/opm/ADDITIVE
+python vgm2mml.py INPUT.vgm --psg-model additive --outdir outputs/opm/ADDITIVE
 ```
 
 `--opm-pitch-policy clamp` bounds out-of-range pitch to the closest nominal
@@ -67,13 +67,17 @@ trace/interval counts and projected origin. These held-oscillator writes remain
 the baseline for musical interpretation. Source PSG/SCC Segments and established
 target CSVs are retained.
 
-Only `<stem>.mdx.mml` remains by default. Add `--dump-passes` to retain native
+`<stem>.mdx.mml` and compact conversion/normalization JSON reports remain by default.
+Add `--dump-passes` to retain native
 PSG/SCC Segments and target mapping/voice/write CSVs. `--title` and GD3 title
 selection are shared with the main entry point. `--psg-gain` and `--scc-gain`
 adjust the two source-chip gains. Structured notation is the default;
-`--notation registers` selects the old held-oscillator register replay.
-`--no-loops` disables finite repeat folding. Length normalization and MGSDRV
-allocation/compression switches remain unsupported for this target.
+`--notation registers` selects the old held-oscillator register compatibility
+path. Its projection mode is an internal concept, separate from synthesis model
+and rendering; there is no public articulation switch.
+`--no-loops` disables finite repeat folding. Structured target-clock correction
+defaults ON, with `--no-normalize-lengths` to disable it. MGSDRV
+allocation/compression switches do not apply to this projection.
 
 ### Musical projection and the ordinary OPM pipeline
 
@@ -95,8 +99,12 @@ stream to unchanged PSG/SCC evidence, including nonchange writes.
 
 The mapping distinguishes original sample, projected OPM sample and final MDX
 sample. The two existing six-sample projection bounds combine to a checked
-12-sample bound from original evidence to final target timing. This does not
-enable length normalization. Structured verification checks all known states,
+12-sample bound from original evidence to final baseline timing. Accepted
+normalization additionally checks every original performance boundary and source
+loop boundary through both lattices; its explicit cumulative bound is the actual
+MDX correction bound plus the intermediate six-sample projection bound. Rejected
+correction retains structured baseline timing and candidate evidence. Structured
+verification uses the recorded correction bound and checks all known states,
 including muted intervals, exact Key command times/values and known state just
 before/after every Key. Ordinary MDX expansion may change non-Key write order;
 it is not raw-stream equality or source waveform equivalence.

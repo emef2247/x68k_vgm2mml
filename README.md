@@ -8,26 +8,51 @@ PSG/SCCのVGMをOPM向けに変換し、MDX MMLを生成する経路もありま
 ## 通常変換
 
 ```bash
-python vgm2mml.py input.vgm --outdir outputs/input
-python vgm2mml.py input.vgm --outdir outputs/input --dump-passes
+python vgm2mml.py input.vgm --outdir OUTPUT
 ```
 
-既定は `--target mdx`（ネイティブOPM入力）で、`outputs/input/input.mdx.mml` を生成します。
+既定の出力形式はMDXで、`OUTPUT/input.mdx.mml`を生成します。
+実際に使われたVGMコマンドから、OPM/PCM入力とPSG/SCC→OPM投影の標準経路を選びます。
+未使用のclock宣言だけでは経路を変更しません。未対応の使用音源・組み合わせ・ストリームは明示的に診断します。
 `--outdir` を省略すると入力ファイルと同じディレクトリに出力します。
 fixtureの検証には必ず別の出力先を指定してください。OPMのみのMML生成にRustコンパイラは不要です。
 PCMを含む入力では、下記の外部helperをビルドしてMDXとPDXも生成します。
 
-| 選択 | 入力と出力 |
+| 入力 | 自動選択する経路 |
 |---|---|
-| `--target mdx`（既定） | OPM/YM2151 → MDX MML。対応するOKIM6258を含む場合はMDX＋PDXも生成 |
-| `--target opm` | PSG/SCC → OPM MDX MML（PSGはFMモデル） |
-| `--target opm-additive` | PSG/SCC → OPM MDX MML（PSGは加算モデル） |
+| OPM/YM2151 | 通常のOPM → structured MDX MML |
+| 対応するOKIM6258（OPMとの併用も可） | 共通clockによるMDX MML／MDX＋PDX |
+| 対応するPSG/SCC | PSGはFM、SCCは加算モデルでOPMへ投影 → 通常のstructured MDX生成 |
 
-ネイティブOPM入力には `--target mdx`、PSG/SCC入力には `--target opm` を使用します。
+structured MDXでは安全な長さ補正を既定で試みます。採用できない場合もstructuredのまま、
+補正前のclock/timing projectionを使います。`input.mdx.normalization.json`に採否・理由・選択clockを、
+`input.conversion.json`に音源検出・経路・モデルを記録します。
+同名の参照MDX／PDXは通常のMML変換で削除しません。前回のPCM生成記録とhashが一致する
+成果物だけを再実行時に消去します。所有を確認できないMDX／PDXがPCM生成先にある場合は、
+別の`--outdir`を指定してください。保存した既存ファイルは診断に記録し、今回の生成物とは扱いません。
+`--title "曲名"`でタイトルを指定でき、省略時はGD3、次にファイル名を使います。
+`--gd3-language ja|en`でGD3の優先言語を指定できます。
 
-## MDXオプションと中間結果
+## Compatibility options
 
-以下はOPM/YM2151入力の `--target mdx` に対するオプションです。
+MGSDRV形式を使う場合は明示します。既存のPSG/SCC/OPLL互換処理と補正OFFの既定値を維持します。
+
+```bash
+python vgm2mml.py input.vgm --target mgs --outdir OUTPUT
+```
+
+`--name`、`--alloc`、`--raw-ticks`、`--sync-min-gap`、`--psg-input`、`--scc-input`、
+`--vgmticks`、`--legacy-macros`、`--legacy-loops`はMGSDRV用です。
+`--legacy-loops`は旧ループ／エンベロープ処理の選択で、MDXの有限反復圧縮とは別の機能です。
+`--enhance-macros`は既定ONのためdeprecatedです。
+
+旧`--target opm`／`opm-additive`は警告付き互換別名として残します。
+前者は通常のMDX指定、後者は`--psg-model additive`へ移行してください。
+モデル別gainとpitch policy、registersの従来保持方式は維持しますが、structuredの補正は既定ONになります。
+
+## Advanced MDX options
+
+通常は指定不要です。適用できるsourceとnotationは`--help`でも確認できます。
 
 - `--notation structured`：音符・制御軌跡・有限ループを使った表記（既定）。
 - `--notation legacy`：以前のハイブリッド表記。
@@ -35,23 +60,37 @@ PCMを含む入力では、下記の外部helperをビルドしてMDXとPDXも�
 - `--track-layout channels`：A〜Hのチャンネル別出力（既定）。
 - `--track-layout conductor`：単一制御トラック。`--notation registers`と併用。
 - `--no-loops`：有限ループの生成を無効化。
-- `--normalize-lengths`：構造化MDXの長さを、推定した共通クロックに補正。既定では補正しません。
-- `--title "曲名"`：タイトルを指定。省略時はGD3、次にファイル名。`--gd3-language ja|en`で優先言語を指定。
-- `--dump-passes` / `--debug`：中間CSVと診断レポートを保存。
+- `--normalize-lengths`／`--no-normalize-lengths`：structured MDXのtarget-clock補正を有効／無効化。既定ON。legacy/registersでは既定OFF。
+- `--psg-model fm|additive`：PSG→OPMのモデルを選択。既定FM、SCCは加算モデル。
+- `--psg-gain`／`--scc-gain`：PSG/SCC→OPMの投影音量を調整。
+- `--opm-pitch-policy clamp|error`：PSG/SCC投影の音程範囲方針。既定FM=clamp、加算=error。
+- `--pcm-policy strict|best-effort`：PCMのMDX投影における既知損失の扱い。既定strict。補正の採否とは独立。
+
+## Diagnostic / development optionsと中間結果
+
+```bash
+python vgm2mml.py input.vgm --outdir OUTPUT --dump-passes
+```
+
+`--dump-passes`で中間CSVと診断レポートを保存します。`--debug`はMDXでは同じ診断保存、
+MGSDRVでは全チップ別MMLの保存も行います。`--pcm-generator PATH`は外部PCM helperの配置指定です。
 
 OPMではraw register CSV、state CSV、統合Segment CSV、`*.mdx.controls.csv`、
 `*.mdx.structure.*`（構造化表記時）、`*.mdx.timing.json`を確認できます。
 Raw → State → Segment → Targetの境界とsource sample情報を維持します。
 各トラックは `/* Track A */` などのコメントで始まります。音符の長さは正確に表せる音価・付点を優先し、残りは `%N` で表します。長音はタイで接続します。
 オクターブと音量は、直前の値が既知で差が1〜2段なら、長くならない相対表記 `<` / `>` / `(` / `)` を使います。ループ先頭や音色再ロード後など、状態を確定できない箇所には必要な絶対指定を残します。
-長さの補正は次のように指定します。
+長さ補正を明示的に無効化する場合は次のように指定します。
 
 ```bash
-python vgm2mml.py input.vgm --outdir outputs/input --normalize-lengths --dump-passes
+python vgm2mml.py input.vgm --outdir OUTPUT --no-normalize-lengths --dump-passes
 ```
 
-補正前のMMLと補正量・採用理由を保存し、元のSegment・レジスタ値・時刻を維持します。
-全境界の補正量や順序を確認できない曲は通常出力に戻します。詳細は [MDXの音価と長さ補正](docs/opm_note_lengths.md) を参照してください。
+補正量・採否理由をJSONに保存し、採用時は`--dump-passes`で補正前MMLも保存します。
+元のSegment・レジスタ値・時刻を維持します。
+全境界の補正量や順序を確認できない曲は同じstructuredの補正前投影を使います。
+PCMを含む場合も、共有clockの安全性を確認できない補正は見送り、補正ONだけを理由にエラーにしません。
+詳細は [MDXの音価と長さ補正](docs/opm_note_lengths.md) を参照してください。
 MDX出力はマクロ化を行いません。有限反復には対応していますが、VGMヘッダーの曲ループ宣言を
 MMLの曲ループとして生成する処理は未対応です。宣言された境界は中間CSVに記録します。
 既存MDXから独立した構造化MMLを得る手順と検証範囲は [MDX参照MML](docs/mdx_reference_mml.md) を参照してください。
@@ -59,8 +98,8 @@ MMLの曲ループとして生成する処理は未対応です。宣言され�
 ## PSG/SCC → OPM
 
 ```bash
-python vgm2mml.py input.vgm --target opm --outdir outputs/input-opm --dump-passes
-python vgm2mml.py input.vgm --target opm --psg-model additive --outdir outputs/input-additive --dump-passes
+python vgm2mml.py input.vgm --outdir outputs/input-opm --dump-passes
+python vgm2mml.py input.vgm --psg-model additive --outdir outputs/input-additive --dump-passes
 ```
 
 既定のPSG音色はFM/フィードバックモデルです。`--psg-model additive`で加算モデルを選べます。
@@ -70,6 +109,8 @@ SCCは波形から求めた加算モデルを使用します。`--psg-gain`と`-
 投影OPM VGMを通常のOPM→MDX生成パスへ渡します。音程・音量の変化だけでは再発音しません。
 推定発音の導入により、従来の保持方式とは発振位相が変わります。
 `--notation registers`で従来の保持／レジスタ制御表記を選べます。
+保持方式は内部のcompatibility projection modeとして分離し、publicの発音方式オプションは追加していません。
+既存の無発音OPLL初期化や未宣言SCCのゼロ音量初期化は、コマンド数と理由を診断に残します。
 全無音入力では架空の発音を作らず、共通の終端まで休符を出力します。
 PSGのノイズ・トーンとノイズの混在・ハードウェアEGは
 未対応で、対象の動作を含む入力はエラーになります。
@@ -94,11 +135,10 @@ MXC.Xは[MDX_TOOL.lzh](https://nfggames.com/X68000/Mirrors/x68pub/x68tools/SOUND
 この作業環境では`outputs/research/mxc_tools/extracted/mxc.x`と
 `outputs/research/run68x/build/run68`も自動検出します。ツール本体はGitに含めません。
 
-単一のPSG/SCC入力から3ファイルを生成する例です。OPM入力の場合は
-`--target mdx`を使います。
+単一のOPMまたはPSG/SCC入力からMML・MDX・VGMを生成する例です。
 
 ```bash
-python scripts/export_mdx.py input.vgm --target opm --outdir outputs/listen/input \
+python scripts/export_mdx.py input.vgm --outdir outputs/listen/input \
   --mxc /path/to/MXC.X --run68 /path/to/run68
 ```
 
@@ -136,7 +176,8 @@ helperを別の場所に置く場合は、変換時に `--pcm-generator PATH` �
 `best-effort`では発音開始時のpanを保持し、途中pan変更やmuteの損失を区間付きで診断します。
 次の新規発音では元のpanを明示します。近似方法を定義できない入力はbest-effortでも生成を止めます。
 ストリーム転送、不規則なbyte供給、再生途中の速度変更、decoder状態を引き継ぐ曲ループなどは
-未対応として報告します。PCMを含む入力には `--normalize-lengths` を適用できません。
+未対応として報告します。PCMを含む場合、長さ補正は共有OPM/PCM clockを保持して見送り、
+その理由をnormalization JSONに記録します。PCMのstrict／best-effort判定は別途行います。
 
 **PCMを含むMDXからのVGM生成は現在利用できません。** 外部ライブラリsoundlogの保持中カーソル消失と、
 元VGMの再生状態を保持できない問題があるため、現在はMDX＋PDXまでを生成します。
@@ -157,11 +198,11 @@ helperを別の場所に置く場合は、変換時に `--pcm-generator PATH` �
 ```bash
 # PSG/SCC入力
 python scripts/export_mdx.py tests/fixtures/public/psg \
-  --target opm --outdir outputs/listen/psg
+  --outdir outputs/listen/psg
 
 # ネイティブOPM入力
 python scripts/export_mdx.py tests/fixtures/public/opm/from_mdx \
-  --target mdx --outdir outputs/listen/opm
+  --outdir outputs/listen/opm
 ```
 
 入力は単一ファイルでも指定できます。入力と出力には別のフォルダを指定してください。
@@ -180,11 +221,16 @@ outputs/listen/psg/
         volume_sweep.mdx.mml
         volume_sweep.mdx
         volume_sweep.vgm
+        volume_sweep.conversion.json
+        volume_sweep.mdx.normalization.json
 ```
 
-成功曲のフォルダには3ファイルだけを生成します。MXCに渡したCP932／CRLFのMMLは
+成功曲のフォルダには3種類の成果物と経路・補正の診断JSONを生成します。MXCに渡したCP932／CRLFのMMLは
 `_compiler_inputs/`に保存します。MXC用にタイの空白や長い休符などを調整しますが、
 曲フォルダのUTF-8 MMLと元の中間表現は維持します。
+MXC v1.01＋run68では、タイトルがCP932で65バイト以上になると空のタイトルが出力されることを確認しています。
+この確認済みの条件だけタイトルを復元し、PDX名・オフセット・音楽データは同一のまま検査します。
+`_compiler_inputs/`に元のMXC出力と`*.metadata.json`も保存し、復元の有無を記録します。
 `results.csv`には各入力の成否、`compiler`、`compiler_input`と出力パスを記録し、
 失敗時のログは`_errors/`に保存します。変換できない曲があっても残りを処理し、1件でも失敗した場合は
 終了コード1を返します。途中まで生成できたMML/MDXは診断用に残ります。
@@ -203,6 +249,8 @@ strictで既知損失を拒否した場合は `pcm_projection_blocked` となり
 再生tick上限は実際のVGMの待ち時間から自動計算します。`--max-ticks N`で指定することもできます。
 `--generator PATH`で検査・再生helperを、`--timeout N`で各処理の制限秒数を指定できます（既定180秒）。
 `--psg-model`、`--psg-gain`、`--scc-gain`、`--opm-pitch-policy`は変換本体へ渡します。
+`--normalize-lengths`／`--no-normalize-lengths`も渡せます。省略時は通常変換と同じ既定値です。
+PCM helper／policyの設定はPCMがない入力には適用せず、その非適用もconversion JSONに記録します。
 PSGのノイズ・ハードウェアEGなどの未対応動作は、一括出力でも失敗として記録されます。
 
 ## 検証
@@ -227,6 +275,7 @@ python scripts/verify_opm_mdx_roundtrip.py tests/fixtures/public/opm --outdir ou
 `--compiler mmlx`で従来のコンパイラを明示選択できます。比較処理は同じです。
 コンパイラ初期化データも選択したコンパイラで生成し、結果に`compiler`と
 `compiler_input`を記録します。MXCに渡すMMLも検証フォルダに残します。
+長さ補正は通常変換と同じ既定値で、`--no-normalize-lengths`で無効化できます。
 経路は `VGM → Segment → MML → MDX（MXC）→ VGM（soundlog）→ Segment` です。
 mdxtoolsの `mdx2mml` は既存MDXから独立した参照MMLを作るために、`mdxdump` は構造・メタデータ確認に使います。
 fixtureは既存の `tests/fixtures/public` と `tests/fixtures/local_only` に置き、構造を維持します。

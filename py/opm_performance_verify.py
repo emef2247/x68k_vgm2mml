@@ -34,7 +34,10 @@ def compare_performance(context, actual, *, initialization):
     expansion can change non-Key register command ordering; this is not an
     assertion of identical raw streams or cross-chip acoustic equivalence.
     """
-    result = compare_hybrid(context.projection, context.analysis, actual, initialization=initialization)
+    correction = context.normalization or {}
+    tolerance = correction['correction_bound_samples'] if correction.get('adopted') else 6
+    result = compare_hybrid(context.projection, context.analysis, actual, initialization=initialization,
+                            source_timing_tolerance_samples=tolerance)
     expected = _key_points(context.analysis, context.projection)
     observed = _key_points(actual)
     commands_match = [p[:3] for p in expected] == [p[:3] for p in observed]
@@ -44,6 +47,7 @@ def compare_performance(context, actual, *, initialization):
             for side, reference, replayed in (('before', a[3], b[3]), ('after', a[4], b[4])):
                 errors.extend(f'key {index} {side}: {name}' for name in _state_differences(reference, replayed))
     result.update(comparison='projected_musical_opm', state_origin='projected_opm',
+                  length_normalization=correction,
                   source_key_observed=False, phase_preserved=False,
                   key_commands_match=commands_match, key_point_state_mismatches=len(errors),
                   first_key_point_mismatches=errors[:10],

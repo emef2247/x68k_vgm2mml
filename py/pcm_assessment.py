@@ -1,11 +1,38 @@
 """MDX target assessments, separate from immutable PCM source evidence."""
 import csv
+import hashlib
 import json
 from pathlib import Path
 
 
 TARGET_PROFILE = 'MXDRV 2.06+17 Rel.X5-S; standard PCM1'
 PAN_EVIDENCE = 'native mxdrv17.s FC/ED store track state; applied at new ADPCMOUT'
+
+
+def generated_binary_artifacts(outdir, stem):
+    """Identify unchanged MDX/PDX files from a previous generated assessment."""
+    out = Path(outdir)
+    try:
+        previous = json.loads((out / (stem + '.pcm.assessment.json')).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return ()
+    if not isinstance(previous, dict) or not isinstance(previous.get('artifacts'), dict):
+        return ()
+    owned = []
+    for name in ('mdx', 'pdx'):
+        path = out / (stem + '.' + name)
+        entry = previous.get('artifacts', {}).get(name, {})
+        if not isinstance(entry, dict) or not isinstance(entry.get('path'), str):
+            continue
+        try:
+            if (entry.get('status') == 'generated' and entry.get('sha256')
+                    and Path(entry.get('path', '')).resolve() == path.resolve()
+                    and path.is_file()
+                    and hashlib.sha256(path.read_bytes()).hexdigest() == entry['sha256']):
+                owned.append(path)
+        except OSError:
+            continue
+    return tuple(owned)
 
 
 def aggregate(items):
