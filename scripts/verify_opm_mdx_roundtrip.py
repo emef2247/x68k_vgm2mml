@@ -6,6 +6,7 @@ from pathlib import Path
 import struct
 import subprocess
 import sys
+from mdx_compiler import compile_mxc
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'py'))
 from opm import build_segments, dump_analysis
@@ -39,13 +40,24 @@ def source_facts(path, *, include_pcm=False):
     return result
 
 
-def generate(generator, mml, folder, stem, *, max_ticks=None):
+def generate(generator, mml, folder, stem, *, max_ticks=None,
+             compiler='mmlx', mxc=None, run68=None):
+    # Keep existing diagnostic callers compatible; the CLI selects MXC by default.
+    if compiler not in ('mxc', 'mmlx'):
+        raise ValueError('Compiler must be mxc or mmlx')
     mdx, vgm = folder / (stem + '.mdx'), folder / (stem + '.vgm')
+    prepared = folder / (stem + '.mxc.mml')
+    for path in (mdx, vgm, prepared):
+        path.unlink(missing_ok=True)
     command = [str(generator), str(mml), str(mdx), str(vgm)]
-    if max_ticks is not None:
-        command.extend(['--max-ticks', str(max_ticks)])
     log = folder / (stem + '.compile.log')
     try:
+        if compiler == 'mxc':
+            compile_mxc(mml, mdx, timeout=180, mxc=mxc, run68=run68,
+                        generator=generator, prepared_output=prepared)
+            command = [str(generator), '--from-mdx', str(mdx), str(vgm)]
+        if max_ticks is not None:
+            command.extend(['--max-ticks', str(max_ticks)])
         run = subprocess.run(command, capture_output=True, text=True,
                              encoding='utf-8', errors='replace', timeout=180)
     except subprocess.TimeoutExpired as error:
@@ -53,6 +65,9 @@ def generate(generator, mml, folder, stem, *, max_ticks=None):
             return value.decode('utf-8', errors='replace') if isinstance(value, bytes) else (value or '')
         log.write_text(decoded(error.stdout) + decoded(error.stderr)
                        + '\nExternal compiler/player exceeded 180 seconds\n', encoding='utf-8')
+        raise
+    except (ValueError, RuntimeError, OSError) as error:
+        log.write_text(str(error) + '\n', encoding='utf-8')
         raise
     log.write_text(run.stdout + run.stderr, encoding='utf-8')
     if run.returncode:
@@ -90,6 +105,10 @@ def main():
     parser.add_argument('--mdxdump',type=Path,help='External mdxtools executable for reference/generated MDX metadata audit')
     parser.add_argument('--track-layout', choices=('channels', 'conductor'), default='channels')
     parser.add_argument('--generator', type=Path, default=ROOT / 'scripts/mdx_fixture_generator/target/release' / ('mdx-fixture-generator' + suffix))
+    parser.add_argument('--compiler', choices=('mxc', 'mmlx'), default='mxc',
+                        help='FM MML compiler (default mxc); comparator is unchanged')
+    parser.add_argument('--mxc', type=Path, help='Native MXC.X compiler')
+    parser.add_argument('--run68', type=Path, help='run68 executable for native MXC')
     args = parser.parse_args()
     if args.normalize_lengths and args.notation != 'structured':
         parser.error('--normalize-lengths requires --notation structured')
@@ -101,7 +120,12 @@ def main():
     baseline_dir.mkdir(exist_ok=True)
     baseline_mml = baseline_dir / 'initialization.mml'
     baseline_mml.write_text('#title "Compiler initialization"\nA @t255 r%1\n', encoding='utf-8')
-    initialization = controls(generate(generator, baseline_mml, baseline_dir, 'initialization'))
+    compiler_options = dict(compiler=args.compiler, mxc=args.mxc, run68=args.run68)
+    try:
+        initialization = controls(generate(generator, baseline_mml, baseline_dir,
+                                           'initialization', **compiler_options))
+    except (ValueError, RuntimeError, OSError, subprocess.TimeoutExpired) as error:
+        parser.error(f'Compiler/player initialization failed: {error}')
     if any(sample != 0 or reg == 8 for sample, reg, data in initialization):
         raise ValueError('Compiler baseline contains timed controls or Key writes')
     sources = source_files(args.input)
@@ -118,9 +142,15 @@ def main():
         relative = source.relative_to(args.input) if args.input.is_dir() else Path(source.name)
         folder = args.outdir / relative.with_suffix('')
         folder.mkdir(parents=True, exist_ok=True)
-        row = {'input': str(relative), 'status': 'conversion_failed'}
+        row = {'input': str(relative), 'status': 'conversion_failed', 'compiler': args.compiler}
         phase='conversion'
         try:
+            # A failed rerun must not attribute prior evidence to this compiler.
+            for old in (folder / (source.stem + '.mdx.mml'),
+                        *(folder / ('returned' + suffix)
+                          for suffix in ('.mdx', '.vgm', '.mxc.mml', '.compile.log')),
+                        folder / 'conversion.log'):
+                old.unlink(missing_ok=True)
             row.update(source_facts(source, include_pcm=True))
             if row['clock_hz'] != 4000000 or row['chip_type'] != 'YM2151' or row['dual_chip']:
                 row['status'] = 'unsupported_target'
@@ -136,7 +166,8 @@ def main():
                 if correction['status'] == 'applied':
                     tolerance = correction['correction_bound_samples']
             phase='compile_replay'
-            returned = generate(generator, mml, folder, 'returned', max_ticks=max(2, projection.end_mdx_tick + 1))
+            returned = generate(generator, mml, folder, 'returned',
+                                max_ticks=max(2, projection.end_mdx_tick + 1), **compiler_options)
             phase='comparison'
             scheduled = scheduled_projection(projection, track_layout=args.track_layout)
             if args.notation in ('structured', 'legacy'):
@@ -180,6 +211,10 @@ def main():
                             ('compile_log', folder / 'returned.compile.log')]:
             if path.is_file():
                 row[label] = str(path.resolve())
+        compiler_input = ((folder / 'returned.mxc.mml' if args.compiler == 'mxc' else mml)
+                          if phase != 'conversion' else None)
+        if compiler_input is not None and compiler_input.is_file():
+            row['compiler_input'] = str(compiler_input.resolve())
         (folder / 'comparison.json').write_text(json.dumps(row, indent=2) + '\n', encoding='utf-8')
         if row.get('error'):
             (folder / 'conversion.log').write_text(row['error'] + '\n', encoding='utf-8')

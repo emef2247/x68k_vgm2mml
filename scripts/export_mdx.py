@@ -3,8 +3,10 @@ import argparse
 import csv
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
+from mdx_compiler import compile_mxc
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'py'))
@@ -39,7 +41,7 @@ def _bounded(path, output):
 
 
 def _save_results(output, rows):
-    fields = ('input', 'status', 'detail', 'max_ticks', 'mml', 'mdx', 'vgm', 'pdx',
+    fields = ('input', 'status', 'detail', 'compiler', 'compiler_input', 'max_ticks', 'mml', 'mdx', 'vgm', 'pdx',
               'pcm_policy', 'pcm_projection_status', 'pcm_validation_status',
               'pcm_validation_run', 'pcm_known_losses', 'pcm_assessment', 'error_log')
     with _bounded(output / 'results.csv', output).open('w', encoding='utf-8', newline='') as stream:
@@ -50,10 +52,12 @@ def _save_results(output, rows):
 
 def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
               max_ticks=None, psg_model=None, psg_gain=None, scc_gain=None,
-              opm_pitch_policy=None, pcm_policy=None):
+              opm_pitch_policy=None, pcm_policy=None, compiler='mxc', mxc=None, run68=None):
     source, output = Path(source).resolve(), Path(output).resolve()
     if target not in ('mdx', 'opm', 'opm-additive'):
         raise ValueError('Target must be mdx, opm or opm-additive')
+    if compiler not in ('mxc', 'mmlx'):
+        raise ValueError('Compiler must be mxc or mmlx')
     if pcm_policy not in (None, 'strict', 'best-effort'):
         raise ValueError('PCM policy must be strict or best-effort')
     if pcm_policy is not None and target != 'mdx':
@@ -76,7 +80,8 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
     if not files:
         raise ValueError('No VGM/VGZ files found')
     suffix = '.exe' if sys.platform == 'win32' else ''
-    generator = Path(generator or ROOT / 'scripts/mdx_fixture_generator/target/release' /
+    generator = Path(generator or shutil.which('mdx-fixture-generator') or
+                     ROOT / 'scripts/mdx_fixture_generator/target/release' /
                      ('mdx-fixture-generator' + suffix)).resolve()
     if not generator.is_file():
         raise ValueError('Build scripts/mdx_fixture_generator or specify --generator')
@@ -92,12 +97,15 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
         relative = path.relative_to(source) if source.is_dir() else Path(path.name)
         # Retain the input suffix to distinguish same-stem VGM and VGZ files.
         folder = _bounded(output / 'tracks' / relative, output)
-        artifacts = [folder / (path.stem + suffix) for suffix in ('.mdx.mml', '.mdx', '.vgm')]
+        artifacts = [_bounded(folder / (path.stem + suffix), output)
+                     for suffix in ('.mdx.mml', '.mdx', '.vgm')]
         pdx = _bounded(folder / (path.stem + '.pdx'), output)
         assessment = _bounded(folder / (path.stem + '.pcm.assessment.json'), output)
         error_log = _bounded(output / '_errors' / relative.with_suffix(relative.suffix + '.log'), output)
-        row = dict(input=str(relative), status='', detail='', max_ticks='',
-                   mml='', mdx='', vgm='', pdx='', error_log='', pcm_policy='',
+        compiler_input = _bounded(output / '_compiler_inputs' /
+                                  relative.with_suffix(relative.suffix + '.mxc.mml'), output)
+        row = dict(input=str(relative), status='', detail='', compiler=compiler, max_ticks='',
+                   mml='', mdx='', vgm='', pdx='', error_log='', compiler_input='', pcm_policy='',
                    pcm_projection_status='', pcm_validation_status='',
                    pcm_validation_run='', pcm_known_losses='', pcm_assessment='')
         stage = 'conversion'
@@ -105,7 +113,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
             folder.mkdir(parents=True, exist_ok=True)
             # Only our generated files are replaced. Old binaries must
             # not look like current successes if this run fails.
-            for artifact in [*artifacts, pdx, assessment,
+            for artifact in [*artifacts, pdx, assessment, compiler_input,
                              folder / (path.stem + '.pcm.assessment.csv')]:
                 artifact.unlink(missing_ok=True)
             command = [sys.executable, str(ROOT / 'vgm2mml.py'), str(path),
@@ -123,10 +131,23 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
             limit = max_ticks if max_ticks is not None else tick_budget(path)
             row['max_ticks'] = limit
             if pdx.is_file() and artifacts[1].is_file():
+                row['compiler'] = 'typed_pcm_mmlx'
+                stage = 'replay'
+                command = [str(generator), '--from-mdx', str(artifacts[1]),
+                           str(artifacts[2]), '--max-ticks', str(limit)]
+            elif not pdx.is_file() and compiler == 'mxc':
+                stage = 'compilation'
+                compile_mxc(artifacts[0], artifacts[1], timeout=timeout,
+                            mxc=mxc, run68=run68, generator=generator,
+                            prepared_output=compiler_input)
                 stage = 'replay'
                 command = [str(generator), '--from-mdx', str(artifacts[1]),
                            str(artifacts[2]), '--max-ticks', str(limit)]
             else:
+                if pdx.is_file():
+                    row['compiler'] = 'typed_pcm_mmlx'
+                else:
+                    row['compiler_input'] = str(artifacts[0].relative_to(output))
                 command = [str(generator), *(str(p) for p in artifacts), '--max-ticks', str(limit)]
                 if pdx.is_file():
                     command.extend(['--pcm-mode', 'standard'])
@@ -171,6 +192,8 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
                 row[label] = str(artifact.relative_to(output))
         if pdx.is_file() and pdx.stat().st_size:
             row['pdx'] = str(pdx.relative_to(output))
+        if compiler_input.is_file() and compiler_input.stat().st_size:
+            row['compiler_input'] = str(compiler_input.relative_to(output))
         if row['status'] != 'success':
             row['error_log'] = str(error_log.relative_to(output))
         rows.append(row)
@@ -192,7 +215,12 @@ def main():
     parser.add_argument('--outdir', type=Path, required=True, help='Separate output tree')
     parser.add_argument('--target', choices=('mdx', 'opm', 'opm-additive'), default='mdx',
                         help='mdx: native OPM (default); opm/opm-additive: PSG/SCC input')
-    parser.add_argument('--generator', type=Path, help='External MDX compiler/player executable')
+    parser.add_argument('--compiler', choices=('mxc', 'mmlx'), default='mxc',
+                        help='FM-only MML compiler (default mxc); typed PCM uses mmlx')
+    parser.add_argument('--mxc', type=Path, help='Native MXC.X compiler')
+    parser.add_argument('--run68', type=Path, help='run68 executable for native MXC')
+    parser.add_argument('--generator', type=Path,
+                        help='Rust replay helper and explicit mmlx/typed PCM compiler')
     parser.add_argument('--timeout', type=positive, default=180, help='Seconds per stage per input')
     parser.add_argument('--max-ticks', type=positive, help='Playback limit; default derived from source waits')
     parser.add_argument('--psg-model', choices=('fm', 'additive'))
@@ -204,6 +232,7 @@ def main():
     args = parser.parse_args()
     try:
         rows = run_batch(args.input, args.outdir, target=args.target, generator=args.generator,
+                         compiler=args.compiler, mxc=args.mxc, run68=args.run68,
                          timeout=args.timeout, max_ticks=args.max_ticks, psg_model=args.psg_model,
                          psg_gain=args.psg_gain, scc_gain=args.scc_gain,
                          opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy)

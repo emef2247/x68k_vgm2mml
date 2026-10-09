@@ -7,6 +7,12 @@ here. Dependencies are pinned by Cargo.lock.
 The native PCM converter also uses typed PCM assembly and PDX packing; OPM-only
 VGM-to-MML conversion does not require this executable.
 
+For listening exports, `../export_mdx.py` defaults to native MXC for FM-only
+MML and calls this utility's `--from-mdx` mode to replay the compiled file.
+The OPM roundtrip verifier also defaults to MXC and uses this replay mode.
+This utility's own MML compilation modes continue to use mmlx. Typed PCM
+generation also retains mmlx for its FM portion.
+
 ```bash
 cargo build --release --locked --manifest-path scripts/mdx_fixture_generator/Cargo.toml
 scripts/mdx_fixture_generator/target/release/mdx-fixture-generator input.mml output.mdx output.vgm

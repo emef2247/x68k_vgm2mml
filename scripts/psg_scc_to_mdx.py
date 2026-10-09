@@ -83,7 +83,7 @@ def main():
                 report = compile_and_verify(args.generator, mml, plan, out, source.stem)
                 row.update(status='verified', mdx=str(out / (source.stem + '.mdx')),
                            vgm=str(out / (source.stem + '.vgm')),
-                           detail=f"{report['expected_controls']} exact target controls; not acoustic equivalence")
+                           detail='Target OPM state/Key comparison passed; not acoustic equivalence')
             if args.comparison_dir:
                 reference = args.comparison_dir / relative
                 if reference.is_file():

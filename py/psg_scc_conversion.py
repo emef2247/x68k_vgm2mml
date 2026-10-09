@@ -58,12 +58,24 @@ def source_facts(raw):
                 ay_type=ay_type, ay_flags=ay_flags, silent_opll_writes=silent_opll_writes, absent_scc_writes=absent_scc_writes)
 
 
+def _read_generated_csv(path):
+    """Read full provenance fields, restoring the process-wide CSV limit."""
+    previous_limit = csv.field_size_limit()
+    # UTF-8 field character counts cannot exceed the containing file's bytes.
+    read_limit = max(previous_limit, path.stat().st_size)
+    try:
+        csv.field_size_limit(read_limit)
+        with path.open(encoding='utf-8', newline='') as stream:
+            reader = csv.DictReader(stream)
+            return list(reader.fieldnames or ()), list(reader)
+    finally:
+        csv.field_size_limit(previous_limit)
+
+
 def _mark_projected_evidence(folder, source, target, performance, projection):
     """Label generated OPM evidence; original PSG/SCC CSVs remain unchanged."""
     mapping = folder / (source.stem + '.source_map.csv')
-    with mapping.open(encoding='utf-8', newline='') as stream:
-        reader = csv.DictReader(stream)
-        columns, rows = list(reader.fieldnames), list(reader)
+    columns, rows = _read_generated_csv(mapping)
     errors = []
     for row in rows:
         tick = projection.mdx_tick(int(row['target_vgmticks']))
@@ -79,9 +91,7 @@ def _mark_projected_evidence(folder, source, target, performance, projection):
         writer.writeheader()
         writer.writerows(rows)
     for path in folder.glob('*.csv'):
-        with path.open(encoding='utf-8', newline='') as stream:
-            reader = csv.DictReader(stream)
-            fields, records = list(reader.fieldnames or ()), list(reader)
+        fields, records = _read_generated_csv(path)
         if not fields:
             continue
         if 'state_origin' not in fields:

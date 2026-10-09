@@ -2,8 +2,11 @@
 
 Normal single-file conversion uses `python vgm2mml.py`; conversion implementations live in `py/`.
 
-- `export_mdx.py`: single-file or recursive folder export for listening. Calls the canonical frontend and external compiler/player, writes MML/MDX/VGM per FM song or MML/MDX/PDX with an explicit PCM replay limitation, and records failures without comparing playback. See [usage](../README.md#mmlmdxvgmを生成して聴く).
-- `verify_opm_mdx_roundtrip.py`, `mdx_fixture_generator/`, `generate_opm_public_fixtures.py`: OPM compiler roundtrip and authored fixture preparation.
+- `export_mdx.py`: single-file or recursive folder export for listening. FM defaults to native MXC via run68, with explicit `--compiler mmlx` available. Calls the canonical frontend, parses the compiled MDX and replays it with soundlog. Writes MML/MDX/VGM per FM song, exact MXC input under `_compiler_inputs/`, or the existing typed MML/MDX/PDX pair with an explicit PCM replay limitation. Records compiler/failures without comparing playback. See [usage](../README.md#mmlmdxvgmを生成して聴く).
+- `mdx_compiler.py`: isolated MXC invocation, strict CP932 encoding and lossless compiler-dialect preparation; canonical generated MML stays unchanged.
+- `compare_opm_vgm.py`: explicit channel-mapped OPM state/Segment, Key-event, nominal-pitch and command-size diagnostics. Saves both inputs' raw/state/Segment CSVs; does not certify waveform, loop seams or native display behavior.
+- `verify_opm_mdx_roundtrip.py`: OPM state/Segment roundtrip; CLI defaults to MXC via run68, soundlog replays the compiled MDX, and the existing comparator remains unchanged. Explicit mmlx is available. Prepared scores and selected compiler are recorded.
+- `mdx_fixture_generator/`, `generate_opm_public_fixtures.py`: external MDX replay and authored fixture preparation; the helper's own MML compilation modes use mmlx.
 - `decompile_mdx_references.py`: external mdxtools MDX-to-MML reference preparation, provenance and limited structural audit. See `docs/mdx_reference_mml.md`; references are separate from normal VGM conversion.
 - `psg_scc_to_mdx.py`: batch projection audit with optional compiler verification and reference comparison; shares `py/psg_scc_conversion.py`.
 - `audit_mdx_metadata.py`, `render_additive_mdx_notes.py`, `analyze_wav.py`: metadata, additive-model experiments and acoustic diagnostics (NumPy for WAV analysis).

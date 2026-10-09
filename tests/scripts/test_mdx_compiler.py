@@ -1,0 +1,142 @@
+"""Native compiler isolation, strict source encoding and output validation."""
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / 'scripts'))
+from mdx_compiler import compile_mxc, prepare_mxc
+
+
+class MxcCompilerTests(unittest.TestCase):
+    def test_upper_octave_boundary_is_explicit_without_clamping(self):
+        self.assertEqual(prepare_mxc('A o7 c4 > c4\n'), 'A o7 c4 o8 c4\n')
+        self.assertEqual(prepare_mxc('A o6 c4 >> c4\n'), 'A o6 c4 >o8 c4\n')
+        self.assertEqual(prepare_mxc('A o8 c4 > c4\n'), 'A o8 c4 > c4\n')
+        self.assertEqual(prepare_mxc('A o7 c4 < c4 > c4\n'), 'A o7 c4 < c4 > c4\n')
+
+    def test_octave_tracking_is_per_track_and_survives_wrapping(self):
+        self.assertEqual(prepare_mxc('A o7 c4\nB o4 c4\nA > c4\nB > c4\n'),
+                         'A o7 c4\nB o4 c4\nA o8 c4\nB > c4\n')
+        self.assertEqual(prepare_mxc('A o7 c4 ; >\nA > c4\n'),
+                         'A o7 c4 ; >\nA o8 c4\n')
+
+    def test_unknown_and_loop_octaves_are_not_inferred(self):
+        source = ('#title "o7 > c4"\nA > c4\nA o7 [c4 > c4]2 > c4\n'
+                  'A [o7 c4 > c4 / > c4]2 > c4\n')
+        self.assertEqual(prepare_mxc(source),
+                         '#title "o7 > c4"\nA > c4\nA o7 [c4 > c4]2 > c4\n'
+                         'A [o7 c4 o8 c4 / > c4]2 > c4\n')
+
+    def test_music_ties_and_long_rests_preserve_order_and_ticks(self):
+        source = 'A [c16 & c%32 & r%384]2 r%257\nA c4\nA & c4\n'
+        prepared = prepare_mxc(source)
+        self.assertEqual(prepared,
+                         'A [c16& c%32& r%128 r%128 r%128]2 r%128 r%128 r%1\n'
+                         'A c4& \nA  c4\n')
+        self.assertEqual(source.count('c'), prepared.count('c'))
+        self.assertIn(']2', prepared)
+
+    def test_headers_comments_strings_and_voice_blocks_are_untouched(self):
+        protected = ('#title "c16 & r%384"\n; A c16 & r%384\n'
+                     '/* A c16 & r%384\nA c16 & r%384 */\n'
+                     '@0 = {\nA c16 & r%384\n}\n')
+        source = protected + 'A c16 & r%384 ; c16 & r%384\n'
+        self.assertEqual(prepare_mxc(source), protected +
+                         'A c16& r%128 r%128 r%128 ; c16 & r%384\n')
+        self.assertEqual(prepare_mxc('A "r%384 &" c4 & /* r%384 & */ c4\n'),
+                         'A "r%384 &" c4& /* r%384 & */ c4\n')
+
+    def prepare(self, root):
+        paths = [root / name for name in ('曲.mdx.mml', '曲.mdx', 'MXC.X', 'run68', 'helper')]
+        source, output, mxc, run68, helper = paths
+        source.write_text('#title "曲"\nA r4\n', encoding='utf-8')
+        for tool in (mxc, run68, helper):
+            tool.write_bytes(b'tool')
+        return source, output, dict(mxc=mxc, run68=run68, generator=helper, timeout=17)
+
+    def successful(self, command, **kwargs):
+        workspace = Path(kwargs['cwd'])
+        if Path(command[1]).name == 'MXC.X':
+            self.assertEqual(Path(command[1]).parent, workspace)
+            self.assertEqual(command[2], 'SCORE.MML')
+            self.assertEqual((workspace / 'SCORE.MML').read_bytes(),
+                             '#title "曲"\r\nA r4\r\n'.encode('cp932'))
+            (workspace / 'SCORE.mdx').write_bytes(b'accepted MDX')
+        else:
+            self.assertEqual(command[1], '--inspect-mdx')
+            Path(command[3]).write_text('track,command\nA,rest\n')
+        self.assertEqual(kwargs['timeout'], 17)
+        return subprocess.CompletedProcess(command, 0, '', '')
+
+    def test_short_encoded_source_and_validated_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, output, options = self.prepare(Path(tmp))
+            prepared = Path(tmp) / 'compiler_inputs/source.mxc.mml'
+            with patch('mdx_compiler.subprocess.run', side_effect=self.successful) as calls:
+                compile_mxc(source, output, prepared_output=prepared, **options)
+            self.assertEqual(output.read_bytes(), b'accepted MDX')
+            self.assertEqual(prepared.read_bytes(), '#title "曲"\r\nA r4\r\n'.encode('cp932'))
+            self.assertEqual(calls.call_count, 2)
+            self.assertFalse(Path(calls.call_args_list[0].kwargs['cwd']).exists())
+
+    def test_partial_nonzero_and_zero_without_output_are_failures(self):
+        for code in (0, 3):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as tmp:
+                source, output, options = self.prepare(Path(tmp))
+                def run(command, **kwargs):
+                    if code:
+                        (Path(kwargs['cwd']) / 'SCORE.mdx').write_bytes(b'partial')
+                    return subprocess.CompletedProcess(command, code, '', 'compile diagnostic')
+                with patch('mdx_compiler.subprocess.run', side_effect=run) as calls:
+                    with self.assertRaises(RuntimeError):
+                        compile_mxc(source, output, **options)
+                self.assertFalse(output.exists())
+                self.assertEqual(calls.call_count, 1)
+
+    def test_parser_rejection_does_not_publish_partial_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, output, options = self.prepare(Path(tmp))
+            def run(command, **kwargs):
+                if command[1] == '--inspect-mdx':
+                    return subprocess.CompletedProcess(command, 1, '', 'invalid MDX')
+                return self.successful(command, **kwargs)
+            with patch('mdx_compiler.subprocess.run', side_effect=run):
+                with self.assertRaisesRegex(RuntimeError, 'invalid MDX'):
+                    compile_mxc(source, output, **options)
+            self.assertFalse(output.exists())
+
+    def test_unrepresentable_source_fails_before_launch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, output, options = self.prepare(Path(tmp))
+            source.write_text('#title "🙂"\nA r4\n', encoding='utf-8')
+            with patch('mdx_compiler.subprocess.run') as calls:
+                with self.assertRaises(UnicodeEncodeError):
+                    compile_mxc(source, output, **options)
+                calls.assert_not_called()
+            self.assertFalse(output.exists())
+
+    def test_missing_dependency_is_explicit_and_never_falls_back(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, output, options = self.prepare(Path(tmp))
+            options['mxc'] = Path(tmp) / 'missing'
+            with patch('mdx_compiler.subprocess.run') as calls:
+                with self.assertRaisesRegex(ValueError, '--mxc'):
+                    compile_mxc(source, output, **options)
+                calls.assert_not_called()
+
+    def test_native_and_loader_diagnostics_use_their_respective_encodings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, output, options = self.prepare(Path(tmp))
+            result = subprocess.CompletedProcess([], 1, '音色エラー'.encode('cp932'),
+                                                 'loader error: 曲'.encode('utf-8'))
+            with patch('mdx_compiler.subprocess.run', return_value=result):
+                with self.assertRaisesRegex(RuntimeError, '音色エラーloader error: 曲'):
+                    compile_mxc(source, output, **options)
+
+
+if __name__ == '__main__':
+    unittest.main()

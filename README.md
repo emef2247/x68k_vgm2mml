@@ -80,31 +80,36 @@ PSGのノイズ・トーンとノイズの混在・ハードウェアEGは
 
 ## MML・MDX・VGMを生成して聴く
 
-MDXと、そのMDXを再生したOPM VGMを生成するには、外部生成ツールを使います。
-初回は次のコマンドでビルドしてください。
+MML・MDX・そのMDXを再生したOPM VGMをまとめて生成するには、
+`scripts/export_mdx.py`を使います。FMのみの入力では、既定のコンパイラは
+**MXC（MXC.X）**です。MXCの実行には[run68x](https://github.com/kg68k/run68x)の
+`run68`を使い、生成MDXの検査とVGM出力には次のhelperを使います。
 
 ```bash
 cargo build --release --locked --manifest-path scripts/mdx_fixture_generator/Cargo.toml
 ```
 
+MXC.Xは[MDX_TOOL.lzh](https://nfggames.com/X68000/Mirrors/x68pub/x68tools/SOUND/MXDRV/MDX_TOOL.lzh)
+に含まれています。MXCとrun68をPATHに置くか、`--mxc`と`--run68`で指定してください。
+この作業環境では`outputs/research/mxc_tools/extracted/mxc.x`と
+`outputs/research/run68x/build/run68`も自動検出します。ツール本体はGitに含めません。
+
 単一のPSG/SCC入力から3ファイルを生成する例です。OPM入力の場合は
-`--target opm`を`--target mdx`に変更します。
+`--target mdx`を使います。
 
 ```bash
-python vgm2mml.py input.vgm --target opm --outdir outputs/input
-
-scripts/mdx_fixture_generator/target/release/mdx-fixture-generator \
-  outputs/input/input.mdx.mml \
-  outputs/input/input.mdx \
-  outputs/input/input.vgm \
-  --max-ticks 1000000
+python scripts/export_mdx.py input.vgm --target opm --outdir outputs/listen/input \
+  --mxc /path/to/MXC.X --run68 /path/to/run68
 ```
 
-`--dump-passes`を付けなければ、MML・MDX・VGMの3ファイルを生成します。
-既存のCSVなどは自動削除しません。`--max-ticks`は再生tick数の上限です。
-現在のPSG出力の`@t255`では1000000 ticksが約256秒分で、より長い曲には上限を増やします。
+曲のフォルダにMML・MDX・VGMを生成し、成否と使用したコンパイラを`results.csv`に記録します。
 元VGMとの比較検証は行いません。生成MDXをX68000エミュレータ上のMMDSPで再生して、
-音とGUI表示を確認できます。生成VGMは同じMDXから出力したOPM VGMです。
+音とGUI表示を確認できます。VGMはsoundlogによる同じMDXの再生結果です。
+ファイル生成の成功と、MXDRV／MMDSP上の表示・再生確認は区別してください。
+
+従来のmmlxを使う場合は、`--compiler mmlx`を明示します。MXCの失敗時に自動で
+mmlxへ切り替えることはありません。helper自体のMMLを渡す3引数モードは、
+引き続きmmlxを使用します。
 
 ### PCMを含むVGMからMML・MDX・PDXを生成する
 
@@ -147,7 +152,7 @@ helperを別の場所に置く場合は、変換時に `--pcm-generator PATH` �
 ### フォルダを一括出力する
 
 [export_mdx.py](scripts/export_mdx.py)は、指定フォルダ以下の`.vgm`と`.vgz`を再帰的に処理します。
-変換本体は`vgm2mml.py`、MDX/VGM生成は上記の外部ツールを使います。
+変換本体は`vgm2mml.py`、FMのMML→MDXはMXC、MDX→VGMはsoundlogを使います。
 
 ```bash
 # PSG/SCC入力
@@ -166,6 +171,9 @@ python scripts/export_mdx.py tests/fixtures/public/opm/from_mdx \
 ```text
 outputs/listen/psg/
   results.csv
+  _compiler_inputs/
+    volume_sweep/
+      volume_sweep.vgm.mxc.mml
   tracks/
     volume_sweep/
       volume_sweep.vgm/
@@ -174,12 +182,17 @@ outputs/listen/psg/
         volume_sweep.vgm
 ```
 
-成功曲のフォルダには3ファイルだけを生成します。`results.csv`には各入力の成否と出力パスを記録し、
+成功曲のフォルダには3ファイルだけを生成します。MXCに渡したCP932／CRLFのMMLは
+`_compiler_inputs/`に保存します。MXC用にタイの空白や長い休符などを調整しますが、
+曲フォルダのUTF-8 MMLと元の中間表現は維持します。
+`results.csv`には各入力の成否、`compiler`、`compiler_input`と出力パスを記録し、
 失敗時のログは`_errors/`に保存します。変換できない曲があっても残りを処理し、1件でも失敗した場合は
 終了コード1を返します。途中まで生成できたMML/MDXは診断用に残ります。
 再実行では同じ曲の既存3ファイルを置き換えます。
 
 PCMにも `--pcm-policy strict|best-effort` を渡せます（既定strict）。
+PCMを含む入力は既存の型付きMDX＋PDX生成を使用し、FM部分のコンパイルはmmlxです。
+この経路は`compiler=typed_pcm_mmlx`と記録します。`--compiler`の選択はFMのみの入力に適用します。
 生成できた場合はMML＋MDX＋PDXを保存し、`results.csv`に
 `pcm_replay_unavailable`と記録して終了コード1を返します。PCMのVGM欄は空です。
 strictで既知損失を拒否した場合は `pcm_projection_blocked` となります。
@@ -188,7 +201,7 @@ strictで既知損失を拒否した場合は `pcm_projection_blocked` となり
 再実行では以前のPDXとVGMを削除してから処理するため、古い成果物を成功結果として扱いません。
 
 再生tick上限は実際のVGMの待ち時間から自動計算します。`--max-ticks N`で指定することもできます。
-`--generator PATH`で外部ツールを、`--timeout N`で各処理の制限秒数を指定できます（既定180秒）。
+`--generator PATH`で検査・再生helperを、`--timeout N`で各処理の制限秒数を指定できます（既定180秒）。
 `--psg-model`、`--psg-gain`、`--scc-gain`、`--opm-pitch-policy`は変換本体へ渡します。
 PSGのノイズ・ハードウェアEGなどの未対応動作は、一括出力でも失敗として記録されます。
 
@@ -199,6 +212,9 @@ python -m unittest discover -s tests/scripts -v
 ```
 
 WAV解析のテストにはNumPyが必要です。外部MDXコンパイラを使う検証は別途実行します。
+公開データでの生成・コンパイル確認に加えて、以下の往復検証を維持します。
+MML生成処理の確からしさを、戻したOPMの状態・Segment・Keyイベント・時刻から検査します。
+往復検証の成功と、MXDRV／MMDSP上の表示・再生確認は別の結果として扱います。
 
 ```bash
 cargo build --release --locked --manifest-path scripts/mdx_fixture_generator/Cargo.toml
@@ -206,10 +222,30 @@ python scripts/verify_opm_mdx_roundtrip.py tests/fixtures/public/opm --outdir ou
 ```
 
 往復検証は [外部fixture generator](scripts/mdx_fixture_generator/README.md) を利用します。
-このツール内で、MML → MDXのコンパイルには **mmlx 0.2.0**、MDXのコマンド実行とVGM出力には **soundlog 0.15.0** を使います。
+`verify_opm_mdx_roundtrip.py`でも、MML → MDXは既定で **MXC**、MDX → VGMは
+**soundlog 0.15.0** を使います。`--mxc`／`--run68`でツールの場所を指定でき、
+`--compiler mmlx`で従来のコンパイラを明示選択できます。比較処理は同じです。
+コンパイラ初期化データも選択したコンパイラで生成し、結果に`compiler`と
+`compiler_input`を記録します。MXCに渡すMMLも検証フォルダに残します。
+経路は `VGM → Segment → MML → MDX（MXC）→ VGM（soundlog）→ Segment` です。
 mdxtoolsの `mdx2mml` は既存MDXから独立した参照MMLを作るために、`mdxdump` は構造・メタデータ確認に使います。
 fixtureは既存の `tests/fixtures/public` と `tests/fixtures/local_only` に置き、構造を維持します。
 非公開fixtureと生成物はGit管理対象外です。
+
+生成VGMと別ツールのOPM VGMをSegment単位で調べるには、次を使えます。
+チャンネル番号は0始まりで、左の入力から右の入力への対応を明示します。
+
+```bash
+python scripts/compare_opm_vgm.py generated.vgm comparison.vgm \
+  --channel-map 5:4,6:5,7:6 --outdir outputs/compare
+```
+
+`report.json`に状態・Keyイベント・終端・待ち命令の集計を、CSVに両入力の
+Raw／State／Segmentと比較区間を保存します。比較範囲は短い方の終端までです。
+未観測値を未知のまま扱い、休止中の状態や同一時刻のKeyイベントも残します。
+対応は入力ごとに確認してください。上の対応は今回確認したPSG出力とvgm-conv出力の例です。
+この診断は波形一致やループ継ぎ目、MMDSPの表示動作を保証するものではありません。
+Key命令の前後の瞬間的な状態・書き込み順序は、別の厳密な往復検証で確認します。
 
 ## 構成
 
@@ -222,11 +258,12 @@ fixtureは既存の `tests/fixtures/public` と `tests/fixtures/local_only` に�
 
 ## 謝辞
 
-本プロジェクトのMDX/VGM出力と往復検証では、以下のライブラリを利用しています。開発者・メンテナー・貢献者の皆様に感謝します。
+本プロジェクトのMDX/VGM出力と往復検証では、以下のツールを利用しています。開発者・メンテナー・貢献者の皆様に感謝します。
 
 | プロジェクト | 本リポジトリでの用途 |
 |---|---|
-| [mmlx](https://github.com/h1romas4/chipstream/tree/main/crates/mmlx)（h1romas4/chipstream） | MML → MDXコンパイル。聴き比べ用出力・往復検証・公開fixture生成で使用。 |
+| MXC v1.01（MFS soft, milk、[MDX_TOOL.lzh](https://nfggames.com/X68000/Mirrors/x68pub/x68tools/SOUND/MXDRV/MDX_TOOL.lzh)）と[run68x](https://github.com/kg68k/run68x) | FMの聴き比べ用出力とOPM往復検証で、既定のMML → MDXコンパイルとHuman68kプログラムの実行に使用。 |
+| [mmlx](https://github.com/h1romas4/chipstream/tree/main/crates/mmlx)（h1romas4/chipstream） | 明示選択したMML → MDXコンパイル、既存の開発用診断・公開fixture生成、PCMを含む生成のFM部分で使用。 |
 | [soundlog](https://github.com/h1romas4/chipstream/tree/main/crates/soundlog)（h1romas4/chipstream） | FMのMDX → VGM変換、PDX構築・PCM参照検査。PCMのVGM再生には現在制約があります。 |
 
 外部コンパイラ・再生ツールはMDX/VGM出力や開発・検証用の任意依存です。

@@ -38,6 +38,81 @@ def successful_run(command, **kwargs):
 
 
 class ExportMdxTests(unittest.TestCase):
+    def test_default_mxc_compiles_then_replays_existing_mdx(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, out, generator = self.prepare(Path(tmp), ('a.vgm',))
+            def compile_score(mml, mdx, **kwargs):
+                self.assertTrue(mml.is_file())
+                self.assertEqual(kwargs['generator'], generator)
+                mdx.write_bytes(b'native MDX')
+                prepared = kwargs['prepared_output']
+                prepared.parent.mkdir(parents=True)
+                prepared.write_bytes(b'A r4\r\n')
+            def run(command, **kwargs):
+                if command[1] == str(ROOT / 'vgm2mml.py'):
+                    return successful_run(command, **kwargs)
+                self.assertEqual(command[1], '--from-mdx')
+                self.assertEqual(Path(command[2]).read_bytes(), b'native MDX')
+                Path(command[3]).write_bytes(b'VGM')
+                return subprocess.CompletedProcess(command, 0, '', '')
+            with patch('export_mdx.subprocess.run', side_effect=run), \
+                    patch('export_mdx.compile_mxc', side_effect=compile_score) as compile_call:
+                row = run_batch(source, out, generator=generator)[0]
+            self.assertEqual(row['status'], 'success')
+            self.assertEqual(row['compiler'], 'mxc')
+            self.assertEqual(row['compiler_input'], '_compiler_inputs/a.vgm.mxc.mml')
+            compile_call.assert_called_once()
+            with (out / 'results.csv').open(encoding='utf-8', newline='') as stream:
+                self.assertEqual(list(csv.DictReader(stream))[0]['compiler'], 'mxc')
+
+    def test_mxc_failure_clears_stale_binary_and_keeps_current_score(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, out, generator = self.prepare(Path(tmp), ('a.vgm',))
+            folder = out / 'tracks/a.vgm'
+            folder.mkdir(parents=True)
+            stale_input = out / '_compiler_inputs/a.vgm.mxc.mml'
+            stale_input.parent.mkdir()
+            stale_input.write_bytes(b'old prepared score')
+            for suffix in ('.mdx', '.vgm'):
+                (folder / ('a' + suffix)).write_bytes(b'stale')
+            with patch('export_mdx.subprocess.run', side_effect=successful_run) as calls, \
+                    patch('export_mdx.compile_mxc', side_effect=ValueError('Missing --mxc tool')):
+                row = run_batch(source, out, generator=generator)[0]
+            self.assertEqual(row['status'], 'compilation_failed')
+            self.assertTrue(row['mml'])
+            self.assertFalse(row['mdx'] or row['vgm'])
+            self.assertEqual(calls.call_count, 1)
+            self.assertFalse(stale_input.exists())
+            self.assertFalse(row['compiler_input'])
+
+    def test_mxc_replay_failure_preserves_validated_mdx(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, out, generator = self.prepare(Path(tmp), ('a.vgm',))
+            def compile_score(mml, mdx, **kwargs):
+                mdx.write_bytes(b'native MDX')
+            def run(command, **kwargs):
+                if command[1] == str(ROOT / 'vgm2mml.py'):
+                    return successful_run(command, **kwargs)
+                return subprocess.CompletedProcess(command, 1, '', 'replay failed')
+            with patch('export_mdx.subprocess.run', side_effect=run), \
+                    patch('export_mdx.compile_mxc', side_effect=compile_score):
+                row = run_batch(source, out, generator=generator)[0]
+            self.assertEqual(row['status'], 'replay_failed')
+            self.assertTrue(row['mdx'])
+            self.assertFalse(row['vgm'])
+
+    def test_mxc_timeout_keeps_diagnostic_and_skips_replay(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, out, generator = self.prepare(Path(tmp), ('a.vgm',))
+            error = subprocess.TimeoutExpired(['run68'], 17, output=b'partial compiler output')
+            with patch('export_mdx.subprocess.run', side_effect=successful_run) as calls, \
+                    patch('export_mdx.compile_mxc', side_effect=error):
+                row = run_batch(source, out, generator=generator, timeout=17)[0]
+            self.assertEqual(row['status'], 'compilation_timeout')
+            self.assertIn('partial compiler output', (out / row['error_log']).read_text())
+            self.assertEqual(calls.call_count, 1)
+            self.assertFalse(row['mdx'] or row['vgm'])
+
     def prepare(self, root, names=('a.vgm', 'b.vgm')):
         source, output, generator = root / 'input', root / 'out', root / 'generator'
         source.mkdir()
@@ -55,11 +130,12 @@ class ExportMdxTests(unittest.TestCase):
             error.parent.mkdir(parents=True)
             error.write_text('old failure')
             with patch('export_mdx.subprocess.run', side_effect=successful_run) as run:
-                rows = run_batch(source, out, target='opm', generator=generator,
+                rows = run_batch(source, out, target='opm', generator=generator, compiler="mmlx",
                                  psg_model='fm', psg_gain=.5, scc_gain=.25,
                                  opm_pitch_policy='clamp')
             self.assertEqual([r['status'] for r in rows], ['success', 'success'])
             self.assertEqual(run.call_count, 4)
+            self.assertTrue(all(row['compiler_input'] == row['mml'] for row in rows))
             self.assertFalse(error.exists())
             for name in ('曲.vgm', '曲.vgz'):
                 folder = out / 'tracks/nested space' / name
@@ -90,7 +166,7 @@ class ExportMdxTests(unittest.TestCase):
                     return subprocess.CompletedProcess(command, 2, '', 'noise unsupported')
                 return successful_run(command, **kwargs)
             with patch('export_mdx.subprocess.run', side_effect=run):
-                rows = run_batch(source, out, target='opm', generator=generator)
+                rows = run_batch(source, out, target='opm', generator=generator, compiler="mmlx")
             self.assertEqual([r['status'] for r in rows], ['conversion_failed', 'success'])
             self.assertEqual(sorted(p.name for p in folder.iterdir()), ['keep.txt'])
             self.assertIn('noise unsupported', (out / rows[0]['error_log']).read_text())
@@ -107,7 +183,7 @@ class ExportMdxTests(unittest.TestCase):
                     (folder / 'pcm.pdx').write_bytes(b'current encoded sample package')
                 return result
             with patch('export_mdx.subprocess.run', side_effect=run) as calls:
-                rows = run_batch(source, out, generator=generator)
+                rows = run_batch(source, out, generator=generator, compiler="mmlx")
             self.assertEqual([row['status'] for row in rows], ['success', 'success'])
             self.assertEqual(rows[0]['pdx'], '')
             self.assertTrue(rows[1]['pdx'].endswith('pcm.pdx'))
@@ -195,7 +271,7 @@ class ExportMdxTests(unittest.TestCase):
                     return subprocess.CompletedProcess(command, 1, '', 'playback failed')
                 return successful_run(command, **kwargs)
             with patch('export_mdx.subprocess.run', side_effect=run):
-                rows = run_batch(source, out, generator=generator, max_ticks=2000000)
+                rows = run_batch(source, out, generator=generator, compiler="mmlx", max_ticks=2000000)
             self.assertEqual([r['status'] for r in rows], ['generation_failed', 'success'])
             self.assertTrue(rows[0]['mml'])
             self.assertTrue(rows[0]['mdx'])
@@ -214,7 +290,7 @@ class ExportMdxTests(unittest.TestCase):
                                                         stderr=b'partial stderr')
                     return successful_run(command, **kwargs)
                 with patch('export_mdx.subprocess.run', side_effect=run):
-                    rows = run_batch(source, out, generator=generator, timeout=17)
+                    rows = run_batch(source, out, generator=generator, compiler="mmlx", timeout=17)
                 self.assertEqual([r['status'] for r in rows], [stage + '_timeout', 'success'])
                 log = (out / rows[0]['error_log']).read_text()
                 self.assertIn('partial stdout', log)
@@ -230,7 +306,7 @@ class ExportMdxTests(unittest.TestCase):
                         return subprocess.CompletedProcess(command, 0, '', '')
                     return successful_run(command, **kwargs)
                 with patch('export_mdx.subprocess.run', side_effect=run):
-                    row = run_batch(source, out, generator=generator)[0]
+                    row = run_batch(source, out, generator=generator, compiler="mmlx")[0]
                 self.assertEqual(row['status'], stage + '_failed')
 
     def test_setup_errors_do_not_launch_conversion(self):
@@ -241,12 +317,12 @@ class ExportMdxTests(unittest.TestCase):
             with patch('export_mdx.subprocess.run') as run:
                 for src, dest in cases:
                     with self.subTest(src=src, dest=dest), self.assertRaises(ValueError):
-                        run_batch(src, dest, generator=generator)
+                        run_batch(src, dest, generator=generator, compiler="mmlx")
                 with self.assertRaisesRegex(ValueError, 'Build'):
                     run_batch(source, out, generator=Path(tmp) / 'missing')
                 for value in (0, -1, 0x100000000):
                     with self.assertRaises(ValueError):
-                        run_batch(source, out, generator=generator, max_ticks=value)
+                        run_batch(source, out, generator=generator, compiler="mmlx", max_ticks=value)
                 run.assert_not_called()
             self.assertFalse(out.exists())
 
@@ -272,16 +348,34 @@ class ExportMdxTests(unittest.TestCase):
                 self.skipTest(f'Symlink creation unavailable: {error}')
             with patch('export_mdx.subprocess.run') as run:
                 with self.assertRaisesRegex(ValueError, 'leaves'):
-                    run_batch(source, out, generator=generator)
+                    run_batch(source, out, generator=generator, compiler="mmlx")
                 run.assert_not_called()
             self.assertEqual(outside.read_text(), 'keep unchanged')
             self.assertFalse((out / 'tracks').exists())
+
+    def test_prepared_input_symlink_cannot_overwrite_outside_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, out, generator = self.prepare(root, ('a.vgm',))
+            outside = root / 'keep.mml'
+            outside.write_text('keep unchanged')
+            prepared = out / '_compiler_inputs/a.vgm.mxc.mml'
+            prepared.parent.mkdir(parents=True)
+            try:
+                prepared.symlink_to(outside)
+            except OSError as error:
+                self.skipTest(f'Symlink creation unavailable: {error}')
+            with patch('export_mdx.subprocess.run') as run:
+                with self.assertRaisesRegex(ValueError, 'leaves'):
+                    run_batch(source, out, generator=generator)
+                run.assert_not_called()
+            self.assertEqual(outside.read_text(), 'keep unchanged')
 
     def test_single_file_cli_returns_nonzero_for_any_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             source, out, generator = self.prepare(Path(tmp), ('a.vgm',))
             args = ['export_mdx.py', str(source / 'a.vgm'), '--outdir', str(out),
-                    '--generator', str(generator), '--target', 'opm']
+                    '--generator', str(generator), '--compiler', 'mmlx', '--target', 'opm']
             failure = subprocess.CompletedProcess([], 1, '', 'unsupported')
             with patch('sys.argv', args), patch('export_mdx.subprocess.run', return_value=failure):
                 self.assertEqual(main(), 1)
