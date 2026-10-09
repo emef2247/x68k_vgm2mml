@@ -44,8 +44,18 @@ Structural Analysis
 MDX MML
 ```
 
-OPM/YM2151 is the default source chip and MDX MML is the default output
-format.
+OPM/YM2151 is the primary native source and MDX MML is the default output
+format. The frontend selects the supported native OPM/PCM or PSG/SCC-to-OPM
+route from actual VGM command usage. An unused clock declaration is not a
+source-selection request. Used unsupported chips, combinations and streams
+must be diagnosed rather than silently omitted. Existing inactive compatibility
+initialization handling must remain explicit in the source inventory.
+
+Canonical FM conversion generates MML, not MDX/PDX binaries. A matching stem
+does not establish ownership of an adjacent MDX/PDX reference. Remove previous
+PCM binaries only when their generated assessment, saved path and SHA-256 match.
+Preserve other binaries, distinguish them from current artifacts, and require a
+separate output directory if typed PCM generation would overwrite them.
 
 Existing PSG/SCC/OPLL → MGSDRV MML functionality inherited from
 `msx_vgm2mml` is retained as a **proven compatibility path**. It should
@@ -90,6 +100,12 @@ Do not refactor merely to make module boundaries match it.
 
 Normal conversion functionality should be reachable through
 `vgm2mml.py` using explicit source/target/output options where necessary.
+`--target` selects the output format (MDX or MGSDRV), not a chip or synthesis
+algorithm. Deprecated `opm`/`opm-additive` aliases preserve existing projection
+defaults. Source routing, projection model, scoped fidelity policy, target
+notation and diagnostics are separate concepts. The held-register PSG/SCC
+compatibility projection is an internal mode; no public articulation switch
+is required merely to express that distinction.
 
 Target-specific scripts under `scripts/` may exist for:
 
@@ -677,7 +693,12 @@ or act as an exact-text oracle for VGM conversion. See `docs/mdx_reference_mml.m
 Exact duration spelling and optional target timing correction are separate
 operations. Native MDX correction must retain source times and report its actual
 timer error; an estimator fit alone does not establish representability. See
-`docs/opm_note_lengths.md` for the current opt-in implementation and fallback.
+`docs/opm_note_lengths.md` for the current default-on structured MDX implementation
+and fallback. Non-adoption keeps the same structured renderer and baseline
+clock/projection; it does not select legacy/registers notation. Explicit
+`--no-normalize-lengths` disables correction. MGSDRV correction remains opt-in.
+Projected PSG/SCC output must check cumulative timing against original source
+boundaries as well as intermediate OPM boundaries before adopting correction.
 
 ---
 
@@ -953,6 +974,11 @@ operands 1/2 have the opposite left/right meaning from MDX FM. Standard X68000
 PCM uses 4-bit encoding and 10-bit output; preserving bytes alone cannot
 represent a 12-bit decoder clamp. Keep unsupported source values inspectable
 and diagnose them in the target.
+The normalization default must not itself reject PCM input. Until PCM-aware
+correction is verified, keep the baseline shared OPM/PCM clock and record
+non-adoption separately from PCM loss/eligibility and runtime validation.
+Data Bank/DAC Stream decoding is separate from frontend cleanup; unsupported
+source stream evidence and its existing diagnostics remain intact.
 
 See `docs/pcm_pdx.md` for current eligibility and tool limitations and
 `docs/pcm_roundtrip_validation.md` for the independent validation design.

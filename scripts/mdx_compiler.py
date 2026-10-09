@@ -1,11 +1,61 @@
 """Isolated native MXC compilation for the output-only export workflow."""
 from pathlib import Path
+import hashlib
+import json
 import re
 import shutil
 import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def compiler_evidence_paths(prepared):
+    prepared = Path(prepared)
+    return prepared.with_suffix('.mdx'), prepared.with_suffix('.metadata.json')
+
+
+def restore_mxc_title(raw, text):
+    """Repair only MXC v1.01's observed empty title above 64 CP932 bytes."""
+    marker = raw.find(b'\r\n\x1a')
+    if marker < 0:
+        raise RuntimeError('Native MDX has no title terminator')
+    pdx_end = raw.find(b'\0', marker + 3)
+    if pdx_end < 0 or len(raw) < pdx_end + 5:
+        raise RuntimeError('Native MDX has no complete PDX/data header')
+    expected = None
+    in_comment = False
+    for line in text.splitlines():
+        if not in_comment:
+            match = re.fullmatch(r'#title[ \t]+"([^"\r\n]*)"[ \t]*', line)
+            if match:
+                expected = match[1].encode('cp932')
+                break
+        _, in_comment = _parts(line, in_comment)
+    native = raw[:marker]
+    final = raw
+    status = 'not_requested' if expected is None else 'unchanged'
+    if expected is not None:
+        if any(value in expected for value in (b'\r', b'\n', b'\x1a', b'\0')):
+            raise ValueError('MML title contains an MDX header delimiter')
+        if native != expected:
+            if len(expected) <= 64 or native:
+                raise RuntimeError('Native MXC title unexpectedly differs from the MML title')
+            # All offsets are relative to the data after the PDX name. Keep the
+            # whole suffix, including that name and offset table, unchanged.
+            final = expected + raw[marker:]
+            status = 'restored'
+    report = dict(title_status=status,
+                  reason='MXC v1.01 emitted an empty title above 64 bytes' if status == 'restored' else '',
+                  expected_title_bytes=None if expected is None else len(expected),
+                  native_title_bytes=len(native),
+                  final_title_bytes=final.find(b'\r\n\x1a'),
+                  native_sha256=hashlib.sha256(raw).hexdigest(),
+                  final_sha256=hashlib.sha256(final).hexdigest(),
+                  payload_sha256=hashlib.sha256(raw[marker:]).hexdigest(),
+                  payload_unchanged=final[final.find(b'\r\n\x1a'):] == raw[marker:],
+                  mdx_validation='unverified')
+    return final, report
 
 
 def _parts(text, in_comment):
@@ -151,6 +201,10 @@ def compile_mxc(source, output, *, timeout, mxc=None, run68=None, generator,
     score = text.replace('\r\n', '\n').replace('\r', '\n').replace('\n', '\r\n').encode('cp932')
     if prepared_output is not None:
         prepared_output = Path(prepared_output)
+        native_copy, metadata = compiler_evidence_paths(prepared_output)
+        for path in (prepared_output, native_copy, metadata):
+            if not path.resolve().is_relative_to(prepared_output.parent.resolve()):
+                raise ValueError(f'Compiler evidence path leaves its directory: {path}')
         prepared_output.parent.mkdir(parents=True, exist_ok=True)
         prepared_output.write_bytes(score)
     with tempfile.TemporaryDirectory(prefix='mdx-mxc-') as temporary:
@@ -162,9 +216,29 @@ def compile_mxc(source, output, *, timeout, mxc=None, run68=None, generator,
         compiled = workspace / 'SCORE.mdx'
         if not compiled.is_file() or not compiled.stat().st_size:
             raise RuntimeError(result.stdout + result.stderr + '\nMXC produced no nonempty MDX')
+        raw = compiled.read_bytes()
+        if prepared_output is not None:
+            native_copy.write_bytes(raw)
+        final, report = restore_mxc_title(raw, text)
+        report.update(native_compiler_sha256=hashlib.sha256(native.read_bytes()).hexdigest(),
+                      prepared_source_sha256=hashlib.sha256(score).hexdigest(),
+                      source_encoding='cp932', source_newlines='CRLF',
+                      native_arguments=['SCORE.MML'])
+        compiled.write_bytes(final)
+        if prepared_output is not None:
+            metadata.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
         inspection = workspace / 'inspection.csv'
-        _checked([str(generator), '--inspect-mdx', str(compiled), str(inspection)],
-                 workspace, timeout, 'utf-8')
-        if not inspection.is_file() or not inspection.stat().st_size:
-            raise RuntimeError('MDX validation produced no inspection output')
+        try:
+            _checked([str(generator), '--inspect-mdx', str(compiled), str(inspection)],
+                     workspace, timeout, 'utf-8')
+            if not inspection.is_file() or not inspection.stat().st_size:
+                raise RuntimeError('MDX validation produced no inspection output')
+        except (OSError, RuntimeError, ValueError, subprocess.TimeoutExpired):
+            report['mdx_validation'] = 'fail'
+            if prepared_output is not None:
+                metadata.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+            raise
+        report['mdx_validation'] = 'pass'
+        if prepared_output is not None:
+            metadata.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
         shutil.copyfile(compiled, output)

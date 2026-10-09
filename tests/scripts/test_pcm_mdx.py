@@ -24,6 +24,13 @@ from vgm_io import read_vgm_header
 from verify_opm_mdx_roundtrip import source_facts
 
 
+def record_previous_binaries(out, stem):
+    artifacts = {name: dict(path=str(path), status='generated',
+                            sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+                 for name in ('mdx', 'pdx') if (path := out / (stem + '.' + name)).is_file()}
+    (out / (stem + '.pcm.assessment.json')).write_text(json.dumps(dict(artifacts=artifacts)))
+
+
 class PcmMdxTests(unittest.TestCase):
     def test_assessment_keeps_loss_unknown_and_failure_separate(self):
         report = PcmAssessment('best-effort')
@@ -225,6 +232,7 @@ class PcmMdxTests(unittest.TestCase):
             out = folder / 'out'
             out.mkdir()
             (out / 'source.pdx').write_bytes(b'old')
+            record_previous_binaries(out, 'source')
             (out / 'source.mdx.mml').write_text('old')
             with self.assertRaisesRegex(ValueError, 'requires the built MDX helper'):
                 convert(source, out, dump_passes=True, pcm_generator=folder / 'missing', pcm_policy='best-effort')
@@ -245,6 +253,7 @@ class PcmMdxTests(unittest.TestCase):
             source.write_bytes(original)
             for suffix in ('.mdx', '.pdx', '.mdx.mml', '.pcm_target_commands.csv'):
                 (out / ('source' + suffix)).write_bytes(b'stale')
+            record_previous_binaries(out, 'source')
             plan_folder = out / 'source.pcm'
             plan_folder.mkdir()
             (plan_folder / 'target.tsv').write_text('stale')
@@ -277,14 +286,78 @@ class PcmMdxTests(unittest.TestCase):
             self.assertEqual(report['artifact_status'], 'error')
             self.assertEqual(report['artifacts']['pdx']['status'], 'not_generated')
 
-    def test_pcm_options_reject_target_only_normalization_and_register_replay(self):
+    def test_pcm_does_not_overwrite_unowned_reference_pair(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            out = Path(temporary)
+            source = out / 'source.vgm'
+            source.write_bytes(next(cases())[1])
+            references = {name: out / ('source.' + name) for name in ('mdx', 'pdx')}
+            for path in references.values():
+                path.write_bytes(b'original reference material')
+            with self.assertRaisesRegex(ValueError, 'separate --outdir'):
+                convert(source, out, pcm_policy='best-effort')
+            for path in references.values():
+                self.assertEqual(path.read_bytes(), b'original reference material')
+            report = json.loads((out / 'source.pcm.assessment.json').read_text())
+            self.assertEqual(report['artifact_status'], 'error')
+            for name in references:
+                self.assertEqual(report['artifacts'][name]['status'], 'preserved_existing')
+                self.assertNotIn('sha256', report['artifacts'][name])
+
+    def test_pcm_options_reject_register_replay(self):
         with tempfile.TemporaryDirectory() as temp:
             source = Path(temp) / 'source.vgm'
             source.write_bytes(next(cases())[1])
-            for options, message in (({'normalize_lengths': True}, 'shared with OPM'),
-                                     ({'notation': 'registers'}, 'structured notation')):
-                with self.assertRaisesRegex(ValueError, message):
-                    convert(source, Path(temp) / 'out', **options)
+            with self.assertRaisesRegex(ValueError, 'structured notation'):
+                convert(source, Path(temp) / 'out', notation='registers')
+
+    @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
+    def test_normalization_default_on_retains_the_shared_pcm_clock_and_source(self):
+        commands, _ = playback(bytes(range(32)))
+        commands = bytes.fromhex('54 28 40 54 08 78') + commands + bytes.fromhex('54 08 00')
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / 'shared.vgm'
+            original = vgm(commands, opm=True)
+            source.write_bytes(original)
+            outputs = []
+            for name, requested in [('default', None), ('on', True), ('off', False)]:
+                out = root / name
+                mml, analysis, projection = convert(source, out, dump_passes=True, normalize_lengths=requested)
+                report = json.loads((out / 'shared.mdx.normalization.json').read_text())
+                self.assertEqual(report['enabled'], requested is not False)
+                self.assertFalse(report['adopted'])
+                self.assertEqual(report['before'], report['selected'])
+                if requested is not False:
+                    self.assertIn('shared OPM/PCM clock', report['reason'])
+                timing = json.loads((out / 'shared.mdx.timing.json').read_text())
+                manifest = (out / 'shared.pcm/target.tsv').read_text()
+                self.assertIn(f'tempo\t{256-projection.sample_multiplier}\t\n', manifest)
+                self.assertEqual(analysis.source_end_vgmticks, projection.source_end_vgmticks)
+                outputs.append((mml.read_bytes(), (out / 'shared.pdx').read_bytes(),
+                                (out / 'shared.mdx').read_bytes(), (out / 'shared.pcm_segments.csv').read_bytes()))
+            self.assertEqual(outputs[0], outputs[1])
+            self.assertEqual(outputs[0], outputs[2])
+            self.assertEqual(source.read_bytes(), original)
+
+    @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
+    def test_unused_unsupported_opm_declaration_does_not_block_pcm_only(self):
+        commands, _ = playback(bytes(range(32)))
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'pcm.vgm'
+            outputs = []
+            for name, clock in [('plain', 0), ('unused', 0xc0000000 | 3579545)]:
+                raw = bytearray(vgm(commands))
+                struct.pack_into('<I', raw, 0x30, clock)
+                source.write_bytes(raw)
+                out = root / name
+                mml, analysis, projection = convert(source, out, dump_passes=True)
+                self.assertFalse(analysis.events)
+                self.assertEqual(projection.clock_hz, 4000000)
+                self.assertEqual(source.read_bytes(), raw)
+                outputs.append((mml.read_bytes(), (out / 'pcm.mdx').read_bytes(), (out / 'pcm.pdx').read_bytes()))
+            self.assertEqual(outputs[0], outputs[1])
 
     @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
     def test_direct_mdx_failure_preserves_partial_artifacts_and_failure_scope(self):
@@ -294,6 +367,7 @@ class PcmMdxTests(unittest.TestCase):
             out = Path(temp) / 'out'
             out.mkdir()
             (out / 'source.mdx').write_bytes(b'stale')
+            record_previous_binaries(out, 'source')
             with patch('pcm_mdx.write_mdx', side_effect=ValueError('typed MDX failed')):
                 with self.assertRaisesRegex(ValueError, 'typed MDX failed'):
                     convert(source, out, pcm_policy='best-effort')

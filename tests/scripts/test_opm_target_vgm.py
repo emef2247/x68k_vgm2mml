@@ -7,6 +7,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+import struct
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'py'), str(ROOT)]
@@ -18,9 +20,91 @@ from opm_target_vgm import write_target_vgm
 from psg_scc_conversion import convert
 from psg_scc_opm import project
 from vgm_timing import command_times
+from pcm_mdx import default_generator
+
+
+def jittered_psg(path):
+    from test_opm_mdx import wait
+    commands = bytes.fromhex('a0 07 3e a0 08 00 a0 00 c8 a0 01 00')
+    cursor = 0
+    for index in range(40):
+        start = round((index + 1) * 5419.008) + (index % 5 - 2) * 25
+        end = start + round(9 * 451.584) + (index % 3 - 1) * 17
+        commands += wait(start - cursor) + bytes((0xa0, 0, (200, 180, 160, 150)[index % 4], 0xa0, 8, 15))
+        commands += wait(end - start) + bytes((0xa0, 8, 0))
+        cursor = end
+    commands += wait(1355) + b'\x66'
+    header = bytearray(0x100)
+    header[:4] = b'Vgm '
+    struct.pack_into('<I', header, 8, 0x171)
+    struct.pack_into('<I', header, 0x34, 0xcc)
+    struct.pack_into('<I', header, 0x74, 1789772)
+    raw = header + commands
+    struct.pack_into('<I', raw, 4, len(raw) - 4)
+    path.write_bytes(raw)
 
 
 class TargetVgmTests(unittest.TestCase):
+    @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
+    def test_normalized_psg_target_survives_semantic_roundtrip(self):
+        from scripts.psg_scc_to_mdx import compile_and_verify
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'jitter.vgm'
+            jittered_psg(source)
+            mml, plan = convert(source, root / 'out')
+            self.assertTrue(plan.structured_context.normalization['adopted'])
+            report = compile_and_verify(default_generator(), mml, plan, root / 'out', 'returned')
+            self.assertTrue(report['passed'], report)
+            self.assertTrue(report['key_commands_match'])
+
+    def test_psg_normalization_checks_original_boundaries_and_preserves_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'jitter.vgm'
+            jittered_psg(source)
+            before, plan_before = convert(source, root / 'before', normalize_lengths=False)
+            after, plan_after = convert(source, root / 'after')
+            report = json.loads((root / 'after/jitter.mdx.normalization.json').read_text())
+            self.assertTrue(report['adopted'], report)
+            self.assertTrue(report['source_projection_check']['accepted'])
+            self.assertEqual(plan_before.rows, plan_after.rows)
+            self.assertEqual((root / 'before/jitter.psg.segments.csv').read_bytes(),
+                             (root / 'after/jitter.psg.segments.csv').read_bytes())
+            baseline_native = '\n'.join(before.read_text().splitlines()[2:]) + '\n'
+            self.assertEqual(baseline_native,
+                             (root / 'after/projected_opm/jitter.mdx.before.normalize.mml').read_text())
+            self.assertNotEqual(before.read_bytes(), after.read_bytes())
+            provenance = json.loads((root / 'after/projected_opm/provenance.json').read_text())
+            self.assertLessEqual(provenance['max_abs_source_to_final_error_samples'],
+                                 provenance['source_to_final_timing_bound_samples'])
+
+    def test_original_source_check_rejection_keeps_structured_baseline(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'jitter.vgm'
+            jittered_psg(source)
+            baseline, _ = convert(source, root / 'before', normalize_lengths=False)
+            with patch('psg_scc_conversion._source_normalization_check', return_value=dict(
+                    accepted=False, reason='Original source boundary would collapse')) as checked:
+                rejected, _ = convert(source, root / 'after')
+            checked.assert_called_once()
+            self.assertEqual(baseline.read_bytes(), rejected.read_bytes())
+            report = json.loads((root / 'after/jitter.mdx.normalization.json').read_text())
+            self.assertFalse(report['adopted'])
+            self.assertEqual(report['reason'], 'Original source boundary would collapse')
+            self.assertEqual(report['selected'], report['before'])
+            self.assertTrue((root / 'after/projected_opm/jitter.mdx.structure.units.csv').is_file())
+
+    def test_registers_holding_is_an_internal_compatibility_mode(self):
+        source = ROOT / 'tests/fixtures/public/psg/short_pulses/short_pulses.vgm'
+        with tempfile.TemporaryDirectory() as temporary:
+            _, plan = convert(source, temporary, notation='registers')
+            self.assertEqual(plan.settings['projection_mode'], 'held-register-compatibility')
+            self.assertIsNone(plan.structured_context)
+            with self.assertRaisesRegex(ValueError, 'incompatible'):
+                convert(source, temporary, notation='registers', projection_mode='musical')
+
     def test_serialization_maps_real_command_ids_and_preserves_end(self):
         first = PsgSegment('v', 0., 0, 0, 1, 200, 15, 4, 'c', 0, (),
                            1, 0, 0, 0, 0, 0x3e, 15, vgmticks=70000, vgmticks_end=71000)
@@ -103,7 +187,8 @@ class TargetVgmTests(unittest.TestCase):
                 run = subprocess.run([sys.executable,str(ROOT/'vgm2mml.py'),str(source),
                                       '--target','opm','--outdir',str(out),*flags],capture_output=True,text=True)
                 self.assertEqual(run.returncode,0,run.stderr)
-                self.assertEqual([p.name for p in out.iterdir()], ['short_pulses.mdx.mml'])
+                self.assertEqual(sorted(p.name for p in out.iterdir()),
+                                 ['short_pulses.conversion.json', 'short_pulses.mdx.mml', 'short_pulses.mdx.normalization.json'])
 
 
 if __name__ == '__main__':

@@ -6,7 +6,7 @@ from pathlib import Path
 import struct
 import subprocess
 import sys
-from mdx_compiler import compile_mxc
+from mdx_compiler import compile_mxc, compiler_evidence_paths
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'py'))
 from opm import build_segments, dump_analysis
@@ -15,6 +15,7 @@ from vgm_io import read_vgm_bytes, read_vgm_header
 from vgm_reader import _OpmTrace, parse_vgm
 from opm_conversion import convert
 from opm_mdx import scheduled_projection
+from conversion_config import inspect_source, select_mdx_route
 
 
 def source_files(path):
@@ -47,7 +48,9 @@ def generate(generator, mml, folder, stem, *, max_ticks=None,
         raise ValueError('Compiler must be mxc or mmlx')
     mdx, vgm = folder / (stem + '.mdx'), folder / (stem + '.vgm')
     prepared = folder / (stem + '.mxc.mml')
-    for path in (mdx, vgm, prepared):
+    for path in (mdx, vgm, prepared, *compiler_evidence_paths(prepared)):
+        if not path.resolve().is_relative_to(folder.resolve()):
+            raise ValueError(f'Compiler output path leaves its directory: {path}')
         path.unlink(missing_ok=True)
     command = [str(generator), str(mml), str(mdx), str(vgm)]
     log = folder / (stem + '.compile.log')
@@ -99,7 +102,8 @@ def main():
     suffix = '.exe' if sys.platform == 'win32' else ''
     parser.add_argument('--notation', choices=('structured', 'legacy', 'registers'), default='structured')
     parser.add_argument('--no-loops', action='store_true')
-    parser.add_argument('--normalize-lengths', action='store_true', help='Opt-in native MDX target-clock correction')
+    parser.add_argument('--normalize-lengths', action=argparse.BooleanOptionalAction, default=None,
+                        help='Safe target-clock correction (default: ON for structured MDX)')
     parser.add_argument('--title')
     parser.add_argument('--reference-mml-only', action='store_true', help='Select VGMs with a same-stem reference MML')
     parser.add_argument('--mdxdump',type=Path,help='External mdxtools executable for reference/generated MDX metadata audit')
@@ -148,10 +152,16 @@ def main():
             # A failed rerun must not attribute prior evidence to this compiler.
             for old in (folder / (source.stem + '.mdx.mml'),
                         *(folder / ('returned' + suffix)
-                          for suffix in ('.mdx', '.vgm', '.mxc.mml', '.compile.log')),
+                          for suffix in ('.mdx', '.vgm', '.mxc.mml', '.mxc.mdx', '.mxc.metadata.json', '.compile.log')),
                         folder / 'conversion.log'):
+                if not old.resolve().is_relative_to(args.outdir.resolve()):
+                    raise ValueError(f'Compiler output path leaves the output directory: {old}')
                 old.unlink(missing_ok=True)
             row.update(source_facts(source, include_pcm=True))
+            row['source_usage'] = inspect_source(source)
+            if select_mdx_route(row['source_usage']) != 'native-opm-pcm':
+                row['status'] = 'unsupported_target'
+                raise ValueError('This roundtrip verifier requires native OPM/PCM source commands')
             if row['clock_hz'] != 4000000 or row['chip_type'] != 'YM2151' or row['dual_chip']:
                 row['status'] = 'unsupported_target'
                 raise ValueError('MDX control replay requires one 4 MHz YM2151; source clock/state is not retuned')
@@ -160,11 +170,10 @@ def main():
                                                         normalize_lengths=args.normalize_lengths,
                                                         pcm_generator=args.generator)
             tolerance = 6
-            if args.normalize_lengths:
-                correction = json.loads((folder / (source.stem + '.mdx.normalization.json')).read_text(encoding='utf-8'))
-                row['length_normalization'] = correction
-                if correction['status'] == 'applied':
-                    tolerance = correction['correction_bound_samples']
+            correction = json.loads((folder / (source.stem + '.mdx.normalization.json')).read_text(encoding='utf-8'))
+            row['length_normalization'] = correction
+            if correction['status'] == 'applied':
+                tolerance = correction['correction_bound_samples']
             phase='compile_replay'
             returned = generate(generator, mml, folder, 'returned',
                                 max_ticks=max(2, projection.end_mdx_tick + 1), **compiler_options)
@@ -215,6 +224,11 @@ def main():
                           if phase != 'conversion' else None)
         if compiler_input is not None and compiler_input.is_file():
             row['compiler_input'] = str(compiler_input.resolve())
+        if args.compiler == 'mxc' and phase != 'conversion':
+            for label, evidence in zip(('compiler_native_mdx', 'compiler_metadata'),
+                                       compiler_evidence_paths(folder / 'returned.mxc.mml')):
+                if evidence.is_file():
+                    row[label] = str(evidence.resolve())
         (folder / 'comparison.json').write_text(json.dumps(row, indent=2) + '\n', encoding='utf-8')
         if row.get('error'):
             (folder / 'conversion.log').write_text(row['error'] + '\n', encoding='utf-8')

@@ -1,37 +1,55 @@
 """Convert native OPM VGM through inspectable Segments to MDX MML controls."""
 import json
 import csv
+import hashlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from opm import OpmAnalysis, build_segments, dump_analysis
 from opm_mdx import MdxProjection, mdx_tick, projected_samples, project_segments, render, dump_projection
 from vgm_reader import parse_vgm
+from conversion_config import normalization_enabled
+from pcm_assessment import generated_binary_artifacts
 
 
-def _record_pcm_assessment(assessment, outdir, stem, *, requires_pdx):
+def _record_pcm_assessment(assessment, outdir, stem, *, requires_pdx, retained=()):
     for name, suffix in (('mml', '.mdx.mml'), ('mdx', '.mdx'), ('pdx', '.pdx')):
         path = outdir / (stem + suffix)
         required = name == 'mml' or (name in ('pdx', 'mdx') and requires_pdx)
-        status = ('generated' if path.is_file() and path.stat().st_size else
+        status = ('preserved_existing' if path in retained else
+                  'generated' if path.is_file() and path.stat().st_size else
                   'blocked' if required and assessment.artifact_status == 'blocked' else
                   'not_generated' if required else 'not_requested')
         assessment.artifacts[name] = dict(path=str(path), status=status, required=required)
+        if status == 'generated':
+            assessment.artifacts[name]['sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
     assessment.dump(outdir, stem)
 
 
-def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=False, pcm_generator=None, pcm_policy='strict'):
+def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None):
     source, outdir = Path(source), Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    if normalize_lengths and notation != 'structured':
-        raise ValueError('Native MDX length normalization requires structured notation')
+    requested_normalization = normalize_lengths
+    normalize_lengths = normalization_enabled(normalize_lengths, notation=notation)
     if pcm_policy not in ('strict', 'best-effort'):
         raise ValueError('PCM policy must be strict or best-effort')
-    for suffix in ('.mdx.mml', '.pdx', '.pcm.timing.json', '.pcm.assessment.json', '.pcm.assessment.csv',
+    owned_binary = generated_binary_artifacts(outdir, source.stem)
+    retained_binary = tuple(path for name in ('mdx', 'pdx')
+                            if (path := outdir / (source.stem + '.' + name)).is_file()
+                            and path not in owned_binary)
+    artifacts = list(owned_binary)
+    for suffix in ('.mdx.mml', '.pcm.timing.json', '.pcm.assessment.json', '.pcm.assessment.csv',
                    '.mdx.normalization.json', '.mdx.normalization.csv', '.mdx.before.normalize.mml'):
-        artifact = outdir / (source.stem + suffix)
+        artifacts.append(outdir / (source.stem + suffix))
+    for artifact in artifacts:
         if artifact.resolve() == source.resolve():
             raise ValueError('Conversion output must not replace its source input')
+        if not artifact.resolve().is_relative_to(outdir.resolve()):
+            raise ValueError('Conversion output leaves its output directory')
+    for artifact in artifacts:
         artifact.unlink(missing_ok=True)
+    def record_pcm_assessment(assessment, *, requires_pdx):
+        _record_pcm_assessment(assessment, outdir, source.stem,
+                               requires_pdx=requires_pdx, retained=retained_binary)
     metadata = {}
     pcm_metadata = {}
     source_loop = {}
@@ -43,7 +61,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         pcm_analysis = pcm_metadata['analysis']
         has_pcm = bool(pcm_analysis.transfers or pcm_analysis.raw_commands or pcm_analysis.blocks)
         if has_pcm:
-            for suffix in ('.mdx', '.vgm', '.pcm_bindings.csv', '.pcm_projection.csv',
+            for suffix in ('.pcm_bindings.csv', '.pcm_projection.csv',
                            '.pcm_clock.csv', '.pcm_target_commands.csv'):
                 artifact = outdir / (source.stem + suffix)
                 if artifact.resolve() != source.resolve():
@@ -61,8 +79,6 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                           segments_csv=outdir/(source.stem+'.opm.segments.csv'))
     if has_pcm and (notation != 'structured' or track_layout != 'channels'):
         raise ValueError('PCM output requires structured notation and channel tracks')
-    if has_pcm and normalize_lengths:
-        raise ValueError('PCM target timing must stay shared with OPM; --normalize-lengths is not supported yet')
     clock = None
     if notation == 'structured':
         from opm_mdx_music import infer_clock
@@ -74,12 +90,45 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         projection = project_segments(analysis.segments, end_vgmticks=analysis.source_end_vgmticks,
                                       sample_multiplier=multiplier)
     else:
-        if metadata['csv_path'] and (metadata['clock_hz'] != 4000000 or
+        if metadata['write_count'] and (metadata['clock_hz'] != 4000000 or
                                     metadata['chip_type'] != 'YM2151' or metadata['dual_chip']):
             raise ValueError('Initial MDX target requires one 4 MHz YM2151 instance')
         end = mdx_tick(analysis.source_end_vgmticks, multiplier)
         projection = MdxProjection((), analysis.source_end_vgmticks, end,
-                                  projected_samples(end, multiplier), metadata['clock_hz'], multiplier)
+                                  projected_samples(end, multiplier),
+                                  metadata['clock_hz'] if metadata['write_count'] else 4000000, multiplier)
+    before = projection
+    normalization = dict(status='unchanged', reason='target-clock correction disabled',
+                         source_segments_unchanged=True, before=before.timing_report())
+    evidence = []
+    if normalize_lengths and has_pcm:
+        normalization['reason'] = 'PCM-aware normalization is not verified; retaining the shared OPM/PCM clock'
+    elif normalize_lengths:
+        from opm_note_normalization import normalize_projection
+        projection, normalization, evidence = normalize_projection(analysis.segments, before,
+                                                                   loop_metadata=source_loop)
+        if normalization['status'] == 'applied' and normalization_validator is not None:
+            check = normalization_validator(projection, normalization)
+            normalization['source_projection_check'] = check
+            if not check['accepted']:
+                projection = before
+                normalization.update(status='unchanged', reason=check['reason'])
+                for row in evidence:
+                    row['projection_status'] = 'unchanged'
+    elif notation != 'structured':
+        normalization['reason'] = 'target-clock correction is not applicable to this notation'
+    normalization.update(requested=requested_normalization, enabled=normalize_lengths,
+                         adopted=normalization['status'] == 'applied', notation=notation,
+                         selected=projection.timing_report(), shared_pcm_clock=has_pcm)
+    normalization_path = outdir / (source.stem + '.mdx.normalization.json')
+    normalization_path.write_text(json.dumps(normalization, indent=2) + '\n', encoding='utf-8')
+    if dump_passes and evidence:
+        with (outdir / (source.stem + '.mdx.normalization.csv')).open('w', newline='', encoding='utf-8') as stream:
+            fields = list(dict.fromkeys(k for row in evidence for k in row))
+            writer = csv.DictWriter(stream, fieldnames=fields)
+            writer.writeheader()
+            for row in evidence:
+                writer.writerow({k: json.dumps(v) if isinstance(v, list) else v for k, v in row.items()})
     pcm_plan = None
     pcm_assessment = None
     if has_pcm:
@@ -89,39 +138,26 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             candidate = project(pcm_analysis, stem=source.stem, sample_multiplier=multiplier,
                                 policy=pcm_policy)
         except ProjectionError as error:
-            _record_pcm_assessment(error.assessment, outdir, source.stem,
-                                   requires_pdx=bool(pcm_analysis.samples))
+            record_pcm_assessment(error.assessment, requires_pdx=bool(pcm_analysis.samples))
             raise ProjectionError(f'{error}; PCM assessment: {outdir / (source.stem + ".pcm.assessment.json")}',
                                   error.assessment) from error
         pcm_assessment = candidate.assessment
         candidate.dump(outdir, source.stem)
-        _record_pcm_assessment(pcm_assessment, outdir, source.stem,
-                               requires_pdx=bool(candidate.bindings))
+        record_pcm_assessment(pcm_assessment, requires_pdx=bool(candidate.bindings))
         if candidate.bindings:
             pcm_plan = candidate
             try:
+                if retained_binary:
+                    raise ValueError('PCM output would replace existing MDX/PDX without a matching generation record; '
+                                     'use a separate --outdir')
                 write_pdx(pcm_plan, pcm_analysis, outdir, source.stem, generator=pcm_generator)
             except (OSError, ValueError) as error:
                 pcm_assessment.error(str(error))
-                _record_pcm_assessment(pcm_assessment, outdir, source.stem, requires_pdx=True)
+                record_pcm_assessment(pcm_assessment, requires_pdx=True)
                 raise
             (outdir / (source.stem + '.pcm.timing.json')).write_text(
                 json.dumps(pcm_plan.summary(), indent=2) + '\n', encoding='utf-8')
-            _record_pcm_assessment(pcm_assessment, outdir, source.stem, requires_pdx=True)
-    before = projection
-    normalization = None
-    if normalize_lengths:
-        from opm_note_normalization import normalize_projection
-        projection, normalization, evidence = normalize_projection(analysis.segments, before,
-                                                                   loop_metadata=source_loop)
-        (outdir / (source.stem + '.mdx.normalization.json')).write_text(json.dumps(normalization, indent=2) + '\n', encoding='utf-8')
-        if dump_passes and evidence:
-            with (outdir / (source.stem + '.mdx.normalization.csv')).open('w', newline='', encoding='utf-8') as stream:
-                fields = list(dict.fromkeys(k for row in evidence for k in row))
-                writer = csv.DictWriter(stream, fieldnames=fields)
-                writer.writeheader()
-                for row in evidence:
-                    writer.writerow({k: json.dumps(v) if isinstance(v, list) else v for k, v in row.items()})
+            record_pcm_assessment(pcm_assessment, requires_pdx=True)
     from gd3 import read_gd3
     gd3 = read_gd3(source)
     title_source = 'explicit' if title is not None else 'gd3' if gd3 and (gd3[1].strip() or gd3[0].strip()) else 'filename'
@@ -146,8 +182,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         except (OSError, ValueError) as error:
             if pcm_assessment is not None:
                 pcm_assessment.error(str(error))
-                _record_pcm_assessment(pcm_assessment, outdir, source.stem,
-                                       requires_pdx=bool(pcm_plan))
+                record_pcm_assessment(pcm_assessment, requires_pdx=bool(pcm_plan))
             raise
         text = structure.text
         if dump_passes and normalization and normalization['status'] == 'applied':
@@ -165,8 +200,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         mml.unlink(missing_ok=True)
         if pcm_assessment is not None:
             pcm_assessment.error(str(error))
-            _record_pcm_assessment(pcm_assessment, outdir, source.stem,
-                                   requires_pdx=bool(pcm_plan))
+            record_pcm_assessment(pcm_assessment, requires_pdx=bool(pcm_plan))
         raise
     if pcm_plan is not None:
         from pcm_mdx import write_mdx
@@ -176,12 +210,11 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             write_mdx(pcm_plan, fm_structure, outdir, source.stem, generator=pcm_generator)
         except (OSError, ValueError) as error:
             pcm_assessment.error(str(error))
-            _record_pcm_assessment(pcm_assessment, outdir, source.stem, requires_pdx=True)
+            record_pcm_assessment(pcm_assessment, requires_pdx=True)
             raise
     if pcm_assessment is not None:
         pcm_assessment.generated()
-        _record_pcm_assessment(pcm_assessment, outdir, source.stem,
-                               requires_pdx=bool(pcm_plan))
+        record_pcm_assessment(pcm_assessment, requires_pdx=bool(pcm_plan))
     if dump_passes:
         dump_projection(projection, outdir / (source.stem + '.mdx.controls.csv'), track_layout=track_layout)
         report = projection.timing_report()

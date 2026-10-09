@@ -1,4 +1,4 @@
-"""Batch diagnostic: PSG/SCC OPM projection, compiler verification and reference comparison. Normal conversion: vgm2mml.py --target opm."""
+"""Batch diagnostic: PSG/SCC OPM projection and verification. Normal conversion: vgm2mml.py input.vgm --outdir OUTPUT."""
 import argparse
 import csv
 import shutil
@@ -58,6 +58,8 @@ def main():
     parser.add_argument('--scc-gain', type=float, default=.125)
     parser.add_argument('--notation', choices=['structured', 'registers'], default='structured')
     parser.add_argument('--no-loops', action='store_true')
+    parser.add_argument('--normalize-lengths', action=argparse.BooleanOptionalAction, default=None,
+                        help='Safe target-clock correction (default: ON for structured MDX)')
     parser.add_argument('--generator', type=Path, help='External MDX compiler/player; retain MDX/VGM and verify')
     parser.add_argument('--comparison-dir', type=Path, help='Optional existing OPM VGM tree, matched by relative path')
     args = parser.parse_args()
@@ -77,7 +79,8 @@ def main():
         try:
             mml, plan = convert(source, out, psg_gain=args.psg_gain, scc_gain=args.scc_gain,
                                 psg_model=args.psg_model, pitch_policy=args.opm_pitch_policy,
-                                notation=args.notation, loops=not args.no_loops)
+                                notation=args.notation, loops=not args.no_loops,
+                                normalize_lengths=args.normalize_lengths)
             row.update(status='mml_only', mml=str(mml))
             if args.generator:
                 report = compile_and_verify(args.generator, mml, plan, out, source.stem)

@@ -1,7 +1,7 @@
-# MDX note lengths and optional correction
+# MDX note lengths and safe target-clock correction
 
 ```sh
-python vgm2mml.py input.vgm --outdir outputs/input --normalize-lengths --dump-passes
+python vgm2mml.py input.vgm --outdir outputs/input --dump-passes
 ```
 
 Each native track begins with `/* Track A */` through `/* Track H */`.
@@ -12,10 +12,18 @@ include `1`, `2`, `3`, `4`, `6`, `8`, `12`, `16`, `24`, `32`, `48`, `64`, `96`,
 `%13`. Long notes use whole-note chunks joined by ties; a held slice also ends
 with a tie so that a control change does not create a new attack.
 
-This formatting preserves tick lengths. `--normalize-lengths` is a separate,
-opt-in timing correction and requires `--notation structured` (the default).
+This formatting preserves tick lengths. Target-clock correction is separate
+and defaults ON for `--notation structured`. Use `--no-normalize-lengths` to
+disable it; explicit `--normalize-lengths` is still accepted. Other MDX notations
+default OFF, and MGSDRV retains its separate opt-in correction.
 It runs after native analysis and before note/trajectory keys and loop planning.
 Reference MML is never an input. MDX macroization remains outside the task.
+Rejected or abstained correction retains the same structured renderer and
+baseline clock/timing projection. It never changes notation to legacy/registers.
+PCM-containing inputs keep their baseline shared OPM/PCM clock until PCM-aware
+correction is verified; enabling correction is not an input rejection reason.
+PSG/SCC projected output checks original source boundaries and cumulative timing
+through the intermediate OPM lattice before accepting a nominated clock.
 
 ## Reuse and target boundary
 
@@ -83,7 +91,8 @@ loop-token equality alone cannot establish relative-state equivalence.
 
 ## Reports
 
-With the flag, `<stem>.mdx.normalization.json` records applied/unchanged status,
+`<stem>.mdx.normalization.json` records requested/enabled/adopted, selected clock,
+applied/unchanged status (also for disabled/non-applicable correction),
 the reason, original and nominated MDX timing, fitted estimator parameters,
 actual worst correction, boundary kinds and event IDs. Rejected candidates
 retain collision count and up to ten collision examples where available.
@@ -109,7 +118,7 @@ into source fixtures when a separate `--outdir` is supplied.
 
 ```sh
 python scripts/verify_opm_mdx_roundtrip.py input.vgm \
-  --outdir outputs/input-check --normalize-lengths
+  --outdir outputs/input-check
 ```
 
 The external check still requires exact projected Key edges, effective state

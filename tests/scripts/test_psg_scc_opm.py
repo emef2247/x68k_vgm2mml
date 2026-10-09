@@ -123,7 +123,9 @@ class AdditiveTargetTests(unittest.TestCase):
                                   '--target', 'opm-additive', '--outdir', str(target)],
                                  capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stderr)
-            self.assertEqual([p.name for p in target.iterdir()], ['redundant_fnum_writes.mdx.mml'])
+            self.assertEqual(sorted(p.name for p in target.iterdir()),
+                             ['redundant_fnum_writes.conversion.json', 'redundant_fnum_writes.mdx.mml',
+                              'redundant_fnum_writes.mdx.normalization.json'])
             default = Path(tmp) / 'mgs'
             run = subprocess.run([sys.executable, str(ROOT / 'vgm2mml.py'), str(fixture),
                                   '--target', 'mgs', '--outdir', str(default)], capture_output=True, text=True)

@@ -6,7 +6,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from mdx_compiler import compile_mxc
+from mdx_compiler import compile_mxc, compiler_evidence_paths
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'py'))
@@ -41,7 +41,8 @@ def _bounded(path, output):
 
 
 def _save_results(output, rows):
-    fields = ('input', 'status', 'detail', 'compiler', 'compiler_input', 'max_ticks', 'mml', 'mdx', 'vgm', 'pdx',
+    fields = ('input', 'status', 'detail', 'compiler', 'compiler_input',
+              'compiler_native_mdx', 'compiler_metadata', 'max_ticks', 'mml', 'mdx', 'vgm', 'pdx',
               'pcm_policy', 'pcm_projection_status', 'pcm_validation_status',
               'pcm_validation_run', 'pcm_known_losses', 'pcm_assessment', 'error_log')
     with _bounded(output / 'results.csv', output).open('w', encoding='utf-8', newline='') as stream:
@@ -52,7 +53,8 @@ def _save_results(output, rows):
 
 def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
               max_ticks=None, psg_model=None, psg_gain=None, scc_gain=None,
-              opm_pitch_policy=None, pcm_policy=None, compiler='mxc', mxc=None, run68=None):
+              opm_pitch_policy=None, pcm_policy=None, compiler='mxc', mxc=None, run68=None,
+              normalize_lengths=None):
     source, output = Path(source).resolve(), Path(output).resolve()
     if target not in ('mdx', 'opm', 'opm-additive'):
         raise ValueError('Target must be mdx, opm or opm-additive')
@@ -86,6 +88,8 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
     if not generator.is_file():
         raise ValueError('Build scripts/mdx_fixture_generator or specify --generator')
     options = []
+    if normalize_lengths is not None:
+        options.append('--normalize-lengths' if normalize_lengths else '--no-normalize-lengths')
     for flag, value in (('--psg-model', psg_model), ('--psg-gain', psg_gain),
                         ('--scc-gain', scc_gain), ('--opm-pitch-policy', opm_pitch_policy)):
         if value is not None:
@@ -104,8 +108,10 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
         error_log = _bounded(output / '_errors' / relative.with_suffix(relative.suffix + '.log'), output)
         compiler_input = _bounded(output / '_compiler_inputs' /
                                   relative.with_suffix(relative.suffix + '.mxc.mml'), output)
+        native_copy, compiler_metadata = (_bounded(p, output) for p in compiler_evidence_paths(compiler_input))
         row = dict(input=str(relative), status='', detail='', compiler=compiler, max_ticks='',
-                   mml='', mdx='', vgm='', pdx='', error_log='', compiler_input='', pcm_policy='',
+                   mml='', mdx='', vgm='', pdx='', error_log='', compiler_input='',
+                   compiler_native_mdx='', compiler_metadata='', pcm_policy='',
                    pcm_projection_status='', pcm_validation_status='',
                    pcm_validation_run='', pcm_known_losses='', pcm_assessment='')
         stage = 'conversion'
@@ -113,7 +119,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
             folder.mkdir(parents=True, exist_ok=True)
             # Only our generated files are replaced. Old binaries must
             # not look like current successes if this run fails.
-            for artifact in [*artifacts, pdx, assessment, compiler_input,
+            for artifact in [*artifacts, pdx, assessment, compiler_input, native_copy, compiler_metadata,
                              folder / (path.stem + '.pcm.assessment.csv')]:
                 artifact.unlink(missing_ok=True)
             command = [sys.executable, str(ROOT / 'vgm2mml.py'), str(path),
@@ -194,6 +200,9 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
             row['pdx'] = str(pdx.relative_to(output))
         if compiler_input.is_file() and compiler_input.stat().st_size:
             row['compiler_input'] = str(compiler_input.relative_to(output))
+        for label, evidence in (('compiler_native_mdx', native_copy), ('compiler_metadata', compiler_metadata)):
+            if evidence.is_file() and evidence.stat().st_size:
+                row[label] = str(evidence.relative_to(output))
         if row['status'] != 'success':
             row['error_log'] = str(error_log.relative_to(output))
         rows.append(row)
@@ -213,8 +222,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', type=Path, help='VGM/VGZ file or directory to scan recursively')
     parser.add_argument('--outdir', type=Path, required=True, help='Separate output tree')
-    parser.add_argument('--target', choices=('mdx', 'opm', 'opm-additive'), default='mdx',
-                        help='mdx: native OPM (default); opm/opm-additive: PSG/SCC input')
+    parser.add_argument('--target', choices=('mdx', 'opm', 'opm-additive'), default='mdx', metavar='{mdx}',
+                         help='MDX output with automatic source route (opm/opm-additive are deprecated aliases)')
+    parser.add_argument('--normalize-lengths', action=argparse.BooleanOptionalAction, default=None,
+                        help='Safe structured MDX target-clock correction (default: ON)')
     parser.add_argument('--compiler', choices=('mxc', 'mmlx'), default='mxc',
                         help='FM-only MML compiler (default mxc); typed PCM uses mmlx')
     parser.add_argument('--mxc', type=Path, help='Native MXC.X compiler')
@@ -235,7 +246,8 @@ def main():
                          compiler=args.compiler, mxc=args.mxc, run68=args.run68,
                          timeout=args.timeout, max_ticks=args.max_ticks, psg_model=args.psg_model,
                          psg_gain=args.psg_gain, scc_gain=args.scc_gain,
-                         opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy)
+                          opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy,
+                          normalize_lengths=args.normalize_lengths)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     success = sum(row['status'] == 'success' for row in rows)

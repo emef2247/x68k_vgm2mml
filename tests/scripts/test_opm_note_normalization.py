@@ -137,7 +137,7 @@ class NativeLengthCorrectionTests(unittest.TestCase):
             folder = Path(temp)
             source = folder / 'jitter.vgm'
             jittered_source(source)
-            before, a, p = convert(source, folder / 'before', dump_passes=True)
+            before, a, p = convert(source, folder / 'before', dump_passes=True, normalize_lengths=False)
             after, b, q = convert(source, folder / 'after', dump_passes=True, normalize_lengths=True)
             self.assertEqual(a.segments, b.segments)
             for suffix in ('_trace.opm_regs.csv', '_trace.opm.csv'):

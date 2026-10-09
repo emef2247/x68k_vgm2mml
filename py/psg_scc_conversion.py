@@ -19,16 +19,14 @@ class StructuredContext:
     performance: object
     analysis: object
     projection: object
+    normalization: dict | None = None
 
 def source_facts(raw):
     header = read_vgm_header(raw)
     clocks = [header['ay_clock_raw'], header['scc_clock_raw']]
     ay_type, ay_flags = header['ay_type'], header['ay_flags']
-    if any(c & 0xc0000000 for c in clocks):
-        raise ValueError('Dual chips and SCC variants are not implemented in this target')
-    if clocks[0] and (ay_type != 0 or ay_flags not in (0, 1, 2, 3)):
-        raise ValueError('Volume/pitch profile supports AY8910 legacy/single output flags only')
     end = 0
+    used_psg = used_scc = False
     silent_opll_writes = 0
     absent_scc_writes = 0
     for event in command_times(raw):
@@ -37,6 +35,7 @@ def source_facts(raw):
         if cmd in (0x61, 0x62, 0x63, 0x64, 0x66) or 0x70 <= cmd <= 0x7f:
             continue
         if cmd == 0xa0:
+            used_psg = True
             if not clocks[0] or raw[event.address + 1] > 15:
                 raise ValueError('Unsupported AY instance/register or missing clock')
         elif cmd == 0x51:
@@ -45,6 +44,7 @@ def source_facts(raw):
                 raise ValueError('Active OPLL is not supported by the PSG/SCC OPM target')
             silent_opll_writes += 1
         elif cmd == 0xd2:
+            used_scc = True
             port = raw[event.address + 1]
             if not clocks[1]:
                 if port == 2 and raw[event.address + 3] & 15:
@@ -54,6 +54,11 @@ def source_facts(raw):
                 raise ValueError('SCC test/variant/instance writes require further target support')
         else:
             raise ValueError(f'Unsupported source command in this prototype: {cmd:#x}')
+    clocks = [clocks[0] if used_psg else 0, clocks[1] if used_scc else 0]
+    if any(c & 0xc0000000 for c in clocks):
+        raise ValueError('Dual chips and SCC variants are not implemented in this target')
+    if used_psg and (ay_type != 0 or ay_flags not in (0, 1, 2, 3)):
+        raise ValueError('Volume/pitch profile supports AY8910 legacy/single output flags only')
     return dict(psg_clock=clocks[0], scc_clock=clocks[1], end_vgmticks=end,
                 ay_type=ay_type, ay_flags=ay_flags, silent_opll_writes=silent_opll_writes, absent_scc_writes=absent_scc_writes)
 
@@ -72,7 +77,32 @@ def _read_generated_csv(path):
         csv.field_size_limit(previous_limit)
 
 
-def _mark_projected_evidence(folder, source, target, performance, projection):
+def _source_normalization_check(performance, source_loop, projection, report):
+    from opm_mdx import mdx_tick, projected_samples
+    if source_loop.get('loop_offset') and source_loop.get('status') != 'valid':
+        return dict(accepted=False, reason='Original source loop boundary is not valid')
+    times = {0, performance.source_end}
+    times.update(w.vgmticks for w in performance.writes)
+    for row in performance.rows:
+        times.update((row['vgmticks'], row['vgmticks_end']))
+    if source_loop.get('status') == 'valid':
+        times.update((source_loop['loop_start_samples'], source_loop['decoded_end_samples']))
+    times = sorted(times)
+    # The intermediate OPM stream is emitted on the conventional MDX lattice.
+    ticks = [projection.mdx_tick(projected_samples(mdx_tick(time))) for time in times]
+    errors = [projection.projected_samples(tick) - time for time, tick in zip(times, ticks)]
+    bound = report['correction_bound_samples'] + 6
+    collapsed = sum(a == b for a, b in zip(ticks, ticks[1:]))
+    worst = max(map(abs, errors), default=0)
+    accepted = not collapsed and worst <= bound
+    return dict(accepted=accepted, reason=('Original source boundaries remain bounded and ordered' if accepted
+                else 'Normalized clock violates original PSG/SCC boundary timing/order'),
+                boundary_count=len(times), collapsed_positive_intervals=collapsed,
+                max_abs_source_to_final_error_samples=worst,
+                source_to_final_timing_bound_samples=bound)
+
+
+def _mark_projected_evidence(folder, source, target, performance, projection, normalization):
     """Label generated OPM evidence; original PSG/SCC CSVs remain unchanged."""
     mapping = folder / (source.stem + '.source_map.csv')
     columns, rows = _read_generated_csv(mapping)
@@ -100,6 +130,8 @@ def _mark_projected_evidence(folder, source, target, performance, projection):
             writer = csv.DictWriter(stream, fieldnames=fields, lineterminator='\n')
             writer.writeheader()
             writer.writerows(dict(row, state_origin='projected_opm') for row in records)
+    bound = (normalization['source_projection_check']['source_to_final_timing_bound_samples']
+             if normalization['adopted'] else 12)
     provenance = dict(state_origin='projected_opm', source_vgm=str(source.resolve()),
                       source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
                       projected_opm_vgm=str(target.resolve()),
@@ -110,31 +142,35 @@ def _mark_projected_evidence(folder, source, target, performance, projection):
                       projected_opm_end_vgmticks=projection.source_end_vgmticks,
                       final_mdx_end_vgmticks=projection.end_projected_vgmticks,
                       max_abs_source_to_final_error_samples=max(map(abs, errors), default=0),
-                      source_to_final_timing_bound_samples=12, mapping_csv=mapping.name)
+                      source_to_final_timing_bound_samples=bound, mapping_csv=mapping.name,
+                      length_normalization=normalization)
     (folder / 'provenance.json').write_text(json.dumps(provenance, indent=2) + '\n', encoding='utf-8')
-    if provenance['max_abs_source_to_final_error_samples'] > 12:
+    if provenance['max_abs_source_to_final_error_samples'] > bound:
         raise ValueError('Projected note clock exceeds the combined source timing bound')
 
 
 def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model='fm', pitch_policy=None,
-             notation='structured', loops=True):
+             notation='structured', loops=True, normalize_lengths=None, projection_mode='musical'):
     if notation not in ('structured', 'registers'):
         raise ValueError('PSG/SCC OPM notation must be structured or registers')
     source, out = Path(source), Path(out)
     facts = source_facts(read_vgm_bytes(source))
     out.mkdir(parents=True, exist_ok=True)
-    paths = parse_vgm(str(source), str(out), include_vgmticks=True, dump_loop=True)
+    source_loop = {}
+    paths = parse_vgm(str(source), str(out), include_vgmticks=True, dump_loop=True,
+                      loop_metadata=source_loop)
     psg = build_psg(paths[2], str(out), stem=source.stem, dump_passes=True)
     scc = build_scc(paths[3], str(out), stem=source.stem, dump_passes=True)
     plan = project(psg, scc, psg_clock=facts['psg_clock'], scc_clock=facts['scc_clock'],
                    end_vgmticks=facts['end_vgmticks'], psg_gain=psg_gain, scc_gain=scc_gain,
                    psg_model=psg_model, pitch_policy=pitch_policy)
     plan.settings.update(ay_type=facts['ay_type'], ay_flags=facts['ay_flags'],
-                         silent_opll_writes=facts['silent_opll_writes'], absent_scc_writes=facts['absent_scc_writes'])
+                          silent_opll_writes=facts['silent_opll_writes'], absent_scc_writes=facts['absent_scc_writes'],
+                          projection_mode=projection_mode)
     plan.dump(out, source.stem)
     mml = out / (source.stem + '.mdx.mml')
     title = title or source.stem + ' - PSG/SCC OPM (' + psg_model + ')'
-    if notation == 'structured':
+    if projection_mode == 'musical':
         from opm_performance import build_performance
         from opm_target_vgm import write_target_vgm
         from opm_conversion import convert as convert_opm
@@ -144,31 +180,56 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
         folder.mkdir(exist_ok=True)
         target = write_target_vgm(performance, folder / (source.stem + '.vgm'),
                                   mapping_csv=folder / (source.stem + '.source_map.csv'))
-        native_mml, analysis, projection = convert_opm(target, folder, dump_passes=True, title=title, loops=loops)
-        plan.structured_context = StructuredContext(performance, analysis, projection)
-        _mark_projected_evidence(folder, source, target, performance, projection)
+        native_mml, analysis, projection = convert_opm(target, folder, dump_passes=True, title=title, loops=loops,
+            normalize_lengths=normalize_lengths,
+            normalization_validator=lambda candidate, report: _source_normalization_check(
+                performance, source_loop, candidate, report))
+        normalization_path = folder / (source.stem + '.mdx.normalization.json')
+        normalization = json.loads(normalization_path.read_text(encoding='utf-8'))
+        shutil.copyfile(normalization_path, out / normalization_path.name)
+        plan.structured_context = StructuredContext(performance, analysis, projection, normalization)
+        _mark_projected_evidence(folder, source, target, performance, projection, normalization)
         text = native_mml.read_text(encoding='utf-8')
         text = '; PSG/SCC OPM target; PSG model=' + psg_model + '.\n; Musical onsets inferred from audibility; oscillator phase differs from the held baseline.\n' + text
         mml.write_text(text, encoding='utf-8')
     else:
         mml.write_text(plan.render(title), encoding='utf-8')
+        report = dict(requested=normalize_lengths, enabled=False, adopted=False, status='unchanged',
+                      reason='Target-clock correction is not applicable to held registers compatibility',
+                      notation=notation, source_segments_unchanged=True)
+        (out / (source.stem + '.mdx.normalization.json')).write_text(
+            json.dumps(report, indent=2) + '\n', encoding='utf-8')
     return mml, plan
 
 
 
 def convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model='fm', pitch_policy=None,
-            dump_passes=True, notation='structured', loops=True):
+            dump_passes=True, notation='structured', loops=True, normalize_lengths=None, projection_mode=None):
     """Keep native evidence on request; default standalone audit keeps all passes."""
+    from conversion_config import normalization_enabled
+    normalization_enabled(normalize_lengths, notation=notation)
+    projection_mode = projection_mode or ('musical' if notation == 'structured' else 'held-register-compatibility')
+    if (projection_mode, notation) not in (('musical', 'structured'), ('held-register-compatibility', 'registers')):
+        raise ValueError('Projection mode and notation are incompatible')
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
+    for suffix in ('.mdx.mml', '.mdx.normalization.json'):
+        artifact = out / (Path(source).stem + suffix)
+        if artifact.resolve() == Path(source).resolve():
+            raise ValueError('Conversion output must not replace its source input')
+        artifact.unlink(missing_ok=True)
     if dump_passes:
         return _convert(source, out, psg_gain=psg_gain, scc_gain=scc_gain, title=title,
-                        psg_model=psg_model, pitch_policy=pitch_policy, notation=notation, loops=loops)
+                        psg_model=psg_model, pitch_policy=pitch_policy, notation=notation, loops=loops,
+                        normalize_lengths=normalize_lengths, projection_mode=projection_mode)
     with tempfile.TemporaryDirectory(prefix='psg-scc-opm-') as temp:
         mml, plan = _convert(source, temp, psg_gain=psg_gain, scc_gain=scc_gain, title=title,
-                        psg_model=psg_model, pitch_policy=pitch_policy, notation=notation, loops=loops)
+                        psg_model=psg_model, pitch_policy=pitch_policy, notation=notation, loops=loops,
+                        normalize_lengths=normalize_lengths, projection_mode=projection_mode)
         result = out / mml.name
         shutil.copyfile(mml, result)
+        normalization = mml.with_name(Path(source).stem + '.mdx.normalization.json')
+        shutil.copyfile(normalization, out / normalization.name)
     return result, plan
 
 
