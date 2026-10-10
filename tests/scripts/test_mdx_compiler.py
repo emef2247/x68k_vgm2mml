@@ -19,6 +19,38 @@ def minimal_mdx(title=b'', pdx=b''):
 
 
 class MxcCompilerTests(unittest.TestCase):
+    def test_default_tools_work_without_outputs_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source, output, options = self.prepare(root)
+            for option, relative in (('mxc', '.tools/mxc/mxc.x'),
+                                     ('run68', '.tools/run68x/build/run68')):
+                installed = root / relative
+                installed.parent.mkdir(parents=True, exist_ok=True)
+                options.pop(option).replace(installed)
+            self.assertFalse((root / 'outputs').exists())
+            with patch('mdx_compiler.ROOT', root), \
+                    patch('mdx_compiler.shutil.which', return_value=None), \
+                    patch('mdx_compiler.subprocess.run', side_effect=self.successful):
+                compile_mxc(source, output, **options)
+            self.assertEqual(output.read_bytes(), minimal_mdx('曲'.encode('cp932')))
+
+    def test_persistent_tools_take_priority_over_legacy_outputs(self):
+        from mdx_compiler import _tool
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            installed, legacy = root / 'installed', root / 'legacy'
+            for path in (installed, legacy):
+                path.write_bytes(b'tool')
+            with patch('mdx_compiler.shutil.which', return_value=None):
+                self.assertEqual(_tool(None, ('mxc.x',), (installed, legacy), '--mxc'),
+                                 installed.resolve())
+                installed.unlink()
+                self.assertEqual(_tool(None, ('mxc.x',), (installed, legacy), '--mxc'),
+                                 legacy.resolve())
+                with self.assertRaisesRegex(ValueError, 'Missing --mxc tool'):
+                    _tool(installed, ('mxc.x',), (legacy,), '--mxc')
+
     def test_upper_octave_boundary_is_explicit_without_clamping(self):
         self.assertEqual(prepare_mxc('A o7 c4 > c4\n'), 'A o7 c4 o8 c4\n')
         self.assertEqual(prepare_mxc('A o6 c4 >> c4\n'), 'A o6 c4 >o8 c4\n')

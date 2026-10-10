@@ -223,3 +223,6 @@ node_modules
 # Alternate local fixture layout, if used
 /tests/local_only/
 /inputs/
+
+# Local external compiler/runtime installations; independent of generated output
+/.tools/

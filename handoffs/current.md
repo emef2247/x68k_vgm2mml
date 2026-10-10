@@ -2,6 +2,16 @@ Project: x68k_vgm2mml
 Branch: codex/pcm-stream-support
 Checkpoint: 2026-10-11
 
+LATEST DEPENDENCY RECOVERY:
+User deleted outputs after a successful NEMESIS export. Subsequent compilation
+failed with Missing --mxc tool because tools had lived in outputs/research.
+Restored the same hash-verified MXC and pinned run68x under ignored .tools/;
+default lookup now prefers persistent paths after explicit options and PATH.
+Legacy locations remain a fallback. See docs/mdx_compiler_setup.md and
+field_notes/2026-10-11_compiler_dependency_recovery.md. All18 compiler tests
+and one public block_boundary export with default replay passed. No local_only
+conversion was run. User can rerun their original NEMESIS command unchanged.
+
 LATEST CLOCK OPTION/LISTENING UPDATE (supersedes next-action statements below):
 User confirms from_fm controls responsive/counters moving, volume animation
 still absent; BOSCON animates but sluggish. User local export9/12 succeeded.

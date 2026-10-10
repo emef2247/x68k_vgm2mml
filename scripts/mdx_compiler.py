@@ -156,7 +156,7 @@ def prepare_mxc(text):
                    for prefix, parts, newline in lines)
 
 
-def _tool(explicit, names, local, option):
+def _tool(explicit, names, local_paths, option):
     if explicit is not None:
         candidate = Path(explicit).expanduser().resolve()
         if candidate.is_file():
@@ -166,9 +166,11 @@ def _tool(explicit, names, local, option):
         found = shutil.which(name)
         if found:
             return Path(found).resolve()
-    if local.is_file():
-        return local.resolve()
-    raise ValueError(f'Missing {option} tool; specify {option} or install it on PATH')
+    for local in local_paths:
+        if local.is_file():
+            return local.resolve()
+    raise ValueError(f'Missing {option} tool; specify {option}, install it on PATH, '
+                     'or follow docs/mdx_compiler_setup.md for persistent .tools/ setup')
 
 
 def _checked(command, cwd, timeout, encoding):
@@ -193,9 +195,11 @@ def compile_mxc(source, output, *, timeout, mxc=None, run68=None, generator,
                 prepared_output=None):
     """Publish only a fresh MDX accepted by the existing package parser."""
     native = _tool(mxc, ('MXC.X', 'mxc.x'),
-                   ROOT / 'outputs/research/mxc_tools/extracted/mxc.x', '--mxc')
+                   (ROOT / '.tools/mxc/mxc.x',
+                    ROOT / 'outputs/research/mxc_tools/extracted/mxc.x'), '--mxc')
     emulator = _tool(run68, ('run68', 'run68x'),
-                     ROOT / 'outputs/research/run68x/build/run68', '--run68')
+                     (ROOT / '.tools/run68x/build/run68',
+                      ROOT / 'outputs/research/run68x/build/run68'), '--run68')
     # Strict encoding keeps unsupported metadata visible as a compilation error.
     text = prepare_mxc(Path(source).read_text(encoding='utf-8'))
     score = text.replace('\r\n', '\n').replace('\r', '\n').replace('\n', '\r\n').encode('cp932')
