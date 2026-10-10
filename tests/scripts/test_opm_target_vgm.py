@@ -2,6 +2,7 @@
 import csv
 from dataclasses import replace
 import json
+import math
 from pathlib import Path
 import subprocess
 import sys
@@ -11,7 +12,7 @@ from unittest.mock import patch
 import struct
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path[:0] = [str(ROOT / 'py'), str(ROOT)]
+sys.path[:0] = [str(ROOT / 'py'), str(ROOT / 'scripts'), str(ROOT)]
 from chip_segments import PsgSegment, SccAnalysis
 from opm_mdx import projected_samples
 from opm_performance import build_performance
@@ -44,7 +45,51 @@ def jittered_psg(path):
     path.write_bytes(raw)
 
 
+def jittered_scc(path):
+    from test_opm_mdx import wait
+    wave = bytes(round(120 * math.sin(2 * math.pi * i / 32)) & 255 for i in range(32))
+    commands = b''.join(bytes((0xd2, 0, i, value)) for i, value in enumerate(wave))
+    commands += bytes.fromhex('d2 01 00 c8 d2 01 01 00 d2 02 00 00 d2 03 00 01')
+    cursor = 0
+    for index in range(40):
+        start = round((index + 1) * 5419.008) + (index % 5 - 2) * 25
+        end = start + round(9 * 451.584) + (index % 3 - 1) * 17
+        commands += wait(start - cursor) + bytes((0xd2, 1, 0, (200, 180, 160, 150)[index % 4],
+                                                0xd2, 2, 0, 15))
+        commands += wait(end - start) + bytes((0xd2, 2, 0, 0))
+        cursor = end
+    commands += wait(1355) + b'\x66'
+    header = bytearray(0x100)
+    header[:4] = b'Vgm '
+    struct.pack_into('<I', header, 8, 0x171)
+    struct.pack_into('<I', header, 0x34, 0xcc)
+    struct.pack_into('<I', header, 0x9c, 1789772)
+    raw = header + commands
+    struct.pack_into('<I', raw, 4, len(raw) - 4)
+    path.write_bytes(raw)
+
+
 class TargetVgmTests(unittest.TestCase):
+    def test_scc_and_additive_psg_share_default_output_normalization(self):
+        for chip, generate, options in (('scc', jittered_scc, {}),
+                                        ('psg', jittered_psg, {'psg_model': 'additive'})):
+            with self.subTest(chip=chip), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                source = root / 'jitter.vgm'
+                generate(source)
+                original = source.read_bytes()
+                before, native = convert(source, root / 'before', normalize_lengths=False, **options)
+                after, normalized = convert(source, root / 'after', **options)
+                report = normalized.structured_context.normalization
+                self.assertTrue(report['enabled'])
+                self.assertTrue(report['adopted'], report)
+                self.assertTrue(report['source_projection_check']['accepted'])
+                self.assertEqual(native.rows, normalized.rows)
+                self.assertEqual((root / 'before' / f'jitter.{chip}.segments.csv').read_bytes(),
+                                 (root / 'after' / f'jitter.{chip}.segments.csv').read_bytes())
+                self.assertEqual(source.read_bytes(), original)
+                self.assertNotEqual(before.read_bytes(), after.read_bytes())
+
     @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
     def test_normalized_psg_target_survives_semantic_roundtrip(self):
         from scripts.psg_scc_to_mdx import compile_and_verify

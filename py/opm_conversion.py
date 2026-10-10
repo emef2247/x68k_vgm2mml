@@ -101,12 +101,12 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
     normalization = dict(status='unchanged', reason='target-clock correction disabled',
                          source_segments_unchanged=True, before=before.timing_report())
     evidence = []
-    if normalize_lengths and has_pcm:
-        normalization['reason'] = 'PCM-aware normalization is not verified; retaining the shared OPM/PCM clock'
-    elif normalize_lengths:
+    baseline_pcm_plan = None
+    if normalize_lengths:
         from opm_note_normalization import normalize_projection
         projection, normalization, evidence = normalize_projection(analysis.segments, before,
-                                                                   loop_metadata=source_loop)
+                                                                   loop_metadata=source_loop,
+                                                                   pcm_analysis=pcm_analysis if has_pcm else None)
         if normalization['status'] == 'applied' and normalization_validator is not None:
             check = normalization_validator(projection, normalization)
             normalization['source_projection_check'] = check
@@ -115,11 +115,37 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                 normalization.update(status='unchanged', reason=check['reason'])
                 for row in evidence:
                     row['projection_status'] = 'unchanged'
+        if normalization['status'] == 'applied' and has_pcm:
+            from pcm_mdx import project
+            from opm_mdx_music import build_music
+            def preflight_pcm(selected):
+                plan = project(pcm_analysis, stem=source.stem,
+                               sample_multiplier=selected.sample_multiplier, policy=pcm_policy)
+                build_music(selected, analysis.segments, title=source.stem, loops=loops,
+                            additional_tracks={'P': plan.units} if plan.bindings else {})
+                return plan
+            try:
+                baseline_pcm_plan = preflight_pcm(before)
+            except ValueError as baseline_error:
+                normalization['baseline_pcm_projection'] = dict(status='unavailable',
+                                                                 reason=str(baseline_error))
+            else:
+                normalization['baseline_pcm_projection'] = dict(status='available')
+            try:
+                preflight_pcm(projection)
+            except ValueError as candidate_error:
+                if baseline_pcm_plan is not None:
+                    projection = before
+                    normalization.update(status='unchanged',
+                                         reason=f'normalized shared-clock projection rejected: {candidate_error}')
+                    for row in evidence:
+                        row['projection_status'] = 'unchanged'
     elif notation != 'structured':
         normalization['reason'] = 'target-clock correction is not applicable to this notation'
     normalization.update(requested=requested_normalization, enabled=normalize_lengths,
                          adopted=normalization['status'] == 'applied', notation=notation,
                          selected=projection.timing_report(), shared_pcm_clock=has_pcm)
+    multiplier = projection.sample_multiplier
     normalization_path = outdir / (source.stem + '.mdx.normalization.json')
     normalization_path.write_text(json.dumps(normalization, indent=2) + '\n', encoding='utf-8')
     if dump_passes and evidence:
@@ -185,8 +211,14 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                 record_pcm_assessment(pcm_assessment, requires_pdx=bool(pcm_plan))
             raise
         text = structure.text
-        if dump_passes and normalization and normalization['status'] == 'applied':
-            baseline = build_structure(before, analysis.segments, title=title or source.stem, loops=loops)
+        if (dump_passes and normalization and normalization['status'] == 'applied'
+                and (not has_pcm or baseline_pcm_plan is not None)):
+            baseline_pcm_options = (dict(additional_tracks={'P': baseline_pcm_plan.units},
+                                         additional_headers=(f'#pcmfile "{baseline_pcm_plan.pdx_name}"',
+                                             '; Readable PCM projection; canonical MDX uses .pcm/target.tsv.'))
+                                    if baseline_pcm_plan else {})
+            baseline = build_structure(before, analysis.segments, title=title or source.stem,
+                                       loops=loops, **baseline_pcm_options)
             (outdir / (source.stem + '.mdx.before.normalize.mml')).write_text(baseline.text, encoding='utf-8')
             normalization.update(before_structure=baseline.summary(), after_structure=structure.summary())
             (outdir / (source.stem + '.mdx.normalization.json')).write_text(json.dumps(normalization, indent=2) + '\n', encoding='utf-8')

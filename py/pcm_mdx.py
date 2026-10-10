@@ -63,6 +63,7 @@ class PcmMdxProjection:
     clock_rows: tuple[dict, ...] = ()
     assessment: PcmAssessment | None = None
     typed_commands: tuple[dict, ...] = ()
+    omitted_playbacks: tuple[dict, ...] = ()
 
     @property
     def boundary_times(self):
@@ -77,6 +78,9 @@ class PcmMdxProjection:
                     pcm_track_count=16, pcm_mode_command='E8',
                     pcm_inactive_tracks=list('QRSTUVW'),
                     pcm_sample_bytes_preserved=True,
+                    pcm_omitted_playback_count=len(self.omitted_playbacks),
+                    pcm_omitted_duration_samples=sum(p['duration_samples'] for p in self.omitted_playbacks),
+                    pcm_intended_omissions=list(self.omitted_playbacks),
                     pcm_byte_preservation_scope='encoded playback samples stored in PDX; '
                                                 'all source supply operations are retained in source IR',
                     pcm_consumption_scope='direct or profile-derived byte supply; '
@@ -93,6 +97,8 @@ class PcmMdxProjection:
             ('projection', self.rows, tuple(self.rows[0]) if self.rows else ('playback_id',)),
             ('clock', self.clock_rows, tuple(self.clock_rows[0]) if self.clock_rows else ('source_event_id',)),
             ('target_commands', self.typed_commands, tuple(self.typed_commands[0]) if self.typed_commands else ('kind',)),
+            ('omitted_playbacks', self.omitted_playbacks,
+             tuple(self.omitted_playbacks[0]) if self.omitted_playbacks else ('playback_id',)),
         ):
             with (out / f'{stem}.pcm_{suffix}.csv').open('w', newline='', encoding='utf-8') as stream:
                 writer = csv.DictWriter(stream, fieldnames=fields, lineterminator='\n')
@@ -122,8 +128,8 @@ def boundaries(analysis):
                         | {c.vgmticks for c in analysis.controls}))
 
 
-def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
-    """Allocate once; both MML and PDX consume the returned binding."""
+def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playback_ids=()):
+    """Bind unchanged samples; optionally omit selected positive notes up to 8 ms."""
     assessment = PcmAssessment(policy)
     def reject(detail, *, code='projection_undefined', status='unverified', criterion='eligibility'):
         assessment.add(criterion, status, code, detail,
@@ -188,8 +194,10 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
                      for i, s in enumerate(analysis.samples))
     by_sample = {b.sample_id: b for b in bindings}
     by_event = {c.source_event_id: c for c in analysis.controls}
-    units, rows, commands = [], [], []
+    units, rows, commands, omitted = [], [], [], []
+    omit_ids = set(omit_playback_ids)
     cursor = source_cursor = 0
+    previous_source_end = 0
 
     def emit(kind, value='', ticks='', start_tick=0, playback_id=None, source_event_id=None):
         row = dict(kind=kind, value=value, ticks=ticks, start_tick=start_tick,
@@ -262,20 +270,12 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
         except ValueError:
             reject(f'PCM rate {p.rate_num}/{p.rate_den} Hz has no exact standard MDX F0..F4 setting',
                    status='lossy', code='unsupported_rate', criterion='rate')
-        start, end = mdx_tick(p.start_vgmticks, sample_multiplier), mdx_tick(p.end_vgmticks, sample_multiplier)
-        if end <= start:
-            reject(f'PCM playback {p.playback_id} collapses on the MDX clock', status='lossy', code='clock_collapse')
-        if start < cursor:
+        if p.end_vgmticks <= p.start_vgmticks:
+            reject(f'PCM playback {p.playback_id} has no positive source interval',
+                   status='fail', code='invalid_playback_length')
+        if p.start_vgmticks < previous_source_end:
             reject('Multiple overlapping physical PCM playbacks are unsupported', code='overlap')
-        if start > cursor:
-            units.append(unit(cursor, start, 'pcm_rest', render(duration_commands('rest', cursor, start)),
-                              source_cursor, p.start_vgmticks))
-        binding = by_sample[p.sample_id]
-        pan = PCM_PAN[p.pan]
-        body = [emit(kind, value, start_tick=start, playback_id=p.playback_id,
-                     source_event_id=p.first_source_event_id)
-                for kind, value in (('bank', binding.bank), ('frequency', frequency),
-                                    ('pan', pan), ('gate', 8), ('volume', 128))]
+        previous_source_end = p.end_vgmticks
         changed_pan = []
         current_pan = p.pan
         for event_id in p.control_event_ids:
@@ -293,6 +293,29 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
                                source_event_id=c.source_event_id, start_vgmticks=c.vgmticks,
                                end_vgmticks=affected_end, source_value=c.pan, projected_value=p.pan,
                                fallback='hold_start_pan_until_next_attack', evidence=PAN_EVIDENCE)
+        duration = p.end_vgmticks - p.start_vgmticks
+        if p.playback_id in omit_ids and duration <= 352:
+            omitted.append(dict(playback_id=p.playback_id, sample_id=p.sample_id,
+                                source_start_vgmticks=p.start_vgmticks,
+                                source_end_vgmticks=p.end_vgmticks, duration_samples=duration,
+                                reason='intentional output omission of a positive PCM note at most 8 ms',
+                                source_first_event_id=p.first_source_event_id,
+                                source_last_event_id=p.last_source_event_id))
+            continue
+        start, end = mdx_tick(p.start_vgmticks, sample_multiplier), mdx_tick(p.end_vgmticks, sample_multiplier)
+        if end <= start:
+            reject(f'PCM playback {p.playback_id} collapses on the MDX clock', status='lossy', code='clock_collapse')
+        if start < cursor:
+            reject('Multiple overlapping physical PCM playbacks are unsupported', code='overlap')
+        if start > cursor:
+            units.append(unit(cursor, start, 'pcm_rest', render(duration_commands('rest', cursor, start)),
+                              source_cursor, p.start_vgmticks))
+        binding = by_sample[p.sample_id]
+        pan = PCM_PAN[p.pan]
+        body = [emit(kind, value, start_tick=start, playback_id=p.playback_id,
+                     source_event_id=p.first_source_event_id)
+                for kind, value in (('bank', binding.bank), ('frequency', frequency),
+                                    ('pan', pan), ('gate', 8), ('volume', 128))]
         trajectory = []
         body.extend(duration_commands('note', start, end, slot=binding.slot,
                                       playback_id=p.playback_id, source_event_id=p.first_source_event_id))
@@ -341,7 +364,7 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
         raise ProjectionError(detail, assessment)
     emit('end', start_tick=end)
     return PcmMdxProjection(bindings, tuple(units), tuple(rows), stem+'.pdx', sample_multiplier,
-                            clock_rows, assessment, tuple(commands))
+                            clock_rows, assessment, tuple(commands), tuple(omitted))
 
 
 def default_generator():

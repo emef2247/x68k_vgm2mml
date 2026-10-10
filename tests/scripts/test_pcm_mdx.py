@@ -32,6 +32,60 @@ def record_previous_binaries(out, stem):
 
 
 class PcmMdxTests(unittest.TestCase):
+    def test_requested_short_pcm_omission_keeps_longer_note_and_sample_bindings(self):
+        body, _ = playback(bytes(range(32)))
+        source = analyze(vgm(body))
+        first = replace(source.playbacks[0], end_vgmticks=352)
+        second = replace(first, playback_id=1, start_vgmticks=600, end_vgmticks=953)
+        source = replace(source, playbacks=(first, second), source_end_vgmticks=1200)
+        original = source
+        plan = project(source, stem='omit', omit_playback_ids=(0, 1))
+        self.assertEqual(source, original)
+        self.assertEqual([p['playback_id'] for p in plan.omitted_playbacks], [0])
+        self.assertEqual([r['playback_id'] for r in plan.rows], [1])
+        self.assertEqual([u.source_pcm_playback_ids for u in plan.units if u.kind == 'pcm_note'], [(1,)])
+        self.assertEqual(len(plan.bindings), len(source.samples))
+        self.assertEqual(plan.summary()['pcm_omitted_duration_samples'], 352)
+        self.assertEqual(len(plan.clock_rows), len(source.controls))
+        self.assertEqual(plan.units[0].kind, 'pcm_rest')
+        self.assertEqual(plan.units[0].source_end_vgmticks, 600)
+        self.assertFalse(any(c['playback_id'] == 0 for c in plan.typed_commands))
+
+    def test_all_short_pcm_omission_retains_finite_rest_and_pdx_payload(self):
+        body, _ = playback(bytes(range(32)))
+        source = analyze(vgm(body))
+        source = replace(source, source_end_vgmticks=800)
+        original = source
+        plan = project(source, stem='short', sample_multiplier=65, omit_playback_ids=(0,))
+        self.assertEqual(source, original)
+        self.assertEqual(len(plan.bindings), 1)
+        self.assertTrue(source.samples[0].encoded_bytes)
+        self.assertEqual([u.kind for u in plan.units], ['pcm_rest'])
+        self.assertEqual(plan.units[0].source_end_vgmticks, 800)
+        self.assertEqual(plan.typed_commands[-1]['kind'], 'end')
+        self.assertFalse(any(c['kind'] == 'note' for c in plan.typed_commands))
+        self.assertEqual(plan.summary()['pcm_playback_count'], 0)
+        self.assertEqual(plan.summary()['pcm_omitted_playback_count'], 1)
+        if default_generator().is_file():
+            from pcm_mdx import write_pdx
+            with tempfile.TemporaryDirectory() as temp:
+                path = write_pdx(plan, source, Path(temp), 'short')
+                raw = Path(path).read_bytes()
+                offset, length = struct.unpack_from('>II', raw)
+                self.assertEqual(raw[offset:offset+length], source.samples[0].encoded_bytes)
+
+    def test_short_pcm_omission_cannot_bypass_source_or_rate_eligibility(self):
+        body, _ = playback(bytes(range(32)))
+        original = analyze(vgm(body))
+        bad_rate = replace(original.playbacks[0], rate_num=123, rate_den=1)
+        for source, code in (
+                (replace(original, playbacks=(bad_rate,)), 'unsupported_rate'),
+                (replace(original, samples=(replace(original.samples[0], encoded_bytes=b''),)), 'invalid_sample_length'),
+                (replace(original, playbacks=(replace(original.playbacks[0], end_vgmticks=0),)), 'invalid_playback_length')):
+            with self.subTest(code=code), self.assertRaises(ProjectionError) as caught:
+                project(source, stem='bad', omit_playback_ids=(0,))
+            self.assertIn(code, [i['code'] for i in caught.exception.assessment.items])
+
     def test_assessment_keeps_loss_unknown_and_failure_separate(self):
         report = PcmAssessment('best-effort')
         report.add('pan', 'lossy', 'held_pan_latched', 'known pan loss')
@@ -407,7 +461,7 @@ class PcmMdxTests(unittest.TestCase):
                 self.assertFalse(report['adopted'])
                 self.assertEqual(report['before'], report['selected'])
                 if requested is not False:
-                    self.assertIn('shared OPM/PCM clock', report['reason'])
+                    self.assertEqual(report['reason'], 'no confident shared clock')
                 timing = json.loads((out / 'shared.mdx.timing.json').read_text())
                 manifest = (out / 'shared.pcm/target.tsv').read_text()
                 self.assertIn(f'tempo\t{256-projection.sample_multiplier}\t\n', manifest)
@@ -417,6 +471,137 @@ class PcmMdxTests(unittest.TestCase):
             self.assertEqual(outputs[0], outputs[1])
             self.assertEqual(outputs[0], outputs[2])
             self.assertEqual(source.read_bytes(), original)
+
+    @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
+    def test_pcm_normalization_uses_shared_projection_and_retains_source_payload(self):
+        for mixed in (False, True):
+            with self.subTest(mixed=mixed), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                source = root / 'shared.vgm'
+                payload = bytes((i * 17 + 0x12) & 255 for i in range(720))
+                body = bytes.fromhex('54 20 c7 54 28 40') if mixed else b''
+                cursor = 0
+                for index in range(40):
+                    start = round((index + 1) * 5419.008) + (index % 5 - 2) * 25
+                    body += wait(start - cursor)
+                    if mixed:
+                        body += bytes.fromhex('54 08 78')
+                    part, duration = playback(payload)
+                    body += part
+                    if mixed:
+                        body += bytes.fromhex('54 08 00')
+                    cursor = start + duration
+                original = vgm(body + wait(1355), opm=mixed)
+                source.write_bytes(original)
+                results = {}
+                for name, enabled in [('on', True), ('off', False)]:
+                    out = root / name
+                    mml, analysis, projection = convert(source, out, dump_passes=True,
+                                                        normalize_lengths=enabled)
+                    report = json.loads((out / 'shared.mdx.normalization.json').read_text())
+                    self.assertEqual(report['adopted'], enabled, report)
+                    self.assertTrue(report['shared_pcm_clock'])
+                    self.assertIn(f'tempo\t{256-projection.sample_multiplier}\t\n',
+                                  (out / 'shared.pcm/target.tsv').read_text())
+                    results[name] = (out, mml, analysis, projection, report)
+                on, off = results['on'], results['off']
+                self.assertEqual(on[3].sample_multiplier, 40)
+                self.assertNotEqual(on[3].sample_multiplier, off[3].sample_multiplier)
+                self.assertEqual(on[2], off[2])
+                self.assertEqual((on[0] / 'shared.mdx.before.normalize.mml').read_bytes(),
+                                 off[1].read_bytes())
+                self.assertEqual((on[0] / 'shared.pdx').read_bytes(), (off[0] / 'shared.pdx').read_bytes())
+                for path in on[0].glob('shared.pcm_*.csv'):
+                    if path.name in ('shared.pcm_bindings.csv', 'shared.pcm_projection.csv',
+                                     'shared.pcm_clock.csv', 'shared.pcm_target_commands.csv'):
+                        continue
+                    self.assertEqual(path.read_bytes(), (off[0] / path.name).read_bytes(), path.name)
+                self.assertEqual((on[0] / 'shared.pcm_source.json').read_bytes(),
+                                 (off[0] / 'shared.pcm_source.json').read_bytes())
+                for path in (on[0] / 'shared.pcm_samples').iterdir():
+                    self.assertEqual(path.read_bytes(), (off[0] / 'shared.pcm_samples' / path.name).read_bytes())
+                from opm_mdx_music import build_music
+                def reject_candidate(selected, segments, **options):
+                    if selected.sample_multiplier == 40 and options.get('additional_tracks'):
+                        raise ValueError('candidate PCM structure cannot preserve its boundary')
+                    return build_music(selected, segments, **options)
+                fallback = root / 'fallback'
+                with patch('opm_mdx_music.build_music', side_effect=reject_candidate):
+                    fallback_mml, _, fallback_projection = convert(source, fallback, dump_passes=True)
+                fallback_report = json.loads((fallback / 'shared.mdx.normalization.json').read_text())
+                self.assertFalse(fallback_report['adopted'])
+                self.assertIn('candidate PCM structure', fallback_report['reason'])
+                self.assertEqual(fallback_projection, off[3])
+                self.assertEqual(fallback_mml.read_bytes(), off[1].read_bytes())
+                for suffix in ('.mdx', '.pdx'):
+                    self.assertEqual((fallback / ('shared' + suffix)).read_bytes(),
+                                     (off[0] / ('shared' + suffix)).read_bytes())
+                self.assertEqual(source.read_bytes(), original)
+
+    @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
+    def test_valid_normalized_pcm_does_not_require_a_representable_baseline_dump(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / 'baseline.vgm'
+            payload = bytes((i * 17 + 0x12) & 255 for i in range(720))
+            body, cursor = b'', 0
+            for index in range(40):
+                start = round((index + 1) * 5419.008) + (index % 5 - 2) * 25
+                part, duration = playback(payload)
+                body += wait(start - cursor) + part
+                cursor = start + duration
+            original = vgm(body + wait(1355))
+            source.write_bytes(original)
+            def reject_baseline(analysis, **options):
+                if options['sample_multiplier'] != 40:
+                    raise ValueError('baseline PCM interval collapses on its clock')
+                return project(analysis, **options)
+            results = []
+            for dump in (False, True):
+                out = root / str(dump)
+                with patch('pcm_mdx.project', side_effect=reject_baseline):
+                    mml, _, projection = convert(source, out, dump_passes=dump)
+                report = json.loads((out / 'baseline.mdx.normalization.json').read_text())
+                self.assertTrue(report['adopted'])
+                self.assertEqual(projection.sample_multiplier, 40)
+                self.assertEqual(report['baseline_pcm_projection']['status'], 'unavailable')
+                self.assertIn('baseline PCM interval collapses', report['baseline_pcm_projection']['reason'])
+                self.assertNotEqual(report['before'], report['selected'])
+                self.assertFalse((out / 'baseline.mdx.before.normalize.mml').exists())
+                if dump:
+                    for suffix in ('.mdx.normalization.csv', '.pcm_raw.csv', '.pcm_segments.csv'):
+                        self.assertTrue((out / ('baseline' + suffix)).is_file())
+                results.append((mml.read_bytes(), (out / 'baseline.mdx').read_bytes(),
+                                (out / 'baseline.pdx').read_bytes()))
+            self.assertEqual(results[0], results[1])
+            self.assertEqual(source.read_bytes(), original)
+
+    @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
+    def test_pcm_normalization_control_collision_keeps_structured_baseline(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / 'collision.vgm'
+            payload = bytes((i * 17 + 0x12) & 255 for i in range(720))
+            body = write(2, 1) + wait(10) + write(2, 0)
+            cursor = 10
+            for index in range(40):
+                start = round((index + 1) * 5419.008) + (index % 5 - 2) * 25
+                part, duration = playback(payload)
+                body += wait(start - cursor) + part
+                cursor = start + duration
+            source.write_bytes(vgm(body + wait(1355)))
+            output = {}
+            for name, enabled in [('on', True), ('off', False)]:
+                out = root / name
+                mml, _, projection = convert(source, out, dump_passes=True, normalize_lengths=enabled)
+                output[name] = (mml.read_bytes(), (out / 'collision.pdx').read_bytes(), projection)
+            self.assertEqual(output['on'], output['off'])
+            report = json.loads((root / 'on/collision.mdx.normalization.json').read_text())
+            self.assertFalse(report['adopted'])
+            self.assertGreater(report['collapsed_positive_intervals'], 0)
+            self.assertEqual(report['before'], report['selected'])
+            self.assertEqual(report['notation'], 'structured')
+            self.assertFalse((root / 'on/collision.mdx.before.normalize.mml').exists())
 
     @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
     def test_unused_unsupported_opm_declaration_does_not_block_pcm_only(self):

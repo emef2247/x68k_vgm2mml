@@ -143,6 +143,15 @@ python scripts/export_mdx.py input.vgm --outdir outputs/listen/input \
 ```
 
 曲のフォルダにMML・MDX・VGMを生成し、成否と使用したコンパイラを`results.csv`に記録します。
+試聴用ファイルは`tracks/<公開名>/<公開名>.mml`／`.mdx`／`.pdx`／`.txt`に置き、
+VGMを生成する場合は`.vgm`も置きます。8文字以内のASCII英数字・`_`からなる名前は維持し、
+長い名前・追加のドット・予約名などは短い名前へ変換します。元入力との対応は`results.csv`の
+`input`／`safe_stem`列と`listening_manifest.json`に記録します。
+元入力と同じbytesを短い名前でステージングして変換するため、MML／MDX内のPDX参照も公開名と
+一致します。タイトルの選択方法は維持します。`.mdx.mml`やcompiler用MMLなどの診断成果物は
+`_diagnostics/`に分け、原入力のコピーは`_source_inputs/`に保持します。
+再実行ではmanifestとhashが一致する前回の公開ファイルだけを更新します。変更済み・所有不明の
+ファイルや公開名の衝突は上書きせず診断します。通常の`vgm2mml.py`の出力名は変更しません。
 元VGMとの比較検証は行いません。生成MDXをX68000エミュレータ上のMMDSPで再生して、
 音とGUI表示を確認できます。VGMはsoundlogによる同じMDXの再生結果です。
 ファイル生成の成功と、MXDRV／MMDSP上の表示・再生確認は区別してください。
@@ -154,6 +163,28 @@ PCM周波数の写像、時刻誤差、既知損失・未確認事項を簡潔�
 MDXの件数はループ展開前の命令数です。サンプルbyte一致は外部packerへの入力との比較で、
 波形や実機の再生精度を保証しません。独立比較していないOPM音程精度・再生結果は未検証と表示します。
 helper更新後は再ビルドしてください。検証中はJSON・CSVなどの中間ファイルも保持します。
+
+更新間隔が比較的長いpublic入力は次の例です。約8.4秒のFMパターンで、
+通常変換は8192µs/tickを選びます。ただし現在のCLOCK.mdxはMMDSPでロードに失敗し、
+旧CLK参照4件は無音・表示なしとの試聴結果があるため、正常な試聴基準には使えません。
+失敗結果と対象ハッシュはfixtureの`listening_results.json`に記録しています。
+
+```bash
+python scripts/export_mdx.py tests/fixtures/public/opm/clock_listening \
+  --outdir outputs/listen/clock_native --no-vgm
+```
+
+比較の再確認には、音・表示を確認済みのpublic FMSTATEを基準とした次のセットを使います。
+`outputs/listen/clock_controls/`にFMSTATEの変更なしコピー、PDX参照だけを外したFMONLY、
+同じフレーズを約6.3秒にしたFM0256／FM2048／FM4096／FM8192／FM16384を生成します。
+後者5件は音色・音程・発音時刻・音量・パン・A/Pの総時間を維持しclockを変えます。
+MMDSPでの確認結果は、全件無音、カウンターは進み、演奏中も操作可能でした。
+ユーザーの判断でこの比較は終了しています。テストパターンの追加修正は行いません。
+この結果だけから、clockと表示・発音の関係は確定できません。
+
+```bash
+python tests/scripts/generate_fmstate_clock_controls.py
+```
 
 従来のmmlxを使う場合は、`--compiler mmlx`を明示します。MXCの失敗時に自動で
 mmlxへ切り替えることはありません。helper自体のMMLを渡す3引数モードは、
@@ -198,8 +229,10 @@ strictではこれらの損失を伴う生成を止めます。圧縮bank、stre
 周波数0でのstream開始、再生中のdata setup変更、chip再生途中の速度変更、未解決のdecoder開始状態は診断します。
 MDXのoffset／容量制限でビルドできない場合は、生成済みMMLとPDXを残し、
 `mdx_capacity_exceeded`としてMDXの生成停止を記録します。これはMDX＋PDXの完成を意味しません。
-PCMを含む場合、長さ補正は共有OPM/PCM clockを保持して見送り、
-その理由をnormalization JSONに記録します。PCMのstrict／best-effort判定は別途行います。
+PCMを含む場合も長さ補正を検討し、開始・停止・制御境界をOPMと同じclockで検証します。
+採用時はFM／PCMを同じclockで生成し、不成立なら両方とも従来clockを使います。
+PCM IRと符号化bytesは変更せず、採否・理由をnormalization JSONに記録します。
+PCMのstrict／best-effort判定は別途行います。
 
 **PCMを含むMDXからのVGM生成は現在利用できません。** 外部ライブラリsoundlogの保持中カーソル消失と、
 元VGMの再生状態を保持できない問題があるため、現在はMDX＋PDXまでを生成します。

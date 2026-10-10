@@ -93,3 +93,87 @@ listening-folder cleanup while retaining MML and TXT, after validation finishes.
 
 Neither compiler switching nor MML control-order changes follow from these
 observations alone. No conversion semantics changed in this follow-up.
+
+## Additional user comparison after usage reset
+
+ARMBS1 replay confirms animation/playback and residual sound after completion.
+The user supplied vgm-conv OPM versions of all 14 NEMESIS inputs and exported
+them through the native OPM route successfully. Multi-dot native filenames
+caused MMDSP file-read errors; manually reducing names to one extension fixed
+loading in the user's environment. Animation nevertheless remains fixed.
+This separates observed name resolution from display behavior, and means the
+internal PSG projection is not the sole established cause of absent animation.
+The user suggests inspecting update granularity and asks for longer-update VGM
+comparisons. Inspect the common OPM-to-MDX timer selection as well as projected
+event density; do not conflate a dense event timeline with timer frequency.
+
+Read-only GRA1_01 comparison:
+
+| Path | Source writes | MDX size | Nominal tick |
+| --- | --- | --- | --- |
+| Native PSG projection | 2595 PSG writes | 13583 bytes | 256 us |
+| vgm-conv OPM | 2912 OPM writes | 11741 bytes | 256 us |
+| ARMBS1 native OPM | 2391 OPM writes | 1731 bytes | 8192 us |
+
+The diagnostic score reader interprets 2778 note events in the native PSG
+projection, including 2769 continuations and nine non-continuation attacks.
+The vgm-conv source has four register-08 Key-On requests, all at time zero,
+and no falling operator edges. Its MDX has no musical NOTE events; held raw
+register playback is represented with rests between controls. ARMBS1 has 514
+interpreted notes without split holds. These score-reader counts can include
+finite repeat expansion; they are not identical to the report's encoded census.
+
+Optional note normalization requires enough clustered musical attacks and
+within-channel intervals. Nine native PSG attacks and the single clustered
+vgm-conv onset do not meet those eligibility requirements. Separately,
+`infer_clock` checks every observed Segment boundary and the song end, bounds
+timing error to six source samples, and rejects coarser clocks that collapse
+positive intervals. Therefore normalization abstention alone does not explain
+the fine target clock. Do not relax all-control timing preservation just to
+make the optional attack-based estimator fit.
+
+## Public comparison prepared
+
+`tests/fixtures/public/opm/clock_listening/CLOCK.vgm` is an original eight-note
+FM phrase with volume/pan changes, explicit Key-Off and a final silent interval.
+The source is generated from an authored native-MXC 16384-us score, is 2132
+bytes and lasts about 8.3886 seconds. Segment onset/release boundaries match
+the authored reference within one VGM sample. The ordinary converter selects
+8192 us/tick (@t224); it was also compiled with native MXC.
+
+Four controlled reference MDX files use 256, 2048, 8192 and 16384 us clocks.
+Their independent decoded physical attacks/releases, pitch, volume and pan
+match. They are authored references, not an experimental converter override.
+Reference VGM sizes are respectively 99428, 12932, 3668 and 2132 bytes:
+wait-command emission can enlarge VGM without increasing musical updates.
+All native listening/display/response outcomes remain unverified.
+
+The exporter CLI now keeps canonical converter/compiler evidence under
+`_diagnostics/`, byte-identical staging under `_source_inputs/`, and publishes
+single-extension MML/MDX/PDX/TXT/optionalVGM under `tracks/<safe_stem>/`.
+Portable eight-character ASCII stems remain unchanged; longer/multi-dot names
+receive deterministic short names. Title behavior and PCM internal references
+are preserved by naming the staged source before conversion, not patching MDX.
+`listening_manifest.json` and results.csv retain original names and hashes.
+Owned publications are verified before replacement; unowned/modified files and
+case-insensitive name collisions are diagnosed. Native filename compatibility
+still requires listening; this is a structural correction, not a GUI fix.
+
+## Validation of this follow-up
+
+- Export/report/listening tests: 42 passed, including stale statistics,
+  PDX payload identity, namespace ownership, title preservation and setup
+  failure preserving previous publications.
+- Rust command-census tests: 13 passed; release helper rebuilt.
+- Actual public PCM export: 11/11 succeeded with short names and TXT reports.
+  Separate audit verified unchanged staged source bytes, publication hashes,
+  single-extension names, finite decoded commands and matching PDX references;
+  all occupied PDX ranges were valid. Native load/playback remains unverified.
+- Actual public CLOCK export: 1/1 succeeded through native MXC, with eight FM
+  NOTE commands and selected @t224. Four reference clocks' independent score
+  comparisons and source Segment boundary assertions passed.
+
+The new short-name public PCM package is `outputs/listen/public_safe_names/`.
+The ordinary long-update conversion is `outputs/listen/clock_native/tracks/CLOCK/`.
+The four clock references are `outputs/listen/clock_listening_reference/`.
+No local_only conversion or automatic diagnostic cleanup was performed.

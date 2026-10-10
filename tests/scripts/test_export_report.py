@@ -43,6 +43,17 @@ class ExportReportTests(unittest.TestCase):
             stats = source_statistics(path)
             self.assertEqual((stats['on'], stats['off'], stats['rising'], stats['falling']), (2, 1, 4, 4))
             self.assertEqual(stats['samples'], 735)
+            self.assertEqual(stats['opm_writes'], 3)
+
+    def test_selected_clock_is_nominal_not_runtime_measurement(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            path = source(folder / 'a.vgm', b'\x62')
+            (folder / 'a.mdx.normalization.json').write_text(json.dumps(dict(
+                status='unchanged', reason='test', selected=dict(tick_microseconds=8192, tempo_byte=224))))
+            text = write_export_report(path, folder, 'a', dict(status='success')).read_text()
+            self.assertIn('8192 us/tick; tempo byte 224', text)
+            self.assertIn('not measured driver interrupt load', text)
 
     def test_pdx_payload_and_frequency_checks_do_not_claim_runtime_pass(self):
         with tempfile.TemporaryDirectory() as tmp:

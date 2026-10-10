@@ -40,6 +40,23 @@ def successful_run(command, **kwargs):
 
 
 class ExportMdxTests(unittest.TestCase):
+    def test_report_write_failure_does_not_change_successful_artifact_status(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, out, generator = self.prepare(Path(tmp), ('a.vgm',))
+            def compile_score(mml, mdx, **kwargs):
+                mdx.write_bytes(b'compiled MDX')
+            with patch('export_mdx.subprocess.run', side_effect=successful_run), \
+                    patch('export_mdx.compile_mxc', side_effect=compile_score), \
+                    patch('export_mdx.write_export_report', side_effect=OSError('report unavailable')):
+                row = run_batch(source, out, generator=generator, no_vgm=True)[0]
+            self.assertEqual(row['status'], 'success')
+            self.assertEqual(row['report_status'], 'failed')
+            self.assertIn('report unavailable', row['report_error'])
+            self.assertTrue(row['mdx'])
+            with patch('sys.argv', ['export_mdx.py', 'a.vgm', '--outdir', 'out']), \
+                    patch('export_mdx.run_batch', return_value=[row]):
+                self.assertEqual(main(), 1)
+
     def setUp(self):
         census = patch('export_mdx.inspect_export_commands', return_value='')
         census.start()

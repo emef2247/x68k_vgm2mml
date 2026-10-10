@@ -45,7 +45,8 @@ def _save_results(output, rows):
     fields = ('input', 'status', 'detail', 'compiler', 'compiler_input',
               'compiler_native_mdx', 'compiler_metadata', 'max_ticks', 'mml', 'mdx', 'vgm', 'pdx',
               'pcm_policy', 'pcm_projection_status', 'pcm_validation_status',
-              'pcm_validation_run', 'pcm_known_losses', 'pcm_assessment', 'report', 'error_log')
+              'pcm_validation_run', 'pcm_known_losses', 'pcm_assessment', 'report',
+              'report_status', 'report_error', 'error_log', 'safe_stem', 'source_sha256')
     with _bounded(output / 'results.csv', output).open('w', encoding='utf-8', newline='') as stream:
         writer = csv.DictWriter(stream, fieldnames=fields, lineterminator='\n')
         writer.writeheader()
@@ -69,7 +70,15 @@ def inspect_export_commands(generator, mdx, census, timeout):
 def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
               max_ticks=None, psg_model=None, psg_gain=None, scc_gain=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mxc', mxc=None, run68=None,
-              normalize_lengths=None, no_vgm=False):
+              normalize_lengths=None, no_vgm=False, listening_layout=False, _title=None,
+              _report_source=None, _display_name=None):
+    if listening_layout:
+        from export_listening import run_listening_batch
+        return run_listening_batch(source, output, core=run_batch, options=dict(
+            target=target, generator=generator, timeout=timeout, max_ticks=max_ticks,
+            psg_model=psg_model, psg_gain=psg_gain, scc_gain=scc_gain,
+            opm_pitch_policy=opm_pitch_policy, pcm_policy=pcm_policy, compiler=compiler,
+            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, no_vgm=no_vgm))
     source, output = Path(source).resolve(), Path(output).resolve()
     if target not in ('mdx', 'opm', 'opm-additive'):
         raise ValueError('Target must be mdx, opm or opm-additive')
@@ -129,7 +138,8 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
                    mml='', mdx='', vgm='', pdx='', error_log='', compiler_input='',
                    compiler_native_mdx='', compiler_metadata='', pcm_policy='',
                    pcm_projection_status='', pcm_validation_status='',
-                   pcm_validation_run='', pcm_known_losses='', pcm_assessment='', report='')
+                   pcm_validation_run='', pcm_known_losses='', pcm_assessment='', report='',
+                   report_status='', report_error='', safe_stem='', source_sha256='')
         stage = 'conversion'
         try:
             folder.mkdir(parents=True, exist_ok=True)
@@ -146,6 +156,8 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
             if target == 'mdx':
                 command.extend(['--pcm-generator', str(generator),
                                 '--pcm-policy', pcm_policy or 'strict'])
+            if _title is not None:
+                command.extend(['--title', _title])
             run = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
                                  encoding='utf-8', errors='replace', timeout=timeout)
             if run.returncode:
@@ -235,19 +247,19 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
             if diagnostic:
                 row['detail'] = '\n'.join(filter(None, (row['detail'], diagnostic)))
         try:
-            summary_path = write_export_report(path, folder, path.stem, row)
+            summary_path = write_export_report(_report_source or path, folder, path.stem, row)
             row['report'] = str(summary_path.relative_to(output))
+            row['report_status'] = 'success'
         except (OSError, ValueError, KeyError, TypeError) as error:
-            previous_status = row['status']
-            row['status'] = 'report_failed'
-            row['detail'] += f'\nExport was {previous_status}; cannot write TXT report: {error}'
+            row['report_status'] = 'failed'
+            row['report_error'] = f'Cannot write TXT report: {error}'
             error_log.parent.mkdir(parents=True, exist_ok=True)
-            error_log.write_text(row['detail'].strip() + '\n', encoding='utf-8')
-        if row['status'] != 'success':
+            error_log.write_text((row['detail'] + '\n' + row['report_error']).strip() + '\n', encoding='utf-8')
+        if row['status'] != 'success' or row['report_status'] == 'failed':
             row['error_log'] = str(error_log.relative_to(output))
         rows.append(row)
         _save_results(output, rows)
-        print(f"{relative}: {row['status']}", flush=True)
+        print(f"{_display_name or relative}: {row['status']}", flush=True)
     return rows
 
 
@@ -289,12 +301,13 @@ def main():
                          timeout=args.timeout, max_ticks=args.max_ticks, psg_model=args.psg_model,
                          psg_gain=args.psg_gain, scc_gain=args.scc_gain,
                           opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy,
-                          normalize_lengths=args.normalize_lengths, no_vgm=args.no_vgm)
+                          normalize_lengths=args.normalize_lengths, no_vgm=args.no_vgm,
+                          listening_layout=True)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     success = sum(row['status'] == 'success' for row in rows)
     print(f'{success}/{len(rows)} exported; results: {args.outdir / "results.csv"}')
-    return 0 if success == len(rows) else 1
+    return 0 if success == len(rows) and not any(row.get('report_status') == 'failed' for row in rows) else 1
 
 
 if __name__ == '__main__':

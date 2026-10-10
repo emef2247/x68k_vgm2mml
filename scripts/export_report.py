@@ -49,7 +49,7 @@ def source_statistics(source):
         rising += (mask & ~masks[channel]).bit_count()
         falling += (masks[channel] & ~mask).bit_count()
         masks[channel] = mask
-    return dict(samples=end, opm_used=bool(commands[0x54]), writes=writes,
+    return dict(samples=end, opm_used=bool(commands[0x54]), opm_writes=commands[0x54], writes=writes,
                 on=on, off=off, rising=rising, falling=falling)
 
 
@@ -141,7 +141,8 @@ def write_export_report(source, folder, stem, row):
         lines.append(f'Source duration: {stats["samples"]} samples / '
                      f'{stats["samples"] / 44100:.6f} s (one stream pass; loops not expanded)')
         if stats['opm_used']:
-            lines.extend([f'OPM 0x08 writes: {stats["writes"]}; nonzero masks (Key-On requests) '
+            lines.extend([f'Source OPM register writes: {stats["opm_writes"]}',
+                          f'OPM 0x08 writes: {stats["writes"]}; nonzero masks (Key-On requests) '
                           f'{stats["on"]}; zero masks (Key-Off requests) {stats["off"]}',
                           f'OPM operator edges: rising {stats["rising"]}; falling {stats["falling"]} '
                           '(4 operators/channel; repeated requests are not new edges)'])
@@ -159,6 +160,11 @@ def write_export_report(source, folder, stem, row):
     if normalization:
         lines.append('Note normalization: ' + str(normalization.get('status', 'see normalization JSON')) +
                      '; ' + str(normalization.get('reason', ''))[:180])
+        selected = normalization.get('selected', {})
+        if isinstance(selected, dict) and selected.get('tick_microseconds'):
+            lines.append(f'Selected MDX clock: {selected["tick_microseconds"]} us/tick; '
+                         f'tempo byte {selected.get("tempo_byte", "unknown")}; '
+                         'nominal target clock, not measured driver interrupt load')
     if assessment:
         lines.extend([f'PCM policy: {assessment.get("policy", "unknown")}; '
                       f'projection {assessment.get("assessment_status", "unknown")}; '

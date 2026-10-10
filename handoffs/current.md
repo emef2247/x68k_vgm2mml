@@ -2,6 +2,53 @@ Project: x68k_vgm2mml
 Branch: codex/pcm-stream-support
 Checkpoint: 2026-10-10
 
+LATEST USER CHECKPOINT (supersedes clock next-action statements below):
+All clock_control cases are inaudible in XM6 TypeG / MMDSP, counters advance,
+and MMDSP remains responsive during playback. The user ended this experiment;
+do not repair or regenerate authored clock patterns. Responsiveness is the
+only positive native result; the timer hypothesis remains unproven.
+Active work: fix public opm/from_fm routing failures without ignoring active
+chips, and apply output normalization across structured MDX source paths
+including shared OPM/PCM timing. Source times, Segments, PCM IR and sample
+bytes remain immutable; fallback retains structured baseline timing.
+No local_only conversions or commit/push authorized.
+
+LATEST CLOCK FAILURE CHECKPOINT (supersedes listening-ready statements below):
+User reports canonical CLOCK.mdx no-song-data/file-read-error; all four old
+CLK references load but are inaudible and have no animation. Record in public
+clock_listening/listening_results.json; unchanged failed bytes archived under
+outputs/listen/clock_failed_20261010/. mdxinfo Success and identical FMSTATE/
+CLK8192 voice bytes do not establish native validity. No timer/voice-format
+cause found. Do not present old clock package as a working baseline.
+New generator generate_fmstate_clock_controls.py uses exact proven public
+FMSTATE copy, FMONLY PDX-header-only probe and five equal-time repeated phrase
+clock cases with baseline voices/A/P. outputs/listen/clock_controls/ is the
+separate new package; native outcomes unverified. Next allowed action: user
+checks FMSTATE -> FMONLY -> FM4096 -> remaining clocks. No production timing,
+sourceIR, end or command-order change; no local_only conversion. Details:
+field_notes/2026-10-10_clock_baseline_failure.md. Do not use mdxtools mdx2pcm
+WAV duration as oracle: it saves only half each interleaved sample block.
+
+NEW PUBLIC CLOCK/LISTENING CHECKPOINT:
+User's vgm-conv NEMESIS inputs still show frozen GUI after multi-dot filenames
+are manually corrected. Both GRA1_01 paths select256us; ARMBS1 selects8192us.
+The vgm-conv source has onlyinitialKeyOn and nativeoutput rawheldregister/rest
+commands; inspectclock andarticulation separately. No productiontimingfix.
+Authored tests/fixtures/public/opm/clock_listening/CLOCK.vgm is sparseFM,
+8notes/~8.4s, from16384us reference; canonicalprojection selects8192us.
+Four fixedclockrefs256/2048/8192/16384us preservephysicalscore expectations.
+outputs/listen/clock_listening_reference/ and clock_native/ are listening-ready,
+nativeoutcomes unverified. Use ordinaryNOTE comparisons before timerhypotheses.
+export_mdx CLI nowpublishes singleextension shortnames undertracks/<safe>/,
+preservesportable8char names, stagesidenticalsourcebytes, keepsdiagnostics
+separate andconsistentPDXreference. Source/name/hash mappinginmanifest/results.
+No binarypatching, no diagnosticdeletion; reportgenerationstatus separate from
+artifactstatus. Details inREADME and latestlisteningfollowupfieldnote.
+Validation:42export/report/listeningtests+13Rusttests pass. Realshortnamepublic
+PCMexport11/11; independent11/11source/name/hash/PDXreferenceaudits pass.
+CLOCKcanonicalMXCexport1/1 with8NOTEcommands/@t224. NativeGUI/endresults
+remainusercheck; no claim that timerhypothesis orARMBS1ending was fixed.
+
 LATEST FOLLOW-UP (supersedes earlier next-action lines): production listening
 results are recorded in field_notes/2026-10-10_mmdsp_listening_followup.md.
 BOSCON04/06/08 play/stop; other successful BOSCON files exceed native track
