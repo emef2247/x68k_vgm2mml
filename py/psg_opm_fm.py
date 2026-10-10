@@ -3,6 +3,8 @@
 The two-operator AL4/FB7 profile is compatible with the published vgm-conv
 mapping parameters. This module contains independently written target rules;
 no external converter code is incorporated or required at runtime.
+The voice parameters and volume-to-TL table reference vgm-conv's AY8910-to-OPM
+converter. Attribution and its ISC license are retained in THIRD_PARTY_NOTICES.md.
 """
 from dataclasses import dataclass
 import math

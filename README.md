@@ -209,5 +209,10 @@ python scripts/verify_opm_mdx_roundtrip.py tests/fixtures/public/opm \
 | MXC v1.01（MFS soft, milk）と[run68x](https://github.com/kg68k/run68x) | MML→MDXコンパイルとHuman68kプログラムの実行 |
 | [mmlx](https://github.com/h1romas4/chipstream/tree/main/crates/mmlx) | 明示選択時のMML→MDXコンパイル、およびPCM経路のFM部分 |
 | [soundlog](https://github.com/h1romas4/chipstream/tree/main/crates/soundlog) | FMのMDX→VGM、PDX構築・PCM参照検査 |
+| [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv)（Mitsutaka Okazaki and Contributors） | PSG→OPMのFM方式で、AY8910→YM2151の音色パラメータと音量→TL対応表を参考にしました。また、外部変換結果との比較に利用しています。 |
+
+PSG→OPMのSegment処理とターゲット生成は本プロジェクトで実装しており、通常変換にvgm-convのライブラリは不要です。
+
+vgm-convはISCライセンスで公開されています。参照元の著作権表示は **Copyright (c) 2023 Mitsutaka Okazaki and Contributors** です。著作権表示・ISCライセンス全文・参照したソースとリビジョンは[第三者の表示](THIRD_PARTY_NOTICES.md)に保持しています。本プロジェクトのMITライセンス表記と併せて、この表示も配布物に含めてください。
 
 外部コンパイラや再生ツールは、用途に応じて別途用意してください。OPMのみのVGM→MML変換はPython側で行います。

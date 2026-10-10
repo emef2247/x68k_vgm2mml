@@ -1,6 +1,20 @@
 Project: x68k_vgm2mml
-Branch: codex/pcm-stream-support
+Branch: main
 Checkpoint: 2026-10-11
+
+LATEST USER WORKFLOW / RESTORE CHECKPOINT:
+User merged the release-preparation PR, fast-forwarded main to 0547259 and
+applied the attribution stash successfully. The four attribution files are
+present without conflicts. Future repository updates mean file edits only;
+commit, push, PR creation, staging and branch changes require explicit user
+instructions. Leave existing staged state untouched.
+
+LATEST ATTRIBUTION UPDATE:
+User asks about credit/license for the vgm-conv PSG FM reference. README credits
+the AY->OPM parameters and volume/TL mapping; THIRD_PARTY_NOTICES.md retains the
+exact upstream ISC notice and Copyright (c) 2023 Mitsutaka Okazaki and Contributors
+at reference revision 780a20ed505e23eb21aa9c6ce3f349029718b5a0. Python module links
+that notice. No algorithm change, commit or push for this documentation update.
 
 LATEST RELEASE PREPARATION / USER NATIVE RESULT:
 User explicitly requests no commit for these changes: leave working-tree edits
