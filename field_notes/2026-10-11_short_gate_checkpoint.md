@@ -45,3 +45,28 @@ Next: minimal synthetic boundary tests (352/353, original mapped phase,
 short-rest command order), one representative public FM export and one PCM
 export. Record actual results here after the checkpoint. User can then perform
 XM6TypeG/MMDSP listening. Clock-control pattern repair stays canceled.
+
+## Minimal verification after commit 68b8411
+
+- Rust release helper rebuilt successfully with --locked.
+- 12 focused public/synthetic tests passed: 8 gate-policy tests plus PCM
+  omission/payload checks and original PSG/SCC timing integration checks.
+- One listening publisher test passed (single extension, source bytes/title
+  and PDX reference preservation). Its previously untracked exporter module
+  and test are included in the follow-up checkpoint because export_mdx imports it.
+- chords_mix.vgm and opm_pcm_rates.vgm both exported successfully with --no-vgm.
+- Independent MDX reader found complete 9-track FM / 16-track PCM structures,
+  Timer B byte 191 in both, matching 16.640 ms diagnostic clocks. Maximum
+  boundary error was 335 samples (FM) and 57 samples (PCM), within 352.
+- FM: 8 short rests coalesced, 113 source samples of positive rest duration
+  lost, no complete FM gates omitted. Rendered FM remains raw Key requests
+  rather than NOTE commands; native GUI behavior is not established.
+- PCM: two retained playbacks, both rates exact; one 128-byte encoded sample
+  matches PDX payload. No short PCM spans omitted in this representative case.
+
+Outputs for native listening:
+outputs/listen/short_gate_checkpoint/fm/tracks/CHEC821D/
+outputs/listen/short_gate_checkpoint/pcm/tracks/OP3D6DBB/
+Both contain MML/MDX/TXT; PCM also contains PDX. All diagnostics are retained.
+No full regression, complete public batch, local_only conversion or native
+playback test was run after the checkpoint. These remain user follow-up work.

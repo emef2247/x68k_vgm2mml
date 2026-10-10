@@ -12,7 +12,10 @@ def normalize_projection(segments, original, *, loop_metadata=None, pcm_analysis
 
     MDX controls use nearest *absolute* ticks on that lattice. We do not apply
     MGSDRV onset snapping, gate inference, phase shifts or short-state pruning.
-    Every positive source interval must survive; rejection affects the whole song.
+    The conservative helper preserves every positive source interval. With
+    output_short_note_policy enabled, the separate output policy first omits
+    complete short source gates and permits bounded short-rest coalescence.
+    Rejection retains the whole song's structured baseline.
     """
     segments = tuple(segments)
     if output_short_note_policy:

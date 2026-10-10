@@ -13,6 +13,13 @@ Only minimal public checks are requested. Rebuild Rust release helper before
 exporting PCM; do not run local_only or repair canceled clock patterns.
 Commands and unverified limitations:
 field_notes/2026-10-11_short_gate_checkpoint.md.
+Implementation committed in 68b8411. After that checkpoint, 13 minimal
+public/synthetic checks passed and Rust release was rebuilt. Public chords_mix
+and opm_pcm_rates export successfully; independent MDX parsing confirms complete
+9/16-track structures and Timer B 191 = 16.640 ms for both. PCM allocated sample
+bytes match PDX. Native GUI/playback is untested; FM representative still uses
+raw Key requests, so animation improvement must not be claimed. User can take
+over public batches or local_only listening using the recorded commands.
 
 LATEST USER CHECKPOINT (supersedes clock next-action statements below):
 All clock_control cases are inaudible in XM6 TypeG / MMDSP, counters advance,

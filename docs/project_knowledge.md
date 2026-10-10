@@ -1002,3 +1002,17 @@ correct.
 
 The path from source register stream through interpreted musical
 structure to the target must remain inspectable.
+# Original-time short output gates (2026-10-11)
+
+Structured MDX normalization may omit complete Key-On to Key-Off gates of at
+most 352 original 44100 Hz samples before quantization. Do not classify a
+short Segment control slice as a whole short note, or use an already rounded
+PSG/SCC intermediate timestamp for the threshold. Preserve original State,
+Segment, PCM IR, sample bytes and elapsed song time. Partial/repeated/unclosed
+key operations are conservative survivors. Ordinary controls and short rests
+may coalesce within the 352-sample boundary budget, retaining ordered Key-Off
+and Key-On operations and explicitly reporting lost rest duration. Preferred
+fallback multiplier 65 is an output policy, not a chip specification or a
+guarantee of minimum interrupt period. Unsupported PCM remains unsupported
+even when its playback is short. Native MMDSP behavior requires listening.
+

@@ -90,7 +90,9 @@ class ShortOutputGateTests(unittest.TestCase):
                 output_short_note_policy=True, source_events=analysis.events)
             keys = [w.mdx_tick for w in after.writes if w.register == 8]
             pulse = [w.mdx_tick for w in after.writes if w.register == 1]
-            self.assertTrue(all(a < b for a, b in zip(keys, keys[1:])))
+            self.assertLess(keys[0], keys[1])
+            self.assertLessEqual(keys[1], keys[2])
+            self.assertLess(keys[2], keys[3])
             self.assertLess(pulse[0], pulse[1])
             self.assertEqual(report['collapsed_protected_intervals'], 0)
 
