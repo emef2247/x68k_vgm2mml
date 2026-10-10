@@ -32,6 +32,18 @@ def record_previous_binaries(out, stem):
 
 
 class PcmMdxTests(unittest.TestCase):
+    def test_configured_pcm_omission_uses_the_same_original_duration_cutoff(self):
+        body, _ = playback(bytes(range(32)))
+        source = analyze(vgm(body))
+        note = replace(source.playbacks[0], end_vgmticks=500)
+        source = replace(source, playbacks=(note,), source_end_vgmticks=1000)
+        for milliseconds, omitted in ((4, False), (8, False), (16, True)):
+            with self.subTest(milliseconds=milliseconds):
+                plan = project(source, stem='policy', omit_playback_ids=(note.playback_id,),
+                    normalization_ms=milliseconds)
+                self.assertEqual(bool(plan.omitted_playbacks), omitted)
+                self.assertEqual(len(plan.bindings), len(source.samples))
+
     def test_requested_short_pcm_omission_keeps_longer_note_and_sample_bindings(self):
         body, _ = playback(bytes(range(32)))
         source = analyze(vgm(body))

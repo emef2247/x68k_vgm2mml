@@ -70,7 +70,7 @@ def inspect_export_commands(generator, mdx, census, timeout):
 def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
               max_ticks=None, psg_model=None, psg_gain=None, scc_gain=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mxc', mxc=None, run68=None,
-              normalize_lengths=None, no_vgm=False, listening_layout=False, _title=None,
+              normalize_lengths=None, normalization_ms=8, no_vgm=False, listening_layout=False, _title=None,
               _report_source=None, _display_name=None):
     if listening_layout:
         from export_listening import run_listening_batch
@@ -78,8 +78,10 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
             target=target, generator=generator, timeout=timeout, max_ticks=max_ticks,
             psg_model=psg_model, psg_gain=psg_gain, scc_gain=scc_gain,
             opm_pitch_policy=opm_pitch_policy, pcm_policy=pcm_policy, compiler=compiler,
-            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, no_vgm=no_vgm))
+            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, no_vgm=no_vgm))
     source, output = Path(source).resolve(), Path(output).resolve()
+    from conversion_config import normalization_samples
+    normalization_samples(normalization_ms)
     if target not in ('mdx', 'opm', 'opm-additive'):
         raise ValueError('Target must be mdx, opm or opm-additive')
     if compiler not in ('mxc', 'mmlx'):
@@ -112,6 +114,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
     if not generator.is_file():
         raise ValueError('Build scripts/mdx_fixture_generator or specify --generator')
     options = []
+    options.extend(['--normalization-ms', str(normalization_ms)])
     if normalize_lengths is not None:
         options.append('--normalize-lengths' if normalize_lengths else '--no-normalize-lengths')
     for flag, value in (('--psg-model', psg_model), ('--psg-gain', psg_gain),
@@ -278,6 +281,8 @@ def main():
                          help='MDX output with automatic source route (opm/opm-additive are deprecated aliases)')
     parser.add_argument('--normalize-lengths', action=argparse.BooleanOptionalAction, default=None,
                         help='Safe structured MDX target-clock correction (default: ON)')
+    parser.add_argument('--normalization-ms', type=float, default=8,
+                        help='Original whole-note omission threshold and maximum target boundary movement in ms (default: 8; ignored with --no-normalize-lengths)')
     parser.add_argument('--compiler', choices=('mxc', 'mmlx'), default='mxc',
                         help='FM-only MML compiler (default mxc); typed PCM uses mmlx')
     parser.add_argument('--mxc', type=Path, help='Native MXC.X compiler')
@@ -301,7 +306,7 @@ def main():
                          timeout=args.timeout, max_ticks=args.max_ticks, psg_model=args.psg_model,
                          psg_gain=args.psg_gain, scc_gain=args.scc_gain,
                           opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy,
-                          normalize_lengths=args.normalize_lengths, no_vgm=args.no_vgm,
+                          normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, no_vgm=args.no_vgm,
                           listening_layout=True)
     except (OSError, ValueError) as error:
         parser.error(str(error))

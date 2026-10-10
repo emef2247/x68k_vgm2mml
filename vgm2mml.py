@@ -123,6 +123,8 @@ def build_parser():
     timing = parser.add_argument_group('MDX target timing')
     timing.add_argument('--normalize-lengths', action=argparse.BooleanOptionalAction, default=None,
                         help='Attempt safe target-clock correction (default: ON for structured MDX; MGS opt-in)')
+    timing.add_argument('--normalization-ms', type=float, default=8,
+                        help='MDX original whole-note omission threshold and maximum boundary movement in ms (default: 8; only with normalization enabled)')
     advanced = parser.add_argument_group('Advanced MDX notation and chip projection')
     advanced.add_argument('--notation', choices=['structured', 'legacy', 'registers'], default='structured',
                         help='Native MDX notation (default: structured)')
@@ -180,6 +182,8 @@ def main():
     if args.sync_min_gap is not None and args.sync_min_gap < 0:
         parser.error('--sync-min-gap must be nonnegative')
     try:
+        from conversion_config import normalization_samples
+        normalization_samples(args.normalization_ms)
         normalize = normalization_enabled(args.normalize_lengths, notation=args.notation, target=args.target)
     except ValueError as error:
         parser.error(str(error))
@@ -234,7 +238,7 @@ def main():
         parser.error('Conversion report leaves its output directory')
     report = dict(target_format=args.target, compatibility_target=compatibility_target,
                   notation=args.notation, normalization_requested=args.normalize_lengths,
-                  normalization_enabled=normalize, status='preflight')
+                  normalization_enabled=normalize, normalization_ms=args.normalization_ms, status='preflight')
     def record_report():
         with open(report_path, 'w', encoding='utf-8') as stream:
             json.dump(report, stream, indent=2)
@@ -303,7 +307,7 @@ def main():
                                 pitch_policy=args.opm_pitch_policy,
                                 dump_passes=args.dump_passes or args.debug,
                                 notation=args.notation, loops=not args.no_loops,
-                                normalize_lengths=args.normalize_lengths)
+                                normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()
@@ -324,7 +328,8 @@ def main():
                                 track_layout=args.track_layout, notation=args.notation,
                                 loops=not args.no_loops, title=args.title,
                                 gd3_language=args.gd3_language, normalize_lengths=args.normalize_lengths,
-                                pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'strict')
+                                pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'strict',
+                                normalization_ms=args.normalization_ms)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()

@@ -128,8 +128,10 @@ def boundaries(analysis):
                         | {c.vgmticks for c in analysis.controls}))
 
 
-def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playback_ids=()):
-    """Bind unchanged samples; optionally omit selected positive notes up to 8 ms."""
+def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playback_ids=(), normalization_ms=8):
+    """Bind unchanged samples; omit nominated notes within the source-time policy."""
+    from conversion_config import normalization_samples
+    omission_bound = normalization_samples(normalization_ms)
     assessment = PcmAssessment(policy)
     def reject(detail, *, code='projection_undefined', status='unverified', criterion='eligibility'):
         assessment.add(criterion, status, code, detail,
@@ -294,11 +296,11 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
                                end_vgmticks=affected_end, source_value=c.pan, projected_value=p.pan,
                                fallback='hold_start_pan_until_next_attack', evidence=PAN_EVIDENCE)
         duration = p.end_vgmticks - p.start_vgmticks
-        if p.playback_id in omit_ids and duration <= 352:
+        if p.playback_id in omit_ids and duration <= omission_bound:
             omitted.append(dict(playback_id=p.playback_id, sample_id=p.sample_id,
                                 source_start_vgmticks=p.start_vgmticks,
                                 source_end_vgmticks=p.end_vgmticks, duration_samples=duration,
-                                reason='intentional output omission of a positive PCM note at most 8 ms',
+                                reason=f'intentional output omission within {normalization_ms:g} ms',
                                 source_first_event_id=p.first_source_event_id,
                                 source_last_event_id=p.last_source_event_id))
             continue

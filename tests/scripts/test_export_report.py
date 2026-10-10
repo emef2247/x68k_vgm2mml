@@ -21,6 +21,10 @@ def source(path, commands):
     return path
 
 
+def report_text(path):
+    return ' '.join(path.read_text().split())
+
+
 class ExportReportTests(unittest.TestCase):
     def test_encoded_note_census_is_distinct_from_source_requests(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -32,7 +36,7 @@ class ExportReportTests(unittest.TestCase):
                 'A,0,Note,a0,03,4\nP,0,Note,80,03,4\n'
                 'A,1,KeyOffDisable,f7,,0\nA,2,OpmRegisterWrite,fe,0878,0\n'
                 'A,3,OpmRegisterWrite,fe,0800,0\n')
-            text = write_export_report(path, folder, 'a', dict(status='success')).read_text()
+            text = report_text(write_export_report(path, folder, 'a', dict(status='success')))
             self.assertIn('FM notes 1; PCM notes 1; holds 1', text)
             self.assertIn('requests 2 (On 1, Off 1)', text)
             self.assertIn('counts are not source Key-On/Off equivalence', text)
@@ -51,7 +55,7 @@ class ExportReportTests(unittest.TestCase):
             path = source(folder / 'a.vgm', b'\x62')
             (folder / 'a.mdx.normalization.json').write_text(json.dumps(dict(
                 status='unchanged', reason='test', selected=dict(tick_microseconds=8192, tempo_byte=224))))
-            text = write_export_report(path, folder, 'a', dict(status='success')).read_text()
+            text = report_text(write_export_report(path, folder, 'a', dict(status='success')))
             self.assertIn('8192 us/tick; tempo byte 224', text)
             self.assertIn('not measured driver interrupt load', text)
 
@@ -73,15 +77,14 @@ class ExportReportTests(unittest.TestCase):
                 known_losses=[dict(code='held_pan_latched')] * 100,
                 unverified_items=[dict(code='runtime_not_run')], unexpected_mismatches=[])))
             row = dict(status='success', compiler='typed_pcm_mmlx')
-            text = write_export_report(path, folder, 'a', row).read_text()
+            text = report_text(write_export_report(path, folder, 'a', row))
             self.assertIn('1/1 allocated samples byte-exact; 3 encoded bytes; PDX 771 bytes', text)
             self.assertIn('2/2 playback spans exact', text)
             self.assertIn('held_pan_latched x100', text)
             self.assertIn('runtime unverified (not_run)', text)
             self.assertIn('PSG has no OPM Key-On signal', text)
-            self.assertLess(len(text.splitlines()), 28)
             (folder / 'a.pdx').write_bytes(pdx + b'wrong')
-            text = write_export_report(path, folder, 'a', row).read_text()
+            text = report_text(write_export_report(path, folder, 'a', row))
             self.assertIn('0/1 allocated samples byte-exact', text)
 
     def test_blocked_export_discards_stale_projection_statistics(self):
@@ -98,7 +101,7 @@ class ExportReportTests(unittest.TestCase):
             (folder / 'a.mdx').write_bytes(b'stale MDX')
             (folder / 'a.mdx.commands.csv').write_text('track,kind\nA,Note\n')
             (folder / 'a.mdx.normalization.json').write_text(json.dumps(dict(status='applied')))
-            text = write_export_report(path, folder, 'a', dict(status='pcm_projection_blocked')).read_text()
+            text = report_text(write_export_report(path, folder, 'a', dict(status='pcm_projection_blocked')))
             self.assertIn('Blocked: unsupported source', text)
             self.assertIn('PCM frequency mapping: unmeasured', text)
             self.assertNotIn('1/1 playback spans exact', text)
@@ -114,7 +117,7 @@ class ExportReportTests(unittest.TestCase):
             (folder / 'a.conversion.json').write_text(json.dumps(dict(chip_projection='stale-route')))
             (folder / 'a.pcm.assessment.json').write_text(json.dumps(dict(artifact_status='generated')))
             (folder / 'a.mdx.normalization.json').write_text(json.dumps(dict(status='applied')))
-            text = write_export_report(path, folder, 'a', dict(status='conversion_failed')).read_text()
+            text = report_text(write_export_report(path, folder, 'a', dict(status='conversion_failed')))
             self.assertNotIn('stale-route', text)
             self.assertNotIn('Note normalization: applied', text)
             self.assertIn('PCM assessment: not available', text)
@@ -128,7 +131,7 @@ class ExportReportTests(unittest.TestCase):
             (folder / 'a.pcm_projection.csv').write_text('mdx_frequency,rate_num,rate_den\n0,12,0\n')
             (folder / 'a.pcm_bindings.csv').write_text('sample_id,bank,slot,file\n0,0,0,missing.adpcm\n')
             (folder / 'a.pdx').write_bytes(b'PDX')
-            text = write_export_report(path, folder, 'a', dict(status='success')).read_text()
+            text = report_text(write_export_report(path, folder, 'a', dict(status='success')))
             self.assertIn('Export: success', text)
             self.assertIn('Normalization: unavailable', text)
             self.assertIn('PCM frequency mapping: unavailable', text)
@@ -139,9 +142,32 @@ class ExportReportTests(unittest.TestCase):
             folder = Path(tmp)
             path = folder / 'invalid.vgm'
             path.write_bytes(b'invalid')
-            text = write_export_report(path, folder, 'invalid', dict(status='conversion_failed', detail='bad')).read_text()
+            text = report_text(write_export_report(path, folder, 'invalid', dict(status='conversion_failed', detail='bad')))
             self.assertIn('Source statistics: unavailable', text)
             self.assertIn('Export: conversion_failed', text)
+
+    def test_plain_text_blocks_wrap_fields_and_explain_rejected_clocks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            path = source(folder / 'a.vgm', b'\x62')
+            (folder / 'a.mdx.normalization.json').write_text(json.dumps(dict(
+                status='applied', reason='bounded target clock', normalization_ms=12,
+                short_note_policy=dict(omitted_gate_count=2),
+                selected=dict(tick_microseconds=8192, tempo_byte=224),
+                rejected_clock_candidates=[dict(multiplier=65, max_abs_error_samples=360,
+                    collapsed_protected_intervals=7,
+                    examples=[dict(kind='opm_gate'), dict(kind='opm_gate'), dict(kind='side_effect')])])))
+            text = write_export_report(path, folder, 'a', dict(status='success')).read_text()
+            self.assertIn('Export summary\n\n  Input: a.vgm\n', text)
+            self.assertIn('\n\nSource observations\n\n', text)
+            self.assertIn('\n\nOutput normalization\n\n', text)
+            self.assertNotIn('#', text)
+            self.assertTrue(all(len(line) <= 100 for line in text.splitlines()))
+            self.assertIn('    tempo byte 224;\n    MML @t224;', text)
+            self.assertIn('Short-note omission (<=12 ms)', text)
+            self.assertIn('collapsed protected intervals 7', text)
+            self.assertIn('example kinds: opm_gate x2, side_effect x1', text)
+            self.assertIn('sampled examples, not total kind counts', ' '.join(text.split()))
 
 
 if __name__ == '__main__':

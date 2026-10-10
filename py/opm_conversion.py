@@ -25,10 +25,12 @@ def _record_pcm_assessment(assessment, outdir, stem, *, requires_pdx, retained=(
     assessment.dump(outdir, stem)
 
 
-def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None, normalization_source_times=None):
+def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None, normalization_source_times=None, normalization_ms=8):
     source, outdir = Path(source), Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     requested_normalization = normalize_lengths
+    from conversion_config import normalization_samples
+    configured_threshold = normalization_samples(normalization_ms)
     normalize_lengths = normalization_enabled(normalize_lengths, notation=notation)
     if pcm_policy not in ('strict', 'best-effort'):
         raise ValueError('PCM policy must be strict or best-effort')
@@ -109,7 +111,8 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                                                                    pcm_analysis=pcm_analysis if has_pcm else None,
                                                                    output_short_note_policy=True,
                                                                    source_events=analysis.events,
-                                                                   source_event_times=normalization_source_times)
+                                                                   source_event_times=normalization_source_times,
+                                                                   normalization_ms=normalization_ms)
         if normalization['status'] == 'applied' and normalization_validator is not None:
             check = normalization_validator(projection, normalization)
             normalization['source_projection_check'] = check
@@ -125,7 +128,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             def preflight_pcm(selected, *, omitted=()):
                 plan = project(pcm_analysis, stem=source.stem,
                                sample_multiplier=selected.sample_multiplier, policy=pcm_policy,
-                               omit_playback_ids=omitted)
+                               omit_playback_ids=omitted, normalization_ms=normalization_ms)
                 build_music(selected, analysis.segments, title=source.stem, loops=loops,
                             additional_tracks={'P': plan.units} if plan.bindings else {})
                 return plan
@@ -150,7 +153,8 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         normalization['reason'] = 'target-clock correction is not applicable to this notation'
     normalization.update(requested=requested_normalization, enabled=normalize_lengths,
                          adopted=normalization['status'] == 'applied', notation=notation,
-                         selected=projection.timing_report(), shared_pcm_clock=has_pcm)
+                         selected=projection.timing_report(), shared_pcm_clock=has_pcm,
+                         normalization_ms=float(normalization_ms), configured_threshold_samples=configured_threshold)
     multiplier = projection.sample_multiplier
     normalization_path = outdir / (source.stem + '.mdx.normalization.json')
     normalization_path.write_text(json.dumps(normalization, indent=2) + '\n', encoding='utf-8')
@@ -169,7 +173,8 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         try:
             candidate = project(pcm_analysis, stem=source.stem, sample_multiplier=multiplier,
                                 policy=pcm_policy,
-                                omit_playback_ids=normalization.get('omitted_pcm_playback_ids', ()))
+                                omit_playback_ids=normalization.get('omitted_pcm_playback_ids', ()),
+                                normalization_ms=normalization_ms)
         except ProjectionError as error:
             record_pcm_assessment(error.assessment, requires_pdx=bool(pcm_analysis.samples))
             raise ProjectionError(f'{error}; PCM assessment: {outdir / (source.stem + ".pcm.assessment.json")}',

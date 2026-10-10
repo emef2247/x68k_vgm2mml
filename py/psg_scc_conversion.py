@@ -95,6 +95,7 @@ def _source_normalization_check(performance, source_loop, projection, report, *,
     collapsed = sum(a == b for a, b in zip(ticks, ticks[1:]))
     worst = max(map(abs, errors), default=0)
     if report.get('short_note_policy') is not None:
+        omission_bound = report['short_note_policy']['max_duration_samples']
         identities = {int(r['target_source_event_id']): int(r['write_id']) for r in source_map or ()}
         source_writes = {w.write_id: w for w in performance.writes}
         omitted = set()
@@ -104,8 +105,8 @@ def _source_normalization_check(performance, source_loop, projection, report, *,
                 off = source_writes[identities[gate['source_off_event_id']]]
             except KeyError:
                 return dict(accepted=False, reason='Short-note omission has no original source mapping')
-            if not 0 <= off.vgmticks-on.vgmticks <= 352:
-                return dict(accepted=False, reason='Projected short note exceeds 8 ms in original source timing')
+            if not 0 <= off.vgmticks-on.vgmticks <= omission_bound:
+                return dict(accepted=False, reason='Projected short note exceeds configured original source duration')
             omitted.update((on.write_id, off.write_id))
         key_times = {}
         for w in performance.writes:
@@ -114,7 +115,7 @@ def _source_normalization_check(performance, source_loop, projection, report, *,
         def target_tick(time):
             return projection.mdx_tick(projected_samples(mdx_tick(time)))
         protected_collapsed = sum(a.vgmticks < b.vgmticks and
-                                  (a.data & 0x78 or b.vgmticks-a.vgmticks > 352) and
+                                  (a.data & 0x78 or b.vgmticks-a.vgmticks > omission_bound) and
                                   target_tick(a.vgmticks) == target_tick(b.vgmticks)
                                   for writes in key_times.values() for a, b in zip(writes, writes[1:]))
         if source_loop.get('status') == 'valid':
@@ -191,7 +192,7 @@ def _mark_projected_evidence(folder, source, target, performance, projection, no
 
 
 def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model='fm', pitch_policy=None,
-             notation='structured', loops=True, normalize_lengths=None, projection_mode='musical'):
+             notation='structured', loops=True, normalize_lengths=None, projection_mode='musical', normalization_ms=8):
     if notation not in ('structured', 'registers'):
         raise ValueError('PSG/SCC OPM notation must be structured or registers')
     source, out = Path(source), Path(out)
@@ -223,7 +224,7 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
                                   mapping_csv=folder / (source.stem + '.source_map.csv'))
         _, source_map = _read_generated_csv(folder / (source.stem + '.source_map.csv'))
         native_mml, analysis, projection = convert_opm(target, folder, dump_passes=True, title=title, loops=loops,
-            normalize_lengths=normalize_lengths,
+            normalize_lengths=normalize_lengths, normalization_ms=normalization_ms,
             normalization_source_times={int(r['target_source_event_id']): int(r['vgmticks'])
                                         for r in source_map},
             normalization_validator=lambda candidate, report: _source_normalization_check(
@@ -248,10 +249,12 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
 
 
 def convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model='fm', pitch_policy=None,
-            dump_passes=True, notation='structured', loops=True, normalize_lengths=None, projection_mode=None):
+            dump_passes=True, notation='structured', loops=True, normalize_lengths=None, projection_mode=None, normalization_ms=8):
     """Keep native evidence on request; default standalone audit keeps all passes."""
     from conversion_config import normalization_enabled
     normalization_enabled(normalize_lengths, notation=notation)
+    from conversion_config import normalization_samples
+    normalization_samples(normalization_ms)
     projection_mode = projection_mode or ('musical' if notation == 'structured' else 'held-register-compatibility')
     if (projection_mode, notation) not in (('musical', 'structured'), ('held-register-compatibility', 'registers')):
         raise ValueError('Projection mode and notation are incompatible')
@@ -265,11 +268,11 @@ def convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model=
     if dump_passes:
         return _convert(source, out, psg_gain=psg_gain, scc_gain=scc_gain, title=title,
                         psg_model=psg_model, pitch_policy=pitch_policy, notation=notation, loops=loops,
-                        normalize_lengths=normalize_lengths, projection_mode=projection_mode)
+                        normalize_lengths=normalize_lengths, projection_mode=projection_mode, normalization_ms=normalization_ms)
     with tempfile.TemporaryDirectory(prefix='psg-scc-opm-') as temp:
         mml, plan = _convert(source, temp, psg_gain=psg_gain, scc_gain=scc_gain, title=title,
                         psg_model=psg_model, pitch_policy=pitch_policy, notation=notation, loops=loops,
-                        normalize_lengths=normalize_lengths, projection_mode=projection_mode)
+                        normalize_lengths=normalize_lengths, projection_mode=projection_mode, normalization_ms=normalization_ms)
         result = out / mml.name
         shutil.copyfile(mml, result)
         normalization = mml.with_name(Path(source).stem + '.mdx.normalization.json')

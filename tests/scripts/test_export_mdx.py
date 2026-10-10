@@ -170,9 +170,10 @@ class ExportMdxTests(unittest.TestCase):
                 source, out, generator = self.prepare(Path(temporary), ('a.vgm',))
                 with patch('export_mdx.subprocess.run', side_effect=successful_run) as run:
                     row = run_batch(source, out, generator=generator, compiler='mmlx',
-                                    normalize_lengths=requested)[0]
+                                    normalize_lengths=requested, normalization_ms=16)[0]
                 self.assertEqual(row['status'], 'success')
                 command = run.call_args_list[0].args[0]
+                self.assertEqual(command[command.index('--normalization-ms') + 1], '16')
                 if flag:
                     self.assertIn(flag, command)
                 else:

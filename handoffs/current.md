@@ -2,6 +2,18 @@ Project: x68k_vgm2mml
 Branch: codex/pcm-stream-support
 Checkpoint: 2026-10-11
 
+LATEST CLOCK OPTION/LISTENING UPDATE (supersedes next-action statements below):
+User confirms from_fm controls responsive/counters moving, volume animation
+still absent; BOSCON animates but sluggish. User local export9/12 succeeded.
+--normalization-ms now configures original whole-gate omission and absolute
+boundary movement across OPM/PSG/SCC/PCM; default8, OFF disables policy.
+Saved old block_boundary256us reports predate short-rest coalescing. Fresh
+public block_boundary8/16ms both10496us; PCM16ms32512us. Independent encoded
+MDX periods match reports;22focused public checks pass. TXT is plain sections,
+paragraphs and indentation. User may explore parameter values; no local_only
+run or full regression authorized for agent. See:
+field_notes/2026-10-11_clock_option_and_listening.md.
+
 LATEST CHECKPOINT (supersedes all next-action/authorization statements below):
 User requests committing current implementation before verification so they
 can take over during the usage reset. Commit is authorized; push is not.

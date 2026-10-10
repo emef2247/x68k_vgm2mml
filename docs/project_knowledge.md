@@ -1005,14 +1005,18 @@ structure to the target must remain inspectable.
 # Original-time short output gates (2026-10-11)
 
 Structured MDX normalization may omit complete Key-On to Key-Off gates of at
-most 352 original 44100 Hz samples before quantization. Do not classify a
+most 352 original 44100 Hz samples before quantization by default.
+`--normalization-ms` sets both this whole-gate cutoff and the absolute boundary
+movement budget, in milliseconds converted down to integer source samples.
+Do not classify a
 short Segment control slice as a whole short note, or use an already rounded
 PSG/SCC intermediate timestamp for the threshold. Preserve original State,
 Segment, PCM IR, sample bytes and elapsed song time. Partial/repeated/unclosed
 key operations are conservative survivors. Ordinary controls and short rests
-may coalesce within the 352-sample boundary budget, retaining ordered Key-Off
+may coalesce within the configured boundary budget, retaining ordered Key-Off
 and Key-On operations and explicitly reporting lost rest duration. Preferred
-fallback multiplier 65 is an output policy, not a chip specification or a
+fallback multiplier 65 at 8 ms scales with the configured threshold, capped
+at 255. It is an output policy, not a chip specification or a
 guarantee of minimum interrupt period. Unsupported PCM remains unsupported
 even when its playback is short. Native MMDSP behavior requires listening.
 

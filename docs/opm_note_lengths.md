@@ -54,6 +54,17 @@ musical fit alone no longer prevents correction.
 
 Before clock normalization, complete source Key-On/Key-Off gates of at most
 352 samples (8 ms at 44100 Hz, rounded down) may be omitted from the target.
+`--normalization-ms N` changes both this original whole-gate omission threshold
+and the maximum absolute target boundary movement. It defaults to 8, accepts
+positive finite values of at least one source sample (1/44.1 ms), and is inactive
+with `--no-normalize-lengths`. `vgm2mml.py` and `scripts/export_mdx.py` pass it
+through OPM, PSG/SCC and PCM paths. For example:
+
+```sh
+python scripts/export_mdx.py tests/fixtures/public/opm/from_fm \
+  --outdir outputs/listen/opm/from_fm_16ms --no-vgm --normalization-ms 16
+```
+
 The decision covers the whole sounding gate, never a short control slice in
 a longer note. Partial changes, repeated Key-On requests, unclosed gates and
 gates crossing a loop boundary are retained conservatively. PSG/SCC uses the
@@ -63,8 +74,13 @@ Segments, State and PCM IR remain unchanged.
 `py/opm_output_normalization.py` tries the fitted clock first, then multipliers
 65 down to 1. Multiplier 65 (16.640 ms) is a preferred fallback based on the
 user's approximate 60 Hz goal, neither a chip limit nor a guaranteed minimum
-period. Projected boundaries stay within 352 samples. Surviving sounding gates,
-longer rests, side-effect pulses and loop spans remain positive. Short rests
+period. Projected boundaries stay within 352 samples by default.
+With a configured value, the preferred fallback multiplier scales from 65
+in proportion to the integer sample threshold, up to 255. This permits trying
+slower clocks with larger tolerances. The musical fit is tried first, so a
+larger parameter does not guarantee a longer period. Both tolerance and
+omission use the configured threshold rather than a fixed 352 samples.
+Surviving sounding gates, longer rests, side-effect pulses and loop spans remain positive. Short rests
 and ordinary setter intervals may coalesce; both ordered Key-Off/Key-On
 requests remain present. Lost rest duration is reported separately from
 omitted notes. Absolute time is rounded without accumulating interval errors.

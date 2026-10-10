@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import struct
 import sys
+import textwrap
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'py'))
 from pcm_mdx import RATES
@@ -106,6 +107,52 @@ def _encoded_command_summary(folder, stem):
             'Repeats/loops not expanded; counts are not source Key-On/Off equivalence')
 
 
+def _plain_text(lines):
+    sections = {'Export summary', 'Source observations', 'Compiled target',
+                'Output normalization', 'PCM assessment', 'Diagnostics'}
+    rendered = []
+    section = None
+    for line in lines:
+        if not line or line in sections:
+            if line in sections:
+                section = line
+            if line or not rendered or rendered[-1]:
+                rendered.append(line)
+            continue
+        fields = line.split('; ')
+        for index, field in enumerate(fields):
+            suffix = ';' if index < len(fields) - 1 else ''
+            rendered.extend(textwrap.wrap(field + suffix, width=100,
+                            initial_indent='  ' if index == 0 else '    ',
+                            subsequent_indent='    ', break_long_words=False,
+                            break_on_hyphens=False))
+        if section != 'Export summary':
+            rendered.append('')
+    return '\n'.join(rendered).rstrip() + '\n'
+
+
+def _rejected_clock_summary(normalization):
+    candidates = normalization.get('rejected_clock_candidates', [])
+    if not candidates:
+        return []
+    lines = [f'Rejected MDX clock candidates: {len(candidates)}; '
+             'timing bounds and positive protected intervals constrain clock selection']
+    for candidate in candidates[:3]:
+        kinds = Counter(str(item.get('kind', 'unknown')) for item in candidate.get('examples', []))
+        examples = ', '.join(f'{kind} x{count}' for kind, count in kinds.items()) or 'none recorded'
+        reason = ('positive protected intervals would become zero-length on this clock'
+                  if candidate.get('collapsed_protected_intervals', 0)
+                  else 'boundary movement exceeds the normalization timing bound')
+        lines.append(f'Clock multiplier {candidate.get("multiplier", "unknown")}: '
+                     f'max boundary error {candidate.get("max_abs_error_samples", "unknown")} samples; '
+                     f'collapsed protected intervals {candidate.get("collapsed_protected_intervals", 0)}; '
+                     f'example kinds: {examples} (sampled examples, not total kind counts); '
+                     f'reason: {reason}')
+    if len(candidates) > 3:
+        lines.append(f'Other rejected candidates: {len(candidates) - 3}; see normalization JSON')
+    return lines
+
+
 def write_export_report(source, folder, stem, row):
     """Write a report for success, blocked or failed conversion, without extra replay."""
     source, folder = Path(source), Path(folder)
@@ -132,10 +179,10 @@ def write_export_report(source, folder, stem, row):
               if pcm_current else {})
     normalization = (optional('Normalization', lambda: _json(folder / f'{stem}.mdx.normalization.json'), {})
                      if target_current else {})
-    lines = [f'Input: {source.name}', f'Export: {row["status"]}',
+    lines = ['Export summary', '', f'Input: {source.name}', f'Export: {row["status"]}',
              'Export success means files generated; native playback/display is not tested.',
              f'Route: {conversion.get("chip_projection", "unmeasured")}',
-             f'Compiler: {row.get("compiler", "unmeasured")}']
+             f'Compiler: {row.get("compiler", "unmeasured")}', '', 'Source observations', '']
     try:
         stats = source_statistics(source)
         lines.append(f'Source duration: {stats["samples"]} samples / '
@@ -155,16 +202,23 @@ def write_export_report(source, folder, stem, row):
                        'Compiled MDX command statistics: unmeasured')
               if target_current and (folder / f'{stem}.mdx').is_file()
               else 'Compiled MDX command statistics: unmeasured (no current compiled artifact)')
-    lines.extend([census,
+    lines.extend(['', 'Compiled target', '', census,
                   'OPM pitch reproduction: unmeasured (no independent source/target pitch comparison)'])
     if normalization:
+        lines.extend(['', 'Output normalization', ''])
         lines.append('Note normalization: ' + str(normalization.get('status', 'see normalization JSON')) +
                      '; ' + str(normalization.get('reason', ''))[:180])
+        lines.append(f'Normalization parameter: {normalization.get("normalization_ms", 8)} ms; '
+                     f'configured source samples {normalization.get("configured_threshold_samples", normalization.get("correction_bound_samples", "unmeasured"))}; '
+                     'whole-gate omission cutoff before normalization and maximum target boundary movement; '
+                     f'enabled={normalization.get("enabled", "unmeasured")}')
         selected = normalization.get('selected', {})
         pruning = normalization.get('short_note_policy', {})
         if pruning:
             adopted = normalization.get('short_note_omission_adopted', False)
-            lines.append(f'Short-note omission (<=8 ms): adopted={adopted}; '
+            threshold = normalization.get('normalization_ms', 8)
+            threshold = f'{threshold:g}' if isinstance(threshold, (int, float)) else str(threshold)
+            lines.append(f'Short-note omission (<={threshold} ms): adopted={adopted}; '
                          f'FM gates {pruning.get("omitted_gate_count", 0)}; '
                          f'FM duration {pruning.get("omitted_duration_samples", 0)} source samples; '
                          f'PCM playbacks {len(normalization.get("omitted_pcm_playback_ids", []))}. '
@@ -178,7 +232,11 @@ def write_export_report(source, folder, stem, row):
         if isinstance(selected, dict) and selected.get('tick_microseconds'):
             lines.append(f'Selected MDX clock: {selected["tick_microseconds"]} us/tick; '
                          f'tempo byte {selected.get("tempo_byte", "unknown")}; '
+                         f'MML @t{selected.get("tempo_byte", "unknown")}; '
                          'nominal target clock, not measured driver interrupt load')
+        lines.extend(optional('Rejected clock diagnostics',
+                     lambda: _rejected_clock_summary(normalization), []))
+    lines.extend(['', 'PCM assessment', ''])
     if assessment:
         lines.extend([f'PCM policy: {assessment.get("policy", "unknown")}; '
                       f'projection {assessment.get("assessment_status", "unknown")}; '
@@ -217,9 +275,11 @@ def write_export_report(source, folder, stem, row):
             lines.append(f'Blocked: +{len(reasons) - 3} other reasons; see assessment JSON')
     else:
         lines.append('PCM assessment: not available / no PCM projection')
+    if row.get('detail') or unavailable:
+        lines.extend(['', 'Diagnostics', ''])
     if row.get('detail'):
         lines.append('Detail: ' + row['detail'].replace('\n', ' ')[:320])
     lines.extend(unavailable)
     path = folder / f'{stem}.report.txt'
-    path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    path.write_text(_plain_text(lines), encoding='utf-8')
     return path

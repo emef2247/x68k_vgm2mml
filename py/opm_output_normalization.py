@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from note_normalization import infer_timing
 from opm_mdx import mdx_tick, projected_samples
 from opm_target_pruning import analyze_gates, omit_short_gates
+from conversion_config import normalization_samples
 
 
 SHORT_NOTE_SAMPLES = 352  # floor(44100 * 0.008); 353 samples exceeds 8 ms.
@@ -12,12 +13,14 @@ FRAME_MULTIPLIER = 65  # 16.640 ms; a preferred fallback, not a minimum period.
 
 
 def normalize_output(segments, original, *, source_events=None, pcm_analysis=None,
-                     loop_metadata=None, source_event_times=None):
+                     loop_metadata=None, source_event_times=None, normalization_ms=8):
+    bound = normalization_samples(normalization_ms)
+    preferred = max(1, (min(255 * SHORT_NOTE_SAMPLES, FRAME_MULTIPLIER * bound) + SHORT_NOTE_SAMPLES // 2) // SHORT_NOTE_SAMPLES)
     events = tuple(segments if source_events is None else source_events)
     loop = loop_metadata or {}
     policy_events = tuple(replace(e, vgmticks=source_event_times.get(e.source_event_id, e.vgmticks))
                           for e in events) if source_event_times is not None else events
-    pruned, pruning = omit_short_gates(policy_events, original, SHORT_NOTE_SAMPLES)
+    pruned, pruning = omit_short_gates(policy_events, original, bound)
     pruning['timing_basis'] = 'original_source_before_normalization'
     if loop.get('status') == 'valid':
         starts = (loop['loop_start_samples'], loop['decoded_end_samples'])
@@ -37,7 +40,7 @@ def normalize_output(segments, original, *, source_events=None, pcm_analysis=Non
     protected = [dict(start_vgmticks=0, end_vgmticks=original.source_end_vgmticks, kind='song')]
     protected += [dict(r, kind='opm_gate') for r in facts['survivor_gate_intervals']]
     rest_intervals = [dict(r, kind='opm_rest') for r in facts['survivor_key_rest_intervals']]
-    protected += [r for r in rest_intervals if r['duration_samples'] > SHORT_NOTE_SAMPLES]
+    protected += [r for r in rest_intervals if r['duration_samples'] > bound]
     # A partial slot change/retrigger is an operation, not a short complete note.
     by_ch = {}
     surviving_ids = {w.source_event_id for w in pruned.writes}
@@ -48,7 +51,7 @@ def normalize_output(segments, original, *, source_events=None, pcm_analysis=Non
         keys.sort(key=lambda e: (e.vgmticks, e.source_event_id))
         for a, b in zip(keys, keys[1:]):
             if (a.vgmticks < b.vgmticks and
-                    (a.state.key_mask or b.vgmticks-a.vgmticks > SHORT_NOTE_SAMPLES)):
+                    (a.state.key_mask or b.vgmticks-a.vgmticks > bound)):
                 protected.append(dict(ch=ch, start_vgmticks=a.vgmticks,
                                       end_vgmticks=b.vgmticks, kind='opm_key_operation'))
     effects = {}
@@ -64,7 +67,7 @@ def normalize_output(segments, original, *, source_events=None, pcm_analysis=Non
         if pcm_analysis.source_end_vgmticks != original.source_end_vgmticks:
             raise ValueError('OPM and PCM normalization require the same source end')
         omitted_pcm = [p.playback_id for p in pcm_analysis.playbacks
-                       if 0 < p.end_vgmticks - p.start_vgmticks <= SHORT_NOTE_SAMPLES]
+                       if 0 < p.end_vgmticks - p.start_vgmticks <= bound]
         previous = None
         for p in pcm_analysis.playbacks:
             if p.playback_id in omitted_pcm:
@@ -76,7 +79,7 @@ def normalize_output(segments, original, *, source_events=None, pcm_analysis=Non
                             end_vgmticks=p.start_vgmticks, kind='pcm_rest',
                             duration_samples=p.start_vgmticks-previous.end_vgmticks)
                 rest_intervals.append(rest)
-                if rest['duration_samples'] > SHORT_NOTE_SAMPLES:
+                if rest['duration_samples'] > bound:
                     protected.append(rest)
             previous = p
     if loop.get('status') == 'valid':
@@ -101,12 +104,13 @@ def normalize_output(segments, original, *, source_events=None, pcm_analysis=Non
     report = dict(status='unchanged', reason='no bounded target clock',
                   source_segments_unchanged=True, source_pcm_ir_unchanged=True,
                   source_origin_samples=0, before=original.timing_report(),
-                  method='bounded_target_quantization', correction_bound_samples=SHORT_NOTE_SAMPLES,
+                  method='bounded_target_quantization', correction_bound_samples=bound,
+                  normalization_ms=float(normalization_ms),
                   short_note_policy=pruning, omitted_pcm_playback_ids=omitted_pcm,
                   anchor_counts=dict(opm=sum(len(channels[ch]) for ch in range(8)), pcm=len(channels[8])),
-                  preferred_fallback_multiplier=FRAME_MULTIPLIER,
+                  preferred_fallback_multiplier=preferred,
                   fitted_clock=asdict(fitted) if fitted else None)
-    multipliers = list(range(FRAME_MULTIPLIER, 0, -1))
+    multipliers = list(range(preferred, 0, -1))
     if fitted is not None:
         nominated = round(fitted.samples_per_step * 625 / 7056)
         report['nominated_multiplier'] = nominated
@@ -121,7 +125,7 @@ def normalize_output(segments, original, *, source_events=None, pcm_analysis=Non
         worst = max(map(abs, errors.values()), default=0)
         collapsed = [r for r in protected if r['end_vgmticks'] > r['start_vgmticks']
                      and ticks[r['end_vgmticks']] <= ticks[r['start_vgmticks']]]
-        if worst > SHORT_NOTE_SAMPLES or collapsed:
+        if worst > bound or collapsed:
             rejected.append(dict(multiplier=multiplier, max_abs_error_samples=worst,
                                  collapsed_protected_intervals=len(collapsed), examples=collapsed[:3]))
             continue

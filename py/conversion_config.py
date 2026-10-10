@@ -152,3 +152,19 @@ def select_mdx_route(usage, *, compatibility_target=None):
     if chips == {'opll'}:
         raise ValueError('OPLL to MDX projection is not supported; use --target mgs for MGSDRV compatibility')
     raise ValueError('Unsupported MDX source combination: ' + ', '.join(sorted(chips)))
+
+
+def normalization_samples(milliseconds):
+    """Shared output policy threshold; floor original 44100 Hz source samples."""
+    from decimal import Decimal, InvalidOperation
+    import math
+    try:
+        value = Decimal(str(milliseconds))
+        if not value.is_finite() or value <= 0 or not math.isfinite(float(value)):
+            raise ValueError
+        samples = int(value * Decimal('44.1'))
+        if samples < 1:
+            raise ValueError
+    except (ValueError, TypeError, InvalidOperation, OverflowError):
+        raise ValueError('Normalization milliseconds must be finite and at least one source sample (1/44.1 ms)') from None
+    return samples

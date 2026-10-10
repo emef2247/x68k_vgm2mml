@@ -13,6 +13,7 @@ from opm_note_normalization import normalize_projection
 from opm_target_pruning import omit_short_gates
 from test_opm_mdx import analyze, write, wait
 from test_opm_reader import vgm
+from conversion_config import normalization_samples
 
 
 def setup():
@@ -24,6 +25,33 @@ def setup():
 
 
 class ShortOutputGateTests(unittest.TestCase):
+    def test_configurable_thresholds_use_original_samples_and_preserve_off_mode(self):
+        for milliseconds, threshold in ((4, 176), (8, 352), (16, 705)):
+            with self.subTest(milliseconds=milliseconds), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                source, analysis, _ = self.fixture(root, wait(451) + write(8, 120)
+                    + wait(threshold) + write(8, 0) + wait(882) + write(8, 120)
+                    + wait(threshold + 1) + write(8, 0) + wait(882))
+                _, returned, after = convert(source, root / 'on', normalize_lengths=True,
+                    normalization_ms=milliseconds, dump_passes=True)
+                report = json.loads((root / 'on/gates.mdx.normalization.json').read_text())
+                self.assertEqual(report['normalization_ms'], milliseconds)
+                self.assertEqual(report['correction_bound_samples'], threshold)
+                self.assertEqual(report['short_note_policy']['omitted_gate_count'], 1)
+                self.assertEqual(returned, analysis)
+                self.assertEqual(len([w for w in after.writes if w.register == 8]), 2)
+                small, _, _ = convert(source, root / 'off4', normalize_lengths=False, normalization_ms=4)
+                large, _, _ = convert(source, root / 'off16', normalize_lengths=False, normalization_ms=16)
+                self.assertEqual(small.read_bytes(), large.read_bytes())
+
+    def test_normalization_parameter_rejects_invalid_and_subsample_values(self):
+        for value in (0, -1, float('nan'), float('inf'), float('-inf'), .001):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                normalization_samples(value)
+        self.assertEqual(normalization_samples(4), 176)
+        self.assertEqual(normalization_samples(16), 705)
+        self.assertGreater(normalization_samples(1e308), 0)
+
     def fixture(self, folder, body):
         source = folder / 'gates.vgm'
         source.write_bytes(vgm(setup() + body))
