@@ -34,15 +34,11 @@ No global installation or third-party source inside the converter is required.
 The recorded revision below is the one verified in this repository:
 
 ```bash
-git clone --recurse-submodules https://github.com/vampirefrog/mdxtools.git outputs/mdx-reference-tools/mdxtools
-git -C outputs/mdx-reference-tools/mdxtools checkout 9c8539fec2757fcf7c85d1986171b50ebe2ef1e5
-git -C outputs/mdx-reference-tools/mdxtools submodule update --init --recursive
-make -C outputs/mdx-reference-tools/mdxtools mdx2mml mdxdump \
-  CFLAGS='-O2 -Wall -D_GNU_SOURCE -Ix68ksjis' LIBS=
+bash scripts/setup_tools.sh --with-mdxtools
 python scripts/decompile_mdx_references.py INPUT_MDX_OR_DIRECTORY \
   --outdir outputs/mdx-references/run-001 \
-  --mdx2mml outputs/mdx-reference-tools/mdxtools/mdx2mml \
-  --mdxdump outputs/mdx-reference-tools/mdxtools/mdxdump \
+  --mdx2mml .tools/mdxtools/mdx2mml \
+  --mdxdump .tools/mdxtools/mdxdump \
   --tool-revision 9c8539fec2757fcf7c85d1986171b50ebe2ef1e5
 ```
 

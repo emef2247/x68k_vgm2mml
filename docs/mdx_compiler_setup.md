@@ -6,6 +6,51 @@ The lookup order is explicit `--mxc` / `--run68`, PATH, `.tools/`, then the old
 `outputs/research/` locations for compatibility. An invalid explicit path is
 an error; no other compiler is silently selected.
 
+## One-command tool setup
+
+Run from WSL (the script finds the repository from its own location):
+
+```sh
+bash scripts/setup_tools.sh
+# Also install independent metadata/decompiler tools for research:
+bash scripts/setup_tools.sh --with-mdxtools
+```
+
+The default installs MXC v1.01, pinned run68x and the Rust helper built with
+`cargo build --release --locked` (mmlx 0.2.0 / soundlog 0.15.0). The optional
+profile builds `mdxinfo`, `pdxinfo`, `mdxdump` and `mdx2mml` from mdxtools revision
+`9c8539fec2757fcf7c85d1986171b50ebe2ef1e5`, including its pinned submodules.
+These executables are under `.tools/mdxtools/`; for example:
+
+```sh
+.tools/mdxtools/mdxinfo -u -H path/to/score.mdx
+```
+
+Prerequisites: Python 3.10+, Rust/Cargo supporting edition 2024 (Rust 1.85+),
+git, curl, CMake, make, a C compiler and sha256sum. A fresh MXC extraction also
+needs Ubuntu `lhasa` (or another `lha` with LH1 support). For Ubuntu/WSL:
+
+```sh
+sudo apt-get update
+sudo apt-get install build-essential cmake git curl python3 lhasa
+```
+
+Install Rust/Cargo using your usual Rust toolchain setup before running the
+script. It also finds Cargo under `$HOME/.cargo/bin` when it is absent from PATH.
+The script never runs sudo or globally installs packages. Missing prerequisites
+stop with an actionable message. Existing source edits or a different MXC hash
+are preserved and diagnosed rather than overwritten.
+
+Repeat the same command to verify/rebuild the environment. MXC archive and
+compiler hashes and Git revisions are fixed; Cargo dependencies use Cargo.lock.
+`.tools/setup_manifest.json` records installed executable hashes, revisions
+and the lockfile hash. Local build hashes can differ across host compilers;
+the same source/dependency versions are the reproducibility guarantee.
+The optional research profile does not regenerate historical experiment
+outputs or install unrelated players, firmware or emulator environments.
+
+## Manual setup
+
 The installation below uses the same compiler and runner revision as the
 validated 2026-10-09 baseline. Run from the repository root in WSL. Prerequisites
 are Python 3, curl, git, CMake, a C compiler and an LHA decoder supporting `-lh1-`

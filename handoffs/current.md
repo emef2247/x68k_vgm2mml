@@ -2,6 +2,16 @@ Project: x68k_vgm2mml
 Branch: codex/pcm-stream-support
 Checkpoint: 2026-10-11
 
+LATEST RELEASE PREPARATION / USER NATIVE RESULT:
+User explicitly requests no commit for these changes: leave working-tree edits
+for their branch -> PR -> main workflow. Do not commit or push.
+User confirms default PSG NEMESIS export14/14 succeeded and MMDSP animation
+now works. Current GRA1_01 report:16128us @t193, max350sample boundary movement.
+No agent local_only conversion. README now introduces --normalization-ms and
+explains TXT reports in Japanese. scripts/setup_tools.sh installs persistent
+MXC/run68/Rust helper; --with-mdxtools adds independent inspection tools.
+See docs/mdx_compiler_setup.md and the release_setup_and_native_listening note.
+
 LATEST DEPENDENCY RECOVERY:
 User deleted outputs after a successful NEMESIS export. Subsequent compilation
 failed with Missing --mxc tool because tools had lived in outputs/research.

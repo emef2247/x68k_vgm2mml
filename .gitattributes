@@ -1,0 +1,2 @@
+# WSL setup scripts need LF even when checked out from Windows.
+scripts/*.sh text eol=lf
