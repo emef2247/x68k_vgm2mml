@@ -2,6 +2,8 @@
 
 Normal single-file conversion uses `python vgm2mml.py`; conversion implementations live in `py/`.
 
+- `setup_tools.sh`: repeatable WSL setup for hash-checked MXC, pinned run68x and the locked Rust helper, outside `outputs/`. Add `--with-mdxtools` for independent metadata/decompiler tools. See `docs/mdx_compiler_setup.md`.
+
 - `export_mdx.py`: single-file or recursive folder export for listening. FM defaults to native MXC via run68, with explicit `--compiler mmlx` available. Calls the canonical frontend, parses the compiled MDX and replays it with soundlog. Writes MML/MDX/VGM per FM song, exact MXC input under `_compiler_inputs/`, or the existing typed MML/MDX/PDX pair with an explicit PCM replay limitation. Records compiler/failures without comparing playback. See [usage](../README.md#mmlmdxvgmを生成して聴く).
 - `mdx_compiler.py`: isolated MXC invocation, strict CP932 encoding and lossless compiler-dialect preparation; canonical generated MML stays unchanged.
 - `compare_opm_vgm.py`: explicit channel-mapped OPM state/Segment, Key-event, nominal-pitch and command-size diagnostics. Saves both inputs' raw/state/Segment CSVs; does not certify waveform, loop seams or native display behavior.
