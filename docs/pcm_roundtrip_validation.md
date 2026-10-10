@@ -28,8 +28,9 @@ strictとbest-effortで成果物の生成方針を分ける。
 以前のtie+途中pan出力は、この版で元VGMの即時pan変更を再現する根拠にならない。
 現行投影はstrictで拒否し、best-effortで開始panを保持して損失区間を記録する。
 
-入力VGMのstream展開やdecoder消費が未確定という問題も別に残る。
-現行IRの`consumed_nibbles=None`とstream未対応を、MMLを外すことで解消したとは扱わない。
+有限bank `0x04`のstream展開は、固定したlibvgm profileに基づく転送列として実装・検証した。
+これはdecoderの消費や標準MXDRVの実行を検証したことではなく、`consumed_nibbles=None`は維持する。
+未対応の圧縮bank／stream modeも明示的に診断する。詳細は [PCM/PDX](pcm_pdx.md) を参照する。
 
 ## strict / best-effortと四種類の判定
 

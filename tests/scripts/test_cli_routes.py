@@ -223,9 +223,9 @@ class CliRoutes(unittest.TestCase):
             self.assertIn('opm', report['source']['unused_declarations'])
             self.assertIn('pcm', report['source']['unused_declarations'])
 
-    def test_data_bank_and_dac_stream_keep_existing_pcm_diagnostics(self):
+    def test_compressed_data_bank_and_incomplete_stream_are_diagnosed(self):
         from generate_pcm_fixtures import vgm as pcm_vgm
-        block = b'\x67\x66\x04' + struct.pack('<I', 2) + b'\x12\x34'
+        block = b'\x67\x66\x44' + struct.pack('<I', 2) + b'\x12\x34'
         stream = bytes.fromhex('90 00 17 00 01 95 00 00 00 00 62')
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -234,7 +234,7 @@ class CliRoutes(unittest.TestCase):
             run = self.run_cli(source, '--outdir', root / 'out', '--dump-passes')
             self.assertEqual(run.returncode, 2)
             self.assertIn('unsupported_pcm_data_bank', run.stderr)
-            self.assertIn('unsupported_stream_control', run.stderr)
+            self.assertIn('stream_configuration_incomplete', run.stderr)
             assessment = json.loads((root / 'out/bank.pcm.assessment.json').read_text())
             self.assertEqual(assessment['artifact_status'], 'blocked')
             self.assertFalse((root / 'out/bank.mdx.mml').exists())

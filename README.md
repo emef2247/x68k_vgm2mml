@@ -2,7 +2,7 @@
 
 X68000向けのOPM/YM2151 VGMを、検査可能な中間表現を経由してMDX MMLへ変換します。
 通常変換の入口は `vgm2mml.py` です。Python 3.10以降を使用します。
-直接書き込み型のOKIM6258入力には、標準PCMトラックとPDXの生成経路があります。
+直接書き込み型と有限Data Bank／DAC Stream型のOKIM6258入力には、標準PCMトラックとPDXの生成経路があります。
 PSG/SCCのVGMをOPM向けに変換し、MDX MMLを生成する経路もあります。
 
 ## 通常変換
@@ -158,7 +158,7 @@ mmlxへ切り替えることはありません。helper自体のMMLを渡す3引
 ```bash
 python vgm2mml.py input.vgm --outdir outputs/input --dump-passes
 
-# 確認済みの途中pan損失を診断付きで許容する場合
+# 定義済みの投影損失を診断付きで許容する場合
 python vgm2mml.py input.vgm --outdir outputs/input-best \
   --pcm-policy best-effort --dump-passes
 ```
@@ -169,14 +169,25 @@ OPMは通常の構造化MML経路を使い、PCMは型付き命令列から標�
 MDXとPDXを一緒にX68000のプレイヤーへ渡してください。
 helperを別の場所に置く場合は、変換時に `--pcm-generator PATH` を指定します。
 
-初期対応は、直接 `0xB7` 書き込みによる4-bit／10-bit出力のOKIM6258、一つの物理PCMチャンネル、
+対応するPCM sourceは、直接 `0xB7` 書き込みと、非圧縮bank `0x04`を使う有限DAC Streamです。
+Streamのsetup/data/frequency、`0x95`の有限block再生、`0x93`のcommand数／bank終端指定、
+`0x94`の供給停止に対応します。供給停止やbank終端をchipのSTOPやresetへ置き換えません。
+原コマンドとは別に `*.pcm_stream_supplies.csv`へ展開した転送時刻とbank位置を保存します。
+対象は4-bit／10-bit出力のOKIM6258、一つの物理PCMチャンネル、
 標準F0〜F4と一致する速度、PDX bank 0の96サンプル、1サンプル65535バイトまでです。STOP→PLAYと供給時刻を検査し、
 符号化バイト列の完全一致でサンプルを共有します。保持はタイで記述します。
 既定の `--pcm-policy strict` は既知の意味損失を伴う生成を止めます。
 `best-effort`では発音開始時のpanを保持し、途中pan変更やmuteの損失を区間付きで診断します。
 次の新規発音では元のpanを明示します。近似方法を定義できない入力はbest-effortでも生成を止めます。
-ストリーム転送、不規則なbyte供給、再生途中の速度変更、decoder状態を引き継ぐ曲ループなどは
-未対応として報告します。PCMを含む場合、長さ補正は共有OPM/PCM clockを保持して見送り、
+有限streamの供給時刻をそのままPDXで保持できない場合、best-effortは元の符号化bytesを連続再生へ
+投影し、時刻列の損失と供給終了後のPLAY区間を診断します。paddingや再エンコードは行いません。
+STOP中のstream供給は、明記したlibvgm reset profileで省略を診断します。実機でのbuffer状態は未確認です。
+VGMの曲ループはbest-effortで一回分の演奏として生成し、`song_loop_not_emitted`を記録します。
+strictではこれらの損失を伴う生成を止めます。圧縮bank、stream内のreverse／loop、未対応のlength mode、
+周波数0でのstream開始、再生中のdata setup変更、chip再生途中の速度変更、未解決のdecoder開始状態は診断します。
+MDXのoffset／容量制限でビルドできない場合は、生成済みMMLとPDXを残し、
+`mdx_capacity_exceeded`としてMDXの生成停止を記録します。これはMDX＋PDXの完成を意味しません。
+PCMを含む場合、長さ補正は共有OPM/PCM clockを保持して見送り、
 その理由をnormalization JSONに記録します。PCMのstrict／best-effort判定は別途行います。
 
 **PCMを含むMDXからのVGM生成は現在利用できません。** 外部ライブラリsoundlogの保持中カーソル消失と、

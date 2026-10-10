@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'py'), str(ROOT / 'scripts')]
-from generate_pcm_fixtures import cases, playback, vgm, wait, write
+from generate_pcm_fixtures import cases, playback, stream_cases, vgm, wait, write
 from okim6258 import analyze
 from opm_conversion import convert
 from opm_mdx_music import infer_clock
@@ -47,7 +47,7 @@ class PcmMdxTests(unittest.TestCase):
     def test_known_target_loss_and_source_unknown_both_survive_preflight(self):
         commands = write(0, 2) + write(1, 0x12) + wait(20) + write(1, 0x34) + wait(5) + write(0, 1)
         with self.assertRaises(ProjectionError) as caught:
-            project(analyze(vgm(commands, flags=10)), stem='mixed', policy='best-effort')
+            project(analyze(vgm(commands, flags=14)), stem='mixed', policy='best-effort')
         report = caught.exception.assessment.as_dict()
         self.assertTrue(any(item['code'] == 'output_precision' for item in report['known_losses']))
         self.assertTrue(report['unverified_items'])
@@ -80,6 +80,72 @@ class PcmMdxTests(unittest.TestCase):
         notes = [c for c in plan.typed_commands if c['kind'] == 'note']
         self.assertEqual(sum(c['ticks'] for c in notes), sum(u.end_tick-u.start_tick for u in plan.units if u.kind == 'pcm_note'))
         self.assertEqual(sum(c['kind'] == 'hold' for c in plan.typed_commands), len(notes)-2)
+
+    def test_song_loop_is_target_loss_and_best_effort_keeps_one_finite_pass(self):
+        commands, duration = playback(bytes(range(32)))
+        raw = bytearray(vgm(commands))
+        struct.pack_into('<I', raw, 0x1c, 0x100 - 0x1c)
+        analysis = analyze(bytes(raw))
+        self.assertEqual(analysis.source_loop_vgmticks, 0)
+        with self.assertRaises(ProjectionError) as caught:
+            project(analysis, stem='loop', policy='strict')
+        losses = caught.exception.assessment.as_dict()['known_losses']
+        self.assertIn('song_loop_not_emitted', [item['code'] for item in losses])
+        plan = project(analysis, stem='loop', policy='best-effort')
+        self.assertEqual(len([u for u in plan.units if u.kind == 'pcm_note']), 1)
+        self.assertEqual(analysis.playbacks[0].end_vgmticks, duration)
+        self.assertIn('song_loop_not_emitted',
+                      [item['code'] for item in plan.assessment.as_dict()['known_losses']])
+
+    def test_delayed_chip_stop_has_explicit_continuous_delivery_fallback(self):
+        raw = next(raw for name, raw, _ in stream_cases() if name == 'stream_delayed_chip_stop')
+        analysis = analyze(raw)
+        before = analysis
+        self.assertFalse(analysis.playbacks[0].independently_playable)
+        self.assertEqual(analysis.playbacks[0].issues, ('irregular_byte_supply',))
+        self.assertIsNone(analysis.playbacks[0].consumed_nibbles)
+        with self.assertRaises(ProjectionError) as caught:
+            project(analysis, stem='delayed', policy='strict')
+        self.assertIn('byte_supply_schedule_not_preserved',
+                      [item['code'] for item in caught.exception.assessment.as_dict()['known_losses']])
+        plan = project(analysis, stem='delayed', policy='best-effort')
+        self.assertEqual(analysis, before)
+        self.assertEqual(analysis.samples[0].encoded_bytes, b'\x12\x34\x56\x78')
+        loss = next(item for item in plan.assessment.as_dict()['known_losses']
+                    if item['code'] == 'byte_supply_schedule_not_preserved')
+        self.assertEqual(loss['fallback'], 'continuous_pdx_delivery')
+        self.assertIn('consumed_nibbles_unknown',
+                      [item['code'] for item in plan.assessment.as_dict()['unverified_items']])
+
+    def test_stopped_stream_supply_is_inspectable_target_loss(self):
+        raw = next(raw for name, raw, _ in stream_cases() if name == 'stream_stopped_supply_restart')
+        analysis = analyze(raw)
+        before = analysis
+        self.assertFalse(analysis.issues)
+        self.assertTrue(any(o.vgmticks == 17 for o in analysis.observations))
+        self.assertEqual([s.encoded_bytes for s in analysis.samples], [b'\x12\x34\x56', b'\x12\x34\x56\x78'])
+        with self.assertRaises(ProjectionError) as caught:
+            project(analysis, stem='stopped', policy='strict')
+        self.assertIn('stopped_stream_supply_not_projected',
+                      [item['code'] for item in caught.exception.assessment.as_dict()['known_losses']])
+        plan = project(analysis, stem='stopped', policy='best-effort')
+        self.assertEqual(analysis, before)
+        summary = plan.summary()
+        self.assertNotIn('pcm_raw_bytes_preserved', summary)
+        self.assertTrue(summary['pcm_sample_bytes_preserved'])
+        self.assertIn('encoded playback samples stored in PDX', summary['pcm_byte_preservation_scope'])
+        self.assertIn('profile-derived byte supply', summary['pcm_consumption_scope'])
+        self.assertIn('decoder consumption not measured', summary['pcm_consumption_scope'])
+        self.assertIn('stopped_stream_supply_not_projected',
+                      [item['code'] for item in plan.assessment.as_dict()['known_losses']])
+        self.assertEqual(len([u for u in plan.units if u.kind == 'pcm_note']), 2)
+
+    def test_direct_stopped_data_remains_unresolved_under_best_effort(self):
+        analysis = analyze(vgm(write(0, 1) + write(1, 0x34) + wait(6)))
+        with self.assertRaises(ProjectionError) as caught:
+            project(analysis, stem='direct_stopped', policy='best-effort')
+        self.assertIn('data_outside_known_playback',
+                      [item['code'] for item in caught.exception.assessment.as_dict()['unverified_items']])
 
     def test_long_playback_holds_before_duration_chunk_without_retrigger(self):
         commands, _ = playback(bytes(range(256)) * 4)
@@ -210,8 +276,8 @@ class PcmMdxTests(unittest.TestCase):
 
     def test_twelve_bit_output_is_retained_in_source_but_rejected_by_mdx(self):
         commands, _ = playback(bytes(range(16)))
-        a = analyze(vgm(commands, flags=10))
-        self.assertEqual(a.options, 10)
+        a = analyze(vgm(commands, flags=14))
+        self.assertEqual(a.options, 14)
         self.assertTrue(a.samples)
         with self.assertRaisesRegex(ValueError, '10-bit output'):
             project(a, stem='twelve')
@@ -383,6 +449,40 @@ class PcmMdxTests(unittest.TestCase):
             self.assertFalse((out / 'source.mdx').exists())
 
     @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
+    def test_native_mdx_capacity_retains_partial_outputs_and_target_dumps(self):
+        raw = next(raw for name, raw, _ in stream_cases() if name == 'stream95_finite')
+        real_run = subprocess.run
+        def capacity_error(command, **kwargs):
+            if command[1] == '--compile-pcm':
+                Path(command[-1]).write_bytes(b'incomplete MDX')
+                return subprocess.CompletedProcess(command, 1, '',
+                    'data inconsistency: MDX track 8 offset exceeds the maximum 0xfffe')
+            return real_run(command, **kwargs)
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'capacity.vgm'
+            source.write_bytes(raw)
+            out = root / 'out'
+            with patch('pcm_mdx.subprocess.run', side_effect=capacity_error):
+                with self.assertRaisesRegex(ProjectionError, 'MDX capacity exceeded'):
+                    convert(source, out, dump_passes=True)
+            report = json.loads((out / 'capacity.pcm.assessment.json').read_text())
+            self.assertEqual(report['artifact_status'], 'blocked')
+            self.assertEqual(report['assessment_status'], 'lossy')
+            self.assertEqual(report['validation_status'], 'unverified')
+            self.assertEqual(report['validation_run'], 'not_run')
+            self.assertEqual(report['known_losses'][0]['code'], 'mdx_capacity_exceeded')
+            self.assertFalse(report['unexpected_mismatches'])
+            self.assertEqual(report['artifacts']['mml']['status'], 'generated')
+            self.assertEqual(report['artifacts']['pdx']['status'], 'generated')
+            self.assertEqual(report['artifacts']['mdx']['status'], 'blocked')
+            self.assertFalse((out / 'capacity.mdx').exists())
+            for suffix in ('.mdx.controls.csv', '.mdx.structure.units.csv', '.mdx.timing.json',
+                           '.pcm_stream_supplies.csv', '.pcm_target_commands.csv'):
+                self.assertTrue((out / ('capacity' + suffix)).is_file(), suffix)
+            self.assertEqual(source.read_bytes(), raw)
+
+    @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
     def test_public_pair_outputs_compile_and_pdx_payload_matches_source(self):
         for name, raw, expected in cases():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
@@ -433,6 +533,58 @@ class PcmMdxTests(unittest.TestCase):
                     self.assertNotIn(b'\xf7', compiled[p_start:])  # no artificial pan split
                 elif name == 'long_hold_stop':
                     self.assertIn(b'\xf7', compiled[p_start:])  # preserve a genuine long hold
+
+    @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
+    def test_public_finite_streams_generate_standard_pcm_without_rewriting_source(self):
+        for name, raw, expected in stream_cases():
+            if name not in ('stream95_finite', 'stream93_count', 'stream93_to_end'):
+                continue
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                folder = Path(temporary)
+                source = folder / (name + '.vgm')
+                source.write_bytes(raw)
+                out = folder / 'out'
+                mml, _, _ = convert(source, out, dump_passes=True)
+                self.assertEqual(source.read_bytes(), raw)
+                self.assertIn('/* Track P */', mml.read_text())
+                self.assertTrue((out / (name + '.mdx')).is_file())
+                pdx = (out / (name + '.pdx')).read_bytes()
+                offset, length = struct.unpack_from('>II', pdx)
+                self.assertEqual(length, 4)
+                self.assertEqual(hashlib.sha256(pdx[offset:offset + length]).hexdigest(),
+                                 expected['sample_sha256'])
+                with (out / (name + '.pcm_stream_supplies.csv')).open() as stream:
+                    supplies = list(csv.DictReader(stream))
+                self.assertEqual([int(s['vgmticks']) for s in supplies], expected['transfer_ticks'])
+                report = json.loads((out / (name + '.pcm.assessment.json')).read_text())
+                self.assertEqual(report['artifact_status'], 'generated')
+                self.assertFalse(report['known_losses'])
+
+    @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
+    def test_public_stream_fallbacks_pack_only_observed_bytes_and_report_loss(self):
+        for name, code in (
+                ('stream_delayed_chip_stop', 'byte_supply_schedule_not_preserved'),
+                ('stream_stopped_supply_restart', 'stopped_stream_supply_not_projected')):
+            raw = next(raw for case, raw, _ in stream_cases() if case == name)
+            samples = analyze(raw).samples
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                folder = Path(temporary)
+                source = folder / (name + '.vgm')
+                source.write_bytes(raw)
+                out = folder / 'out'
+                mml, _, _ = convert(source, out, dump_passes=True, pcm_policy='best-effort')
+                self.assertEqual(source.read_bytes(), raw)
+                self.assertIn('/* Track P */', mml.read_text())
+                pdx = (out / (name + '.pdx')).read_bytes()
+                for slot, sample in enumerate(samples):
+                    offset, length = struct.unpack_from('>II', pdx, slot * 8)
+                    self.assertEqual(length, len(sample.encoded_bytes))
+                    self.assertEqual(pdx[offset:offset + length], sample.encoded_bytes)
+                report = json.loads((out / (name + '.pcm.assessment.json')).read_text())
+                self.assertEqual(report['artifact_status'], 'generated')
+                self.assertIn(code, [item['code'] for item in report['known_losses']])
+                self.assertIn('consumed_nibbles_unknown',
+                              [item['code'] for item in report['unverified_items']])
 
     def test_silent_native_opm_keeps_common_end_without_fabricating_writes(self):
         with tempfile.TemporaryDirectory() as temp:

@@ -44,7 +44,7 @@ def playback(data, *, clock=8000000, divider=512, pan=0, pan_changes=()):
     return bytes(result), end
 
 
-def vgm(commands, *, opm=False, clock=8000000, flags=2):
+def vgm(commands, *, opm=False, clock=8000000, flags=6):
     header = bytearray(0x100)
     header[:4] = b'Vgm '
     struct.pack_into('<I', header, 8, 0x171)
@@ -91,9 +91,58 @@ def cases():
         mdx_frequencies=[4], source_pan=[0], mdx_pan=[3])
 
 
+def data_block(data, bank=4):
+    return b'\x67\x66' + bytes((bank,)) + struct.pack('<I', len(data)) + data
+
+
+def stream_setup(*, stream=0, bank=4, frequency=7813, step=1, base=0,
+                 chip=0x17, port=0, register=1):
+    return (bytes((0x90, stream, chip, port, register)) +
+            bytes((0x91, stream, bank, step, base)) +
+            bytes((0x92, stream)) + struct.pack('<I', frequency))
+
+
+def stream_fast_start(block=0, flags=0, *, stream=0):
+    return bytes((0x95, stream)) + struct.pack('<H', block) + bytes((flags,))
+
+
+def stream_start(offset=0, mode=1, length=4, *, stream=0):
+    return (bytes((0x93, stream)) + struct.pack('<I', offset) + bytes((mode,)) +
+            struct.pack('<I', length))
+
+
+def stream_cases():
+    data = bytes((0x12, 0x34, 0x56, 0x78))
+    prefix = data_block(data) + stream_setup()
+    expected = dict(source_end_vgmticks=22, transfer_ticks=[0, 6, 12, 17],
+                    transfer_bytes=list(data), sample_sha256=hashlib.sha256(data).hexdigest())
+    chip_start = write(0, 1) + write(0, 2)
+    for name, start in (
+            ('stream95_finite', stream_fast_start()),
+            ('stream93_count', stream_start()),
+            ('stream93_to_end', stream_start(mode=3, length=0))):
+        yield name, vgm(prefix + chip_start + start + wait(22) + write(0, 1)), expected
+    # Stream exhaustion stops byte supply, without writing the chip control port.
+    yield 'stream_natural_end', vgm(prefix + chip_start + stream_fast_start() + wait(22)), expected
+    # A stream controller supplies bytes; it does not start the ADPCM decoder.
+    yield 'stream_supply_only', vgm(prefix + stream_fast_start() + wait(22)), {
+        **expected, 'sample_sha256': None}
+    yield 'stream94_supply_stop', vgm(prefix + chip_start + stream_fast_start() +
+        wait(7) + b'\x94\x00' + wait(4) + write(0, 1)), dict(
+            source_end_vgmticks=11, transfer_ticks=[0, 6], transfer_bytes=list(data[:2]),
+            sample_sha256=hashlib.sha256(data[:2]).hexdigest())
+    yield 'stream_delayed_chip_stop', vgm(prefix + chip_start + stream_fast_start() +
+        wait(122) + write(0, 1)), {**expected, 'source_end_vgmticks': 122}
+    yield 'stream_stopped_supply_restart', vgm(prefix + chip_start + stream_fast_start() +
+        wait(17) + write(0, 1) + wait(7) + write(0, 2) + stream_fast_start() +
+        wait(22) + write(0, 1)), dict(source_end_vgmticks=46,
+            transfer_ticks=[0, 6, 12, 17, 24, 30, 36, 41], transfer_bytes=[*data, *data],
+            sample_sha256=hashlib.sha256(data[:3]).hexdigest())
+
+
 def main():
     DESTINATION.mkdir(parents=True, exist_ok=True)
-    for name, raw, expected in cases():
+    for name, raw, expected in (*cases(), *stream_cases()):
         (DESTINATION / (name + '.vgm')).write_bytes(raw)
         (DESTINATION / (name + '.expected.json')).write_text(
             json.dumps(expected, indent=2) + '\n', encoding='utf-8')

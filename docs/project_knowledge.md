@@ -941,12 +941,47 @@ PDX and any readable rendering must consume the same immutable binding.
 Future Z_MUSIC output must consume source evidence with its own
 placement; neither MDX text nor PDX slot numbers become the common IR.
 
+Finite bank-4 DAC stream supplies are a separate derived table with triggering
+command, transfer sequence, original bank/block position and VGM time. They do
+not masquerade as original B7 writes. The source scheduling profile is pinned
+libvgm at 44100 Hz/32.32; original same-tick commands precede DAC supplies.
+Stream STOP/exhaustion never inserts chip STOP/reset. Bit-2 codec interpretation
+and stopped-to-PLAY FIFO behavior name that reference profile, not native IOCS
+or silicon certification. `consumed_nibbles` remains unknown.
+
+Conservative source cadence eligibility remains unchanged when target
+best-effort collapses a fully reconstructed finite stream into continuous
+PDX delivery. Keep source bytes/times, cadence error and unsupplied PLAY tail,
+and report discarded delivery timing in target assessment. Known/assumed
+stopped supplies and active song-loop entry remain source observations; target
+omission, native buffer uncertainty and unimplemented song looping are distinct
+results. Neither byte equality nor a nominal tail duration proves audible
+equivalence. A target capacity failure retains completed MML/PDX and target
+dumps, but must not be reported as a completed MDX/PDX pair.
+
 PCM validation separates target note/gate intent, IOCS/DMA playback requests,
 chip PLAY/STOP/decoder state and VGM stream scheduling. A stream stop is not
 a chip stop; cursor restart is not by itself decoder reset. Use a versioned
 MXDRV/IOCS profile and an independent playback baseline. Matching A/B after
 reusing an uncertified player is internal consistency, not standard playback
 proof. Unknown consumption/reset/effective-control fields remain unverified.
+
+Keep MDX header/repeat offsets, PDX sample offsets and sample byte lengths
+distinct. Standard PCM1 reads a 32-bit PDX offset and the low 16-bit length;
+a PDX file or sample address above 65535 is not itself a sample-length overflow.
+PCM NOTE selects a slot; standard MML does not provide a verified arbitrary
+sample-byte seek. Source EOF is not an observed chip STOP. A finite track's
+F1/00 and its preceding note gate are separate: in the inspected MXDRV +17
+PCM1 path, an unheld q8 gate expires before processing duration expiry, while
+F1/00 has no unconditional PCM1 cut. Port STOP/END stubs can confirm this call
+intent but cannot certify native cessation. Do not infer mandatory trailing
+rests, payload stop markers or alignment padding from an unresolved noise report.
+Conform generated MDX to the selected MXDRV reference; native verification is
+not a reason to leave known request handling unimplemented in a replay backend.
+PDX does not adapt stopping behavior to the user's playback environment. A stub
+in a separate diagnostic player is neither a cause of MMDSP playback failure
+nor evidence that the generated MDX is correct at runtime.
+See field_notes/2026-10-09_pcm_pdx_end_review.md for bounded reference evidence.
 
 MDX target projection owns fidelity/eligibility and explicit approximation;
 never rewrite common PCM evidence to fit target limits. Strict conversion
@@ -977,8 +1012,8 @@ and diagnose them in the target.
 The normalization default must not itself reject PCM input. Until PCM-aware
 correction is verified, keep the baseline shared OPM/PCM clock and record
 non-adoption separately from PCM loss/eligibility and runtime validation.
-Data Bank/DAC Stream decoding is separate from frontend cleanup; unsupported
-source stream evidence and its existing diagnostics remain intact.
+Data Bank/DAC Stream decoding is a separate change from frontend cleanup;
+unsupported stream semantics and their source evidence remain explicit.
 
 See `docs/pcm_pdx.md` for current eligibility and tool limitations and
 `docs/pcm_roundtrip_validation.md` for the independent validation design.

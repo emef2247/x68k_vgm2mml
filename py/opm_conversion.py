@@ -202,19 +202,6 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             pcm_assessment.error(str(error))
             record_pcm_assessment(pcm_assessment, requires_pdx=bool(pcm_plan))
         raise
-    if pcm_plan is not None:
-        from pcm_mdx import write_mdx
-        try:
-            fm_structure = build_structure(projection, analysis.segments,
-                                           title=title or source.stem, loops=loops)
-            write_mdx(pcm_plan, fm_structure, outdir, source.stem, generator=pcm_generator)
-        except (OSError, ValueError) as error:
-            pcm_assessment.error(str(error))
-            record_pcm_assessment(pcm_assessment, requires_pdx=True)
-            raise
-    if pcm_assessment is not None:
-        pcm_assessment.generated()
-        record_pcm_assessment(pcm_assessment, requires_pdx=bool(pcm_plan))
     if dump_passes:
         dump_projection(projection, outdir / (source.stem + '.mdx.controls.csv'), track_layout=track_layout)
         report = projection.timing_report()
@@ -235,5 +222,19 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         report['source_state_writes'] = len({e.source_event_id for e in analysis.events})
         report['source_nonchanging_writes_not_in_segments'] = report['source_state_writes'] - len(projection.writes)
         (outdir / (source.stem + '.mdx.timing.json')).write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+    if pcm_plan is not None:
+        from pcm_mdx import write_mdx
+        try:
+            fm_structure = build_structure(projection, analysis.segments,
+                                           title=title or source.stem, loops=loops)
+            write_mdx(pcm_plan, fm_structure, outdir, source.stem, generator=pcm_generator)
+        except (OSError, ValueError) as error:
+            if not isinstance(error, ProjectionError):
+                pcm_assessment.error(str(error))
+            record_pcm_assessment(pcm_assessment, requires_pdx=True)
+            raise
+    if pcm_assessment is not None:
+        pcm_assessment.generated()
+        record_pcm_assessment(pcm_assessment, requires_pdx=bool(pcm_plan))
     return mml, analysis, projection
 

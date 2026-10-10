@@ -47,12 +47,14 @@ def inspect_source(source):
                 first.setdefault('pcm', item)
         elif 0x90 <= cmd <= 0x95:
             stream_id = raw[pos + 1]
+            if stream_id == 255:
+                # Reserved stream ID; 94/FF stops all configured supplies.
+                continue
             if cmd == 0x90:
                 streams[stream_id] = raw[pos + 2]
             destination = streams.get(stream_id)
             if destination == 0x17:
-                # Route to the existing PCM analyzer, which retains and rejects
-                # these commands as unsupported_stream_control/data_bank.
+                # The PCM analyzer retains commands and validates their supplies.
                 chips.add('pcm')
                 first.setdefault('pcm', item)
             else:

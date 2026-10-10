@@ -4,12 +4,14 @@ from dataclasses import asdict, dataclass
 from fractions import Fraction
 from pathlib import Path
 import struct
+import re
 import subprocess
 import sys
 
 from mdx_duration import duration_spelling
 from opm_mdx import mdx_tick, projected_samples
 from pcm_assessment import PcmAssessment, ProjectionError, PAN_EVIDENCE
+from pcm_stream import REFERENCE_REVISION
 
 # Standard MXDRV F0..F4 nibble rates, not incoming VGM byte-write rates.
 RATES = tuple(Fraction(clock, divider) for clock, divider in
@@ -72,8 +74,11 @@ class PcmMdxProjection:
                     pcm_playback_count=sum(u.kind == 'pcm_note' for u in self.units),
                     pcm_pdx_file=self.pdx_name,
                     pcm_target='standard MXDRV PCM1; one bank, 96 slots',
-                    pcm_raw_bytes_preserved=True,
-                    pcm_consumption_scope='observed byte supply; decoder consumption not measured',
+                    pcm_sample_bytes_preserved=True,
+                    pcm_byte_preservation_scope='encoded playback samples stored in PDX; '
+                                                'all source supply operations are retained in source IR',
+                    pcm_consumption_scope='direct or profile-derived byte supply; '
+                                          'decoder consumption not measured',
                     pcm_max_abs_timing_error_samples=max(
                         [abs(row[field]) for row in self.rows
                          for field in ('start_error_samples', 'end_error_samples')]
@@ -158,6 +163,24 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
             assessment.block('Native PCM1 sample length exceeds 65535 bytes; no defined fallback')
     if assessment.block_reasons:
         raise ProjectionError('; '.join(assessment.block_reasons), assessment)
+    if analysis.source_loop_vgmticks is not None:
+        assessment.add('loop', 'lossy', 'song_loop_not_emitted',
+                       'MDX projection currently emits one finite source pass; the VGM song loop is lost',
+                       cause='target_constraint', start_vgmticks=analysis.source_loop_vgmticks,
+                       fallback='finite_source_pass', source_value=analysis.source_loop_vgmticks,
+                       projected_value=None)
+    for observation in analysis.observations:
+        if observation.code == 'stream_supply_while_stopped':
+            assessment.add('delivery', 'lossy', 'stopped_stream_supply_not_projected',
+                           'Supplies during chip STOP are retained in source IR but omitted from PDX playback',
+                           cause='target_constraint', source_event_id=observation.source_event_id,
+                           start_vgmticks=observation.vgmticks,
+                           fallback='omit_stopped_supplies_under_libvgm_reset_profile',
+                           evidence=f'libvgm {REFERENCE_REVISION} okim6258.c: '
+                                    'stopped update is silent; stop-to-play reinitializes FIFO')
+            assessment.add('buffer', 'unverified', 'native_buffer_reset_unconfirmed',
+                           'Stopped-byte carryover is resolved only under the libvgm reset profile; '
+                           'native buffered-data behavior is unverified', scope='runtime_validation')
     bindings = tuple(PcmBinding(s.sample_id, 0, i, f'samples/{s.sample_id:03}.adpcm')
                      for i, s in enumerate(analysis.samples))
     by_sample = {b.sample_id: b for b in bindings}
@@ -208,7 +231,11 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
                           target_note=note, unlooped_command=text)
 
     for p in analysis.playbacks:
-        if not p.independently_playable or p.sample_id not in by_sample:
+        schedule_fallback = (set(p.issues) == {'irregular_byte_supply'}
+                             and p.decoder_reset_known and p.pan is not None
+                             and p.stream_transfer_end - p.stream_transfer_start == p.supplied_bytes
+                             and p.supplied_bytes > 0 and not analysis.issues)
+        if (not p.independently_playable and not schedule_fallback) or p.sample_id not in by_sample:
             for reason in p.issues:
                 known = reason in ('rate_change_during_playback', 'unsupported_adpcm3')
                 assessment.add('playback', 'lossy' if known else 'unverified', reason,
@@ -218,6 +245,15 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
                                end_vgmticks=p.end_vgmticks)
             reject(f'PCM playback {p.playback_id} cannot begin an independent PDX note: '
                    + ', '.join(p.issues), code='independent_sample_unknown')
+        if schedule_fallback:
+            assessment.add('delivery', 'lossy', 'byte_supply_schedule_not_preserved',
+                           'Timestamped stream byte writes are projected as continuous PDX delivery; '
+                           'a sample ends at byte exhaustion even if source PLAY remains asserted',
+                           cause='target_constraint', playback_id=p.playback_id,
+                           start_vgmticks=p.start_vgmticks, end_vgmticks=p.end_vgmticks,
+                           source_value=dict(max_cadence_error_vgmticks=p.delivery_max_error_vgmticks,
+                                             unsupplied_play_tail_vgmticks=p.unfed_tail_vgmticks),
+                           fallback='continuous_pdx_delivery')
         try:
             frequency = RATES.index(p.rate_hz)
         except ValueError:
@@ -271,6 +307,9 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
                          end_error_samples=projected_samples(end, sample_multiplier)-p.end_vgmticks,
                          rate_num=p.rate_num, rate_den=p.rate_den, mdx_frequency=frequency,
                          reset_origin=p.reset_origin, reset_observed=p.reset_observed,
+                         delivery_fallback='continuous_pdx_delivery' if schedule_fallback else '',
+                         delivery_max_error_vgmticks=p.delivery_max_error_vgmticks,
+                         unfed_tail_vgmticks=p.unfed_tail_vgmticks,
                          source_first_event_id=p.first_source_event_id,
                          source_last_event_id=p.last_source_event_id))
         cursor = end
@@ -293,7 +332,8 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
                    'Observed byte supply does not establish actual decoder consumption',
                    scope='runtime_validation')
     if policy == 'strict' and any(item['status'] == 'lossy' for item in assessment.items):
-        detail = 'Strict PCM projection blocks known loss: held_pan_latched'
+        detail = 'Strict PCM projection blocks known loss: ' + ', '.join(
+            dict.fromkeys(item['code'] for item in assessment.items if item['status'] == 'lossy'))
         assessment.block(detail)
         raise ProjectionError(detail, assessment)
     emit('end', start_tick=end)
@@ -376,5 +416,14 @@ def write_mdx(plan, fm_structure, outdir, stem, *, generator=None):
     (folder / 'mdx_build.log').write_text(result.stdout + result.stderr, encoding='utf-8')
     if result.returncode or not mdx.is_file() or not mdx.stat().st_size:
         mdx.unlink(missing_ok=True)
-        raise ValueError('PCM MDX construction failed: ' + result.stdout + result.stderr)
+        detail = result.stdout + result.stderr
+        if re.search(r'MDX track \d+ offset exceeds the maximum 0xfffe|Combined native MDX exceeds 65535 bytes', detail):
+            assessment = plan.assessment
+            assessment.add('format', 'lossy', 'mdx_capacity_exceeded',
+                           'The projected data exceed native MDX capacity; no truncation or splitting fallback is defined',
+                           cause='target_constraint', evidence=detail.strip())
+            assessment.block('MDX capacity exceeded; generated MML and PDX are retained')
+            raise ProjectionError('MDX capacity exceeded; generated MML and PDX are retained: ' + detail,
+                                  assessment)
+        raise ValueError('PCM MDX construction failed: ' + detail)
     return mdx
