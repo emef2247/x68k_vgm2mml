@@ -1,7 +1,12 @@
 # Native OKIM6258 PCM and PDX
 
 The canonical `vgm2mml.py --target mdx` path emits readable MDX MML and, when
-PCM samples are present, a standard nine-track MDX plus PDX. OPM-only MML
+PCM samples are present, a sixteen-track MDX plus PDX with initial E8 (PCM4/8
+enable) on A. Only P carries PCM playback; Q-W contain finite end commands.
+The mode requires an available PCM extension in the playback environment.
+Six mode-projected listening cases played and stopped correctly in the user's
+MMDSP environment; this is bounded evidence, not universal runtime certification.
+OPM-only MML
 conversion remains Python-only; typed PCM construction and packing require
 the built `scripts/mdx_fixture_generator` helper. See README for commands.
 Stopped PCM setup writes without any samples do not create an empty PDX or
@@ -32,8 +37,9 @@ require the helper; their source control evidence is still available in dumps.
   binary note chunk; its readable tie follows the chunk. Canonical PCM output
   is currently uncompressed; readable MML may use exact finite repeats.
   Runtime STOP/reset equivalence remains unverified.
-- One bank of 96 samples, each at most 65535 bytes for this native PCM1
-  profile. Encoded bytes remain unchanged; no waveform
+- One bank of 96 samples, each at most 65535 bytes in the currently verified
+  projection scope. Longer samples remain blocked as unverified extension
+  behavior, not as proven extended-mode format loss. Encoded bytes remain unchanged; no waveform
   deduplication, resampling or ADPCM re-encoding is used.
 - PCM-only songs and native OPM+PCM songs use the same inferred MDX clock and
   common source end. The existing six-VGM-sample boundary error bound includes
@@ -62,8 +68,9 @@ for primary sources, hashes and independent C-counter checks.
 
 `--pcm-policy strict` is the default and blocks known semantic loss.
 `--pcm-policy best-effort` allows a specifically defined fallback with explicit
-diagnostics. For the pinned MXDRV 2.06+17 Rel.X5-S PCM1 profile, FC pan is
-latched until the next new IOCS playback. Best-effort retains onset pan,
+diagnostics. The projection retains onset pan rather than emitting held pan
+changes. Original MXDRV 2.06+17 Rel.X5-S PCM1 evidence described latched FC pan;
+immediate pan behavior in the selected extension is not certified. Best-effort retains onset pan,
 discards held changes without artificial attacks, records the affected source
 intervals (including mute/audibility loss), and explicitly sets the next onset
 pan. Strict blocks that projection before invoking the helper.
@@ -180,7 +187,13 @@ hold/note/rest/end commands. Python completes timing projection and duration
 chunking. The helper validates command bounds, durations, shared FM tempo/end,
 finite FM repeat offsets, standard layout and PDX references. It compiles only
 the FM MML, preserves its typed tracks/tones/title, adds typed PCM using the
-existing soundlog MdxBuilder, then serializes/reparses the nine-track document.
+existing soundlog MdxBuilder, then serializes/reparses the sixteen-track document.
+The builder adds E8 at the beginning of A and inactive Q-W. Validation compares
+A after removing precisely that E8, B-H, P, tones, title and PDX name against
+the compiled FM and typed PCM plan. It requires exactly one E8 and inactive
+extra tracks; shared clock, timing, source PCM IR and PDX payloads are unchanged.
+Python independently checks the emitted layout so an old helper cannot report
+a standard-nine output as success. Rebuild the helper when updating this code.
 PDX lookup is relative to OUTPUT, allowing inputs under `<stem>.pcm/`.
 No new compiler, raw binary concatenation or PCM text compilation is used.
 Native-length checks and a conservative 65535-byte combined MDX limit apply.
@@ -210,12 +223,15 @@ PCM compile-and-replay writes the structurally validated MDX, rejects VGM
 replay and removes a stale requested VGM. The batch exporter replays the
 canonical pair via `--from-mdx`, without recompiling its readable PCM. It retains
 MML/MDX/PDX and reports `pcm_replay_unavailable` with a nonzero exit status.
-FM-only replay is unaffected. Use an X68000 player for the PCM pair; hardware,
+`export_mdx.py --no-vgm` skips replay and reports successful MML/MDX/PDX
+generation independently of runtime validation. It never recompiles readable
+PCM MML as a substitute for a missing typed pair. Default replay and existing
+roundtrip tooling remain available. FM-only replay is unaffected. Use an X68000 player for the PCM pair; hardware,
 MMDSP GUI and waveform comparison remain separate validation work.
 
 ## Evidence and remaining work
 
-Original public fixtures live in `tests/fixtures/public/pcm/`: PCM-only
+Original public fixtures live in `tests/fixtures/public/opm_oki6258/`: PCM-only
 reset/retrigger, held pan changes/mute, exact asset reuse, and concurrent OPM
 with F0/F4 playback, plus a 512-tick hold followed by STOP/rest. Their independent expected schedule/hashes are regenerated
 without calling the production analyzer. Target tests independently inspect

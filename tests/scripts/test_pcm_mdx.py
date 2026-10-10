@@ -17,7 +17,7 @@ from generate_pcm_fixtures import cases, playback, stream_cases, vgm, wait, writ
 from okim6258 import analyze
 from opm_conversion import convert
 from opm_mdx_music import infer_clock
-from pcm_mdx import default_generator, project
+from pcm_mdx import default_generator, project, validate_extended_layout
 from pcm_assessment import ProjectionError
 from pcm_assessment import PcmAssessment
 from vgm_io import read_vgm_header
@@ -156,7 +156,7 @@ class PcmMdxTests(unittest.TestCase):
         self.assertEqual(timed, [('hold', ''), ('note', 256), ('note', 256)])
         self.assertIn('n0,%256 & n0,%256', plan.units[0].command)
 
-    def test_native_sample_length_loss_is_blocked_in_both_policies(self):
+    def test_unverified_extended_sample_length_is_blocked_in_both_policies(self):
         _, raw, _ = next(cases())
         analysis = analyze(raw)
         sample = replace(analysis.samples[0], encoded_bytes=bytes(65536))
@@ -166,9 +166,10 @@ class PcmMdxTests(unittest.TestCase):
                 project(analysis, stem='long', policy=policy)
             report = caught.exception.assessment.as_dict()
             self.assertEqual(report['artifact_status'], 'blocked')
-            loss = report['known_losses'][0]
-            self.assertEqual(loss['code'], 'sample_length_exceeds_native')
-            self.assertEqual(loss['cause'], 'target_constraint')
+            self.assertFalse(report['known_losses'])
+            gap = next(i for i in report['unverified_items']
+                       if i['code'] == 'sample_length_exceeds_projection_scope')
+            self.assertEqual(gap['cause'], 'implementation_scope')
 
     def test_source_invalid_and_unresolved_are_distinct(self):
         commands, _ = playback(bytes(range(16)))
@@ -192,6 +193,17 @@ class PcmMdxTests(unittest.TestCase):
             self.assertTrue(manifest.endswith('end\t\t\n'))
             report = json.loads((Path(temp)/(name+'.pcm.assessment.json')).read_text())
             self.assertEqual(report['validation_status'], 'unverified')
+            self.assertEqual(report['target_layout']['track_count'], 16)
+            self.assertEqual(report['target_layout']['pcm_mode_command'], 'E8')
+            self.assertEqual(plan.summary()['pcm_track_count'], 16)
+
+    def test_layout_guard_rejects_old_helper_mode_and_active_extra_tracks(self):
+        from test_mdx_mode_trials import score
+        validate_extended_layout(score(True))
+        for raw in (score(), score(True).replace(b'\xe8', b'\xe9', 1),
+                    score(True)[:-2], score(True)[:-2] + b'\x80\x00'):
+            with self.subTest(raw=raw[:20]), self.assertRaisesRegex(ValueError, 'rebuild'):
+                validate_extended_layout(raw)
 
     def test_clock_header_uses_6258_field_and_respects_data_boundary_and_version(self):
         raw = bytearray(vgm(wait(100)))
@@ -496,6 +508,14 @@ class PcmMdxTests(unittest.TestCase):
                 self.assertIn('/* Track P */', text)
                 self.assertIn('n0,', text)
                 self.assertTrue((out / (name + '.mdx')).is_file())
+                generated = (out / (name + '.mdx')).read_bytes()
+                validate_extended_layout(generated)
+                from mdx_reference_expectations import read_mdx
+                document = read_mdx(generated, allow_pcm8=True)
+                self.assertTrue(document['complete'])
+                self.assertEqual(len(document['tracks']), 16)
+                self.assertTrue(all(t['commands'][-1]['opcode_hex'] == 'f1'
+                                    for t in document['tracks']))
                 self.assertNotIn('Track P', (out / (name + '.pcm') / 'opm.mml').read_text())
                 assessment = json.loads((out / (name + '.pcm.assessment.json')).read_text())
                 self.assertEqual(assessment['artifact_status'], 'generated')
@@ -535,7 +555,33 @@ class PcmMdxTests(unittest.TestCase):
                     self.assertIn(b'\xf7', compiled[p_start:])  # preserve a genuine long hold
 
     @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
-    def test_public_finite_streams_generate_standard_pcm_without_rewriting_source(self):
+    def test_public_extended_pair_preserves_all_frequencies_and_onset_pan(self):
+        from mdx_reference_expectations import read_mdx
+        encoded = bytes(range(128))
+        configurations = ((4000000, 1024), (4000000, 768), (8000000, 1024),
+                          (8000000, 768), (8000000, 512))
+        commands = b'\x54\x20\xc7\x54\x28\x4e\x54\x08\x78'
+        for pan, (clock, divider) in zip((0, 1, 2, 3, 0), configurations):
+            body, _ = playback(encoded, clock=clock, divider=divider, pan=pan)
+            commands += body
+        raw = vgm(commands + b'\x54\x08\x00' + wait(100), opm=True)
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / 'all_rates.vgm'
+            source.write_bytes(raw)
+            out = Path(temporary) / 'out'
+            convert(source, out, dump_passes=True)
+            document = read_mdx((out / 'all_rates.mdx').read_bytes(), allow_pcm8=True)
+            notes = [e for e in document['tracks'][8]['events'] if e['kind'] == 'note']
+            self.assertEqual([e['rate_code'] for e in notes], list(range(5)))
+            self.assertEqual([e['pan'] for e in notes], [3, 1, 2, 0, 3])
+            self.assertEqual(document['tracks'][8]['termination']['kind'], 'finite_end')
+            pdx = (out / 'all_rates.pdx').read_bytes()
+            offset, length = struct.unpack_from('>II', pdx)
+            self.assertEqual(pdx[offset:offset + length], encoded)
+            self.assertEqual(source.read_bytes(), raw)
+
+    @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
+    def test_public_finite_streams_generate_extended_pcm_without_rewriting_source(self):
         for name, raw, expected in stream_cases():
             if name not in ('stream95_finite', 'stream93_count', 'stream93_to_end'):
                 continue
@@ -548,6 +594,7 @@ class PcmMdxTests(unittest.TestCase):
                 self.assertEqual(source.read_bytes(), raw)
                 self.assertIn('/* Track P */', mml.read_text())
                 self.assertTrue((out / (name + '.mdx')).is_file())
+                validate_extended_layout((out / (name + '.mdx')).read_bytes())
                 pdx = (out / (name + '.pdx')).read_bytes()
                 offset, length = struct.unpack_from('>II', pdx)
                 self.assertEqual(length, 4)

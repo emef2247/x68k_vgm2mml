@@ -2,6 +2,61 @@ Project: x68k_vgm2mml
 Branch: codex/pcm-stream-support
 Checkpoint: 2026-10-10
 
+LATEST FOLLOW-UP (supersedes earlier next-action lines): production listening
+results are recorded in field_notes/2026-10-10_mmdsp_listening_followup.md.
+BOSCON04/06/08 play/stop; other successful BOSCON files exceed native track
+buffer. Public tiny stream fixtures contain their expected 2-4 byte payloads,
+but reported PCM load failures remain unresolved. Long PDX names are a candidate
+to isolate, not a proven cause. ARMBS1 has no PCM, animates but leaves sound;
+NEMESIS plays/stops but has no animation and blocks user controls during play.
+Fast MDX clock/driver load is a hypothesis only. Existing finite_end_tail passes
+remain valid. Do not rerun local_only conversions automatically or change source
+IR, clock, end gates or MML command order from these observations alone.
+export_mdx.py writes per-input TXT statistics and keeps diagnostic artifacts.
+Rebuild helper for --inspect-commands. Next: public short-name/load probe and
+longer authored listening cases; inspect FM end boundary before a stop fix.
+No deletion/commit/push requested.
+
+CURRENT PRODUCTION CHECKPOINT (supersedes pending/paused statements below):
+User confirmed all six current16-track/E8 finite_end_tail rootMDX play and stop
+correctly. New hashes/listeningpass are recorded, oldstandard9failures retained.
+Production --compile-pcm now selects16/E8 with onlyP active, Q-W finiteends;
+typedcommand/title/tone/PDX preservation is checked. Python layout guard rejects
+oldhelpers. Rebuildscripts/mdx_fixture_generator beforeWSL use. NeutralPCMIR,
+samplebytes/sharedclock/sourceinterpretation are unchanged. Longerthan65535
+samples stayblocked asunverified scope, not assertedextendedformatloss.
+export_mdx.py --no-vgm generates MML/MDX/PDX withoutreplay; defaultreplay and
+roundtrip remain. Public inputfixtures movedto tests/fixtures/public/opm_oki6258.
+138public/authored tests and12Rusttests pass; actual11-inputpublicbatchsuccess,
+10pairs independentaudit16/E8/validbindings. mdxinfoSuccess/title/PDXresolved,
+butzero-toneoffset triggersitsTracks=-1limitation; nofalsemodeverificationclaim.
+See field_notes/2026-10-10_pcm_extended_production.md forcommands/evidence.
+Next: userlocal_only conversion/listening. Do notrunlocalchecks automatically,
+resumeorderingresearch, changePCMsourceIR orclaimruntime/roundtripcertification.
+No commit/push requested.
+
+CURRENT LISTENING CHECKPOINT: per user request, extra ordering investigation is
+paused. finite_end_tail root now contains six16-track/E8 versions, preserving
+all original notes/control order/time/tones/MML/PDX. Failed9-track generation
+and its listening evidence are archived under original_standard9/. New bytes
+have native outcomes unverified; mdxinfo Success/16/PCM8=1 for all six. See
+validation_extended.json and expected_extended/. User will test animation,
+natural ending and sustained silence. No production conversion change.
+
+RayForce full-bank audit: RAY01C has3banks64/66/26 populated slots, uses0/1;
+RAYFOR has1bank28 populated slots. All360/446 interpreted PCM requests bind.
+Existing soundlog0.15 PdxBuilder repacks BOTH entire PDX byte-identically.
+The new data chain is nativeMXC9 output -> typed soundlog extended-mode
+projection, with fixedPDX; a separate mmlx default16 RATES also preserved
+requested events/used voice, retaining one unused extra voice. Neither new
+chain has yet passed user listening. Limited pre-note ordering probes passed;
+do not expand them now. Relevant23 tests passed. Details/reproduction:
+field_notes/2026-10-10_rayforce_extended_structure.md.
+
+Do not rerun historical tail generators/recording helpers on the updated root
+package: they may overwrite16-mode data or mislabel new bytes with old failures.
+generate_mdx_extended_tail_trials.py safely consumes archived9-mode originals.
+
 LATEST LISTENING FOLLOW-UP: all six MDX files in finite_end_tail leave continuing
 noise: RATES, RATESF, RATESP, FS432, FS432F and FS432P.
 Trailing-rest extension is a failed remedy. RATES later emits scale-like sounds

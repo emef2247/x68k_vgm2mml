@@ -21,6 +21,12 @@ Not every statement is a formal specification. Distinguish:
 Do not silently promote a hypothesis, test expectation, or
 fixture-specific observation into a project invariant.
 
+Export statistics must separate generated artifacts, encoded-byte identity,
+projected frequency/timing checks and native load/playback/ending/display.
+Raw Key-On/Off requests, operator edges and encoded MDX NOTE/hold counts are
+different measurements. Do not combine them into an unsupported fidelity
+percentage; explicitly label independent comparisons not yet performed.
+
 ---
 
 # 1. Project Goal
@@ -1000,8 +1006,22 @@ IOCS update. The defined best-effort projection retains onset pan until the
 next attack, records each affected source interval, and inserts no artificial
 retrigger. F7 precedes the note whose gate keyoff it suppresses; readable ties
 follow that note. One typed PCM target command list drives both MDX construction
-and readable rendering. Native PCM1 uses the low length word, so sample lengths
-above 65535 have a known target limitation and no defined fallback yet.
+and readable rendering. Native PCM1 uses the low length word; that evidence
+must not be promoted to a limit of other playback modes.
+
+PCM packages now select the reference-tested extension route: sixteen tracks,
+one initial E8 on A, P playback and inactive Q-W. The typed builder preserves
+compiled A-H commands except the new mode marker, exact P commands, voices,
+title and PDX reference. This target-only choice does not change source PCM IR,
+the shared clock or encoded sample bytes. It requires a PCM extension in the
+player; six named listening artifacts passed in the user's MMDSP environment,
+not all possible drivers or inputs. Retained bank/slot/sample-size limits are
+the current verified projection scope, not newly established extension limits.
+Held pan is still deliberately omitted and diagnosed as projection loss;
+immediate extension pan/reset behavior remains unverified. Above-65535 sample
+support is blocked as unverified, without claiming a proven target-format loss.
+Inspect the actual serialized mode before reporting generation success; an old
+helper must not silently emit the former standard-nine profile.
 
 OPM and PCM share one MDX clock and common source end. Target-only
 normalization cannot move one chip's boundaries independently. PCM pan

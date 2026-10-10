@@ -246,23 +246,30 @@ def read_mdx(data, *, max_commands=1000000, allow_pcm8=False):
     if pdx_end < 0:
         raise ReferenceError('missing PDX-name terminator')
     base = pdx_end + 1
-    first = _word(data, base + 2)
+    initial_offsets = [_word(data, base + 2 * i) for i in range(10)]
+    first = min((offset for offset in initial_offsets if offset not in (0, 65535)), default=0)
     track_count = 16 if first == 34 and allow_pcm8 else 9
     if first != 20 and not (first == 34 and allow_pcm8):
-        raise ReferenceError('only standard-nine-track header is supported (first offset {})'.format(first))
-    tone_start = base + _word(data, base)
+        raise ReferenceError('unsupported header size/minimum data offset {}'.format(first))
+    header_end = base + 2 + 2 * track_count
+    tone_offset = _word(data, base)
+    tone_start = base + tone_offset if tone_offset else None
     starts = [base + _word(data, base + 2 + 2 * i) for i in range(track_count)]
-    if not base + first <= tone_start <= len(data) or any(not base + first <= x < tone_start for x in starts):
+    if (tone_start is not None and not header_end <= tone_start <= len(data)) or any(not header_end <= x < len(data) for x in starts) or len(set(starts)) != len(starts):
         raise ReferenceError('invalid tone/track offsets')
+    if tone_start in starts:
+        raise ReferenceError('tone and track regions overlap')
+    region_starts = starts + ([tone_start] if tone_start is not None else [])
     tracks = []
     for i, start in enumerate(starts):
-        limit = min([x for x in starts + [tone_start] if x > start])
+        limit = min([x for x in region_starts if x > start] + [len(data)])
         tracks.append(_track(data, start, limit, 'ABCDEFGHPQRSTUVW'[i], max_commands,
                              pcm8=track_count == 16))
     tones = []
-    if (len(data) - tone_start) % 27:
+    tone_end = min([x for x in starts if tone_start is not None and x > tone_start] + [len(data)]) if tone_start is not None else None
+    if tone_start is not None and (tone_end - tone_start) % 27:
         raise ReferenceError('tone block is not a multiple of 27 bytes')
-    for offset in range(tone_start, len(data), 27):
+    for offset in range(tone_start, tone_end, 27) if tone_start is not None else ():
         raw = data[offset:offset + 27]
         operators = []
         for i, name in enumerate(('M1', 'M2', 'C1', 'C2')):

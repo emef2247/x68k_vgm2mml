@@ -147,6 +147,14 @@ python scripts/export_mdx.py input.vgm --outdir outputs/listen/input \
 音とGUI表示を確認できます。VGMはsoundlogによる同じMDXの再生結果です。
 ファイル生成の成功と、MXDRV／MMDSP上の表示・再生確認は区別してください。
 
+各入力のフォルダに`<stem>.report.txt`も生成します。sourceの長さ、OPMのKey-On/Off要求数と
+operator edge数、コンパイル済みMDXの音符・保持・休符数、PDXへ格納したサンプルのbyte一致、
+PCM周波数の写像、時刻誤差、既知損失・未確認事項を簡潔に表示します。blocked／失敗でも
+レポートを残し、`results.csv`の`report`列から参照できます。
+MDXの件数はループ展開前の命令数です。サンプルbyte一致は外部packerへの入力との比較で、
+波形や実機の再生精度を保証しません。独立比較していないOPM音程精度・再生結果は未検証と表示します。
+helper更新後は再ビルドしてください。検証中はJSON・CSVなどの中間ファイルも保持します。
+
 従来のmmlxを使う場合は、`--compiler mmlx`を明示します。MXCの失敗時に自動で
 mmlxへ切り替えることはありません。helper自体のMMLを渡す3引数モードは、
 引き続きmmlxを使用します。
@@ -164,7 +172,10 @@ python vgm2mml.py input.vgm --outdir outputs/input-best \
 ```
 
 一度の変換で `input.mdx.mml`、`input.mdx`、`input.pdx`を生成します。
-OPMは通常の構造化MML経路を使い、PCMは型付き命令列から標準9トラックMDXへ直接組み立てます。
+OPMは通常の構造化MML経路を使い、PCMは型付き命令列から16トラックMDXへ直接組み立てます。
+A先頭のE8でPCM拡張モードを指定し、PCMはPのみを使用、Q〜Wは終了命令だけにします。
+このモードで試聴用6件の演奏・正常停止を確認しています。PCM拡張を利用できる再生環境が必要です。
+helperの更新後は上記のビルドを再実行してください。
 可読MMLにも `#pcmfile "input.pdx"` とPトラックを出力しますが、PCMのMDX生成はこのテキストに依存しません。
 MDXとPDXを一緒にX68000のプレイヤーへ渡してください。
 helperを別の場所に置く場合は、変換時に `--pcm-generator PATH` を指定します。
@@ -174,7 +185,7 @@ Streamのsetup/data/frequency、`0x95`の有限block再生、`0x93`のcommand数
 `0x94`の供給停止に対応します。供給停止やbank終端をchipのSTOPやresetへ置き換えません。
 原コマンドとは別に `*.pcm_stream_supplies.csv`へ展開した転送時刻とbank位置を保存します。
 対象は4-bit／10-bit出力のOKIM6258、一つの物理PCMチャンネル、
-標準F0〜F4と一致する速度、PDX bank 0の96サンプル、1サンプル65535バイトまでです。STOP→PLAYと供給時刻を検査し、
+標準F0〜F4と一致する速度、PDX bank 0の96サンプル、現在確認済みの範囲として1サンプル65535バイトまでです。STOP→PLAYと供給時刻を検査し、
 符号化バイト列の完全一致でサンプルを共有します。保持はタイで記述します。
 既定の `--pcm-policy strict` は既知の意味損失を伴う生成を止めます。
 `best-effort`では発音開始時のpanを保持し、途中pan変更やmuteの損失を区間付きで診断します。
@@ -250,8 +261,17 @@ MXC v1.01＋run68では、タイトルがCP932で65バイト以上になると�
 PCMにも `--pcm-policy strict|best-effort` を渡せます（既定strict）。
 PCMを含む入力は既存の型付きMDX＋PDX生成を使用し、FM部分のコンパイルはmmlxです。
 この経路は`compiler=typed_pcm_mmlx`と記録します。`--compiler`の選択はFMのみの入力に適用します。
-生成できた場合はMML＋MDX＋PDXを保存し、`results.csv`に
-`pcm_replay_unavailable`と記録して終了コード1を返します。PCMのVGM欄は空です。
+MML＋MDX＋PDXを試聴用に一括生成する場合は、`--no-vgm`を指定します。
+
+```bash
+python scripts/export_mdx.py tests/fixtures/public/opm_oki6258 \
+  --outdir outputs/listen/opm_oki6258 --no-vgm --pcm-policy best-effort
+```
+
+生成が完了した曲は`success`となり、VGM欄は空です。これは往復検証や個々の曲の実機確認を意味しません。
+`best-effort`は途中panなどの既知損失を診断付きで許容する場合だけ指定し、通常は省略してstrictを使えます。
+FMのみの入力ではMML＋MDXを生成します。`--no-vgm`を省略した従来の経路では、PCMの再生VGMを作れないため
+`pcm_replay_unavailable`と記録して終了コード1を返します。MDX→VGMおよび往復検証の経路は保持します。
 strictで既知損失を拒否した場合は `pcm_projection_blocked` となります。
 `pcm_projection_status`、`pcm_validation_status`、`pcm_validation_run`、`pcm_known_losses`、
 `pcm_assessment`を別の列に記録します。PCMのbinding／projection CSV、命令列、評価レポートとpacking用サンプルも診断用に残ります。

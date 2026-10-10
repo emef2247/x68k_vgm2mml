@@ -73,7 +73,9 @@ class PcmMdxProjection:
         return dict(pcm_sample_count=len(self.bindings),
                     pcm_playback_count=sum(u.kind == 'pcm_note' for u in self.units),
                     pcm_pdx_file=self.pdx_name,
-                    pcm_target='standard MXDRV PCM1; one bank, 96 slots',
+                    pcm_target='MDX PCM4/8 enabled; single P track, one bank, 96 slots',
+                    pcm_track_count=16, pcm_mode_command='E8',
+                    pcm_inactive_tracks=list('QRSTUVW'),
                     pcm_sample_bytes_preserved=True,
                     pcm_byte_preservation_scope='encoded playback samples stored in PDX; '
                                                 'all source supply operations are retained in source IR',
@@ -156,11 +158,12 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
         if not sample.encoded_bytes or len(sample.encoded_bytes) > 0xffffff:
             reject('PDX sample must contain 1..16777215 encoded bytes', status='fail', code='invalid_sample_length')
         if len(sample.encoded_bytes) > 65535:
-            assessment.add('sample', 'lossy', 'sample_length_exceeds_native',
-                           'Native PCM1 uses the low 16 bits of PDX length; no truncation fallback is defined',
-                           cause='target_constraint', source_value=len(sample.encoded_bytes),
-                           evidence='MXDRV 2.06+17 Rel.X5-S PCM1 length low-word load')
-            assessment.block('Native PCM1 sample length exceeds 65535 bytes; no defined fallback')
+            assessment.add('sample', 'unverified', 'sample_length_exceeds_projection_scope',
+                           'Samples above 65535 bytes are outside the verified projection scope; '
+                           'extended-mode playback has not been validated and no truncation fallback is defined',
+                           cause='implementation_scope', source_value=len(sample.encoded_bytes),
+                           evidence='Earlier PCM1 low-word limit is not an extended-mode limit')
+            assessment.block('Sample length exceeds verified 65535-byte projection scope; no defined fallback')
     if assessment.block_reasons:
         raise ProjectionError('; '.join(assessment.block_reasons), assessment)
     if analysis.source_loop_vgmticks is not None:
@@ -286,7 +289,7 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
             if c.pan != p.pan and affected_end > c.vgmticks:
                 assessment.add('pan', 'lossy', 'held_pan_latched',
                                'Held PCM pan change is lost; source mute/audibility may differ',
-                               cause='target_constraint', playback_id=p.playback_id,
+                               cause='projection_constraint', playback_id=p.playback_id,
                                source_event_id=c.source_event_id, start_vgmticks=c.vgmticks,
                                end_vgmticks=affected_end, source_value=c.pan, projected_value=p.pan,
                                fallback='hold_start_pan_until_next_attack', evidence=PAN_EVIDENCE)
@@ -326,7 +329,7 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
                        for c in analysis.controls)
     assessment.add('sample', 'pass', 'sample_bytes_exact', 'PDX binding retains encoded source sample bytes')
     assessment.add('reset', 'unverified', 'iocs_reset_unconfirmed',
-                   'Physical decoder reset/continuation through native IOCS is not yet confirmed',
+                   'Physical decoder reset/continuation through the selected PCM extension is not yet confirmed',
                    scope='runtime_validation')
     assessment.add('consumption', 'unverified', 'consumed_nibbles_unknown',
                    'Observed byte supply does not establish actual decoder consumption',
@@ -426,4 +429,37 @@ def write_mdx(plan, fm_structure, outdir, stem, *, generator=None):
             raise ProjectionError('MDX capacity exceeded; generated MML and PDX are retained: ' + detail,
                                   assessment)
         raise ValueError('PCM MDX construction failed: ' + detail)
+    try:
+        validate_extended_layout(mdx.read_bytes())
+    except ValueError:
+        mdx.unlink(missing_ok=True)
+        raise
     return mdx
+
+
+def validate_extended_layout(raw):
+    """Reject stale helpers selecting standard9 instead of the required target mode.
+
+    Full typed command validation is performed by the helper. This independent
+    envelope check verifies its mode selection before recording generated output.
+    """
+    try:
+        title_end = raw.index(b'\r\n\x1a') + 3
+        data_start = raw.index(0, title_end) + 1
+        offsets = struct.unpack_from('>17H', raw, data_start)
+        tone_offset, *tracks = offsets
+        if min(t for t in offsets if t) != 34:
+            raise ValueError('invalid extended header')
+        if tracks != sorted(set(tracks)) or not all(34 <= t < len(raw) - data_start for t in tracks):
+            raise ValueError('invalid extended track offsets')
+        if tone_offset and not 34 <= tone_offset <= len(raw) - data_start:
+            raise ValueError('invalid tone offset')
+        if raw[data_start + tracks[0]] != 0xe8:
+            raise ValueError('missing initial E8')
+        for start in tracks[9:]:
+            end = min([len(raw) - data_start] + [t for t in offsets if t > start])
+            if end - start < 2 or raw[data_start + start:data_start + start + 2] != b'\xf1\x00':
+                raise ValueError('active extra PCM track')
+    except (ValueError, struct.error, IndexError) as error:
+        raise ValueError('PCM MDX requires 16 tracks, initial E8 and inactive Q-W; '
+                         'rebuild scripts/mdx_fixture_generator or update --pcm-generator') from error

@@ -63,7 +63,7 @@ FMのみの再生は維持した。原bytes保存と再生波形同等は別の�
 - architect完了前レビューP1（12-bit無条件受理）はtarget reject＋対照テストで修正。
   P2（PCM finite loop/tie証拠不足）は通常版・compact版をmmlxでコンパイルし、typed有限反復を
   テスト内で展開してNote/length/KeyOffDisable/Pan/F/volume等のordered command一致で補った。
-- `tests/fixtures/public/pcm`の2ケースは完全自作byte patternで、ゲーム／ROM音声なし。
+- `tests/fixtures/public/opm_oki6258`の2ケースは完全自作byte patternで、ゲーム／ROM音声なし。
   reset/retrigger、pan left/right/mute/center、asset共有、OPM同時再生とF0/F4切替を含む。
   independent schedule/hashをJSONに保持し、PDX payloadとcompiled MDX header/holdを検査。
 - 既存native公開9ケースの往復 **9/9成功**。

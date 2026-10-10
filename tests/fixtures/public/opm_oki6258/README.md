@@ -1,8 +1,10 @@
-# Original OKIM6258 fixtures
+# Original OPM / OKIM6258 fixtures
 
 These VGM files contain arithmetic byte patterns written for this project,
 not game audio or ROM samples. They are distributed under the repository's
 MIT license. Regenerate with `python tests/scripts/generate_pcm_fixtures.py`.
+This folder groups native OKIM6258 inputs, including PCM-only and OPM+PCM.
+It does not stand for other chips' PCM encodings or playback interfaces.
 
 - `reset_pan_hold`: PCM-only, observed STOP/PLAY resets, identical sample reuse,
   left/right/mute/center changes inside a long held sample, and a rest.
@@ -27,9 +29,11 @@ Headers use flags `6`: divider 512 and the player's bit-2-set 4-bit ADPCM
 selection. The stream fixtures use integer frequency 7813 bytes/second;
 their JSON files describe scheduled supply rather than decoder consumption.
 
-`reset_pan_hold` intentionally requires best-effort for the pinned standard
-PCM1 profile: its held pan changes are diagnosed as known loss. Each complete
+`reset_pan_hold` intentionally requires best-effort for the current onset-pan
+projection: its held pan changes are diagnosed as known loss. Each complete
 playback fits one note, so the target does not invent pan-driven ties or attacks.
+Generated PCM MDX now selects the 16-track/E8 extension route; only P is active.
+This does not certify additional extension features or decoder consumption.
 
 Byte writes follow `floor(i * 88200 * divider / clock)` VGM samples. The adjacent
 JSON files specify independently constructed source times, sample hashes and

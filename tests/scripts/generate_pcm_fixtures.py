@@ -6,7 +6,7 @@ from pathlib import Path
 import struct
 
 ROOT = Path(__file__).resolve().parents[2]
-DESTINATION = ROOT / 'tests/fixtures/public/pcm'
+DESTINATION = ROOT / 'tests/fixtures/public/opm_oki6258'
 
 
 def write(register, value):
