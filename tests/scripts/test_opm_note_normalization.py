@@ -118,7 +118,7 @@ class NativeLengthCorrectionTests(unittest.TestCase):
                 self.assertTrue(report['first_collisions'])
                 self.assertTrue(all(r['projection_status'] == 'unchanged' for r in rows))
 
-    def test_sparse_clock_abstains_and_removes_stale_success_evidence(self):
+    def test_sparse_clock_uses_bounded_output_policy_and_replaces_stale_evidence(self):
         fixture = ROOT / 'tests/fixtures/public/opm/mdx_decompiler/tie_controls/tie_controls.vgm'
         with tempfile.TemporaryDirectory() as temp:
             folder = Path(temp)
@@ -126,10 +126,13 @@ class NativeLengthCorrectionTests(unittest.TestCase):
                 (folder / ('tie_controls' + suffix)).write_text('old applied evidence')
             mml, _, _ = convert(fixture, folder, normalize_lengths=True, dump_passes=True)
             report = json.loads((folder / 'tie_controls.mdx.normalization.json').read_text())
-            self.assertEqual(report['status'], 'unchanged')
-            self.assertIn('no confident', report['reason'])
-            self.assertFalse((folder / 'tie_controls.mdx.normalization.csv').exists())
-            self.assertFalse((folder / 'tie_controls.mdx.before.normalize.mml').exists())
+            self.assertEqual(report['status'], 'applied')
+            self.assertEqual(report['clock_selection'], 'bounded_target_quantization')
+            self.assertIsNone(report['fitted_clock'])
+            self.assertLessEqual(report['max_abs_correction_samples'], 352)
+            self.assertTrue((folder / 'tie_controls.mdx.normalization.csv').exists())
+            self.assertNotEqual((folder / 'tie_controls.mdx.before.normalize.mml').read_text(),
+                                'old applied evidence')
             self.assertIn('/* Track A */', mml.read_text())
 
     def test_dump_retains_identical_native_cells_and_records_correction(self):
@@ -168,7 +171,7 @@ class NativeLengthCorrectionTests(unittest.TestCase):
             command = [sys.executable, str(ROOT / 'vgm2mml.py'), str(fixture), '--outdir', temp, '--normalize-lengths']
             run = subprocess.run(command, capture_output=True, text=True, timeout=30)
             self.assertEqual(run.returncode, 0, run.stderr)
-            self.assertIn('Note normalization: unchanged', run.stdout)
+            self.assertIn('Note normalization: applied', run.stdout)
             run = subprocess.run(command + ['--notation', 'registers'], capture_output=True, text=True, timeout=30)
             self.assertEqual(run.returncode, 2)
             self.assertIn('requires --notation structured', run.stderr)

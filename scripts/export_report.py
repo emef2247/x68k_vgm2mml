@@ -161,6 +161,20 @@ def write_export_report(source, folder, stem, row):
         lines.append('Note normalization: ' + str(normalization.get('status', 'see normalization JSON')) +
                      '; ' + str(normalization.get('reason', ''))[:180])
         selected = normalization.get('selected', {})
+        pruning = normalization.get('short_note_policy', {})
+        if pruning:
+            adopted = normalization.get('short_note_omission_adopted', False)
+            lines.append(f'Short-note omission (<=8 ms): adopted={adopted}; '
+                         f'FM gates {pruning.get("omitted_gate_count", 0)}; '
+                         f'FM duration {pruning.get("omitted_duration_samples", 0)} source samples; '
+                         f'PCM playbacks {len(normalization.get("omitted_pcm_playback_ids", []))}. '
+                         'Elapsed song time and source IR retained; intentional output loss')
+            lines.append(f'Coalesced positive control intervals: '
+                         f'{normalization.get("collapsed_positive_intervals", 0)}; '
+                         f'maximum output movement {normalization.get("max_abs_correction_samples", 0)} samples')
+            lines.append(f'Coalesced short rests: {normalization.get("coalesced_rest_count", 0)}; '
+                         f'{normalization.get("coalesced_rest_duration_samples", 0)} source samples '
+                         '(positive rest duration lost; ordered Key-Off/On commands retained)')
         if isinstance(selected, dict) and selected.get('tick_microseconds'):
             lines.append(f'Selected MDX clock: {selected["tick_microseconds"]} us/tick; '
                          f'tempo byte {selected.get("tempo_byte", "unknown")}; '

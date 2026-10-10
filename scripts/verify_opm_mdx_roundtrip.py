@@ -181,8 +181,13 @@ def main():
             scheduled = scheduled_projection(projection, track_layout=args.track_layout)
             if args.notation in ('structured', 'legacy'):
                 from opm_mdx_structure import compare_hybrid
-                result = compare_hybrid(projection, source_analysis, returned, initialization=initialization,
+                from opm_target_pruning import omission_comparison_analysis
+                omitted = correction.get('short_note_policy', {}).get('omitted_gates', []) if correction.get('short_note_omission_adopted') else []
+                expected_analysis = omission_comparison_analysis(source_analysis, omitted)
+                result = compare_hybrid(projection, expected_analysis, returned, initialization=initialization,
                                         source_timing_tolerance_samples=tolerance)
+                result.update(intentional_omitted_gates=len(omitted),
+                              exact_source_equivalence=not omitted and correction['status'] != 'applied')
             else:
                 result = compare(scheduled, source_analysis.segments, returned, initialization=initialization)
             result['track_layout'] = args.track_layout

@@ -6,7 +6,8 @@ from note_normalization import infer_timing
 from opm_mdx import mdx_tick, projected_samples, project_segments, MDX_SAMPLE_NUMERATOR, MDX_SAMPLE_DENOMINATOR
 
 
-def normalize_projection(segments, original, *, loop_metadata=None, pcm_analysis=None):
+def normalize_projection(segments, original, *, loop_metadata=None, pcm_analysis=None,
+                         output_short_note_policy=False, source_events=None, source_event_times=None):
     """Reuse MGSDRV clock fitting to nominate an actual MDX timer lattice.
 
     MDX controls use nearest *absolute* ticks on that lattice. We do not apply
@@ -14,6 +15,11 @@ def normalize_projection(segments, original, *, loop_metadata=None, pcm_analysis
     Every positive source interval must survive; rejection affects the whole song.
     """
     segments = tuple(segments)
+    if output_short_note_policy:
+        from opm_output_normalization import normalize_output
+        return normalize_output(segments, original, source_events=source_events,
+                                pcm_analysis=pcm_analysis, loop_metadata=loop_metadata,
+                                source_event_times=source_event_times)
     channels = {ch: [] for ch in range(9)}
     for segment in segments:
         if segment.rising_mask:

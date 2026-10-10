@@ -36,9 +36,12 @@ def compare_performance(context, actual, *, initialization):
     """
     correction = context.normalization or {}
     tolerance = correction['correction_bound_samples'] if correction.get('adopted') else 6
-    result = compare_hybrid(context.projection, context.analysis, actual, initialization=initialization,
+    from opm_target_pruning import omission_comparison_analysis
+    omitted = correction.get('short_note_policy', {}).get('omitted_gates', []) if correction.get('short_note_omission_adopted') else []
+    expected_analysis = omission_comparison_analysis(context.analysis, omitted)
+    result = compare_hybrid(context.projection, expected_analysis, actual, initialization=initialization,
                             source_timing_tolerance_samples=tolerance)
-    expected = _key_points(context.analysis, context.projection)
+    expected = _key_points(expected_analysis, context.projection)
     observed = _key_points(actual)
     commands_match = [p[:3] for p in expected] == [p[:3] for p in observed]
     errors = []
@@ -48,6 +51,8 @@ def compare_performance(context, actual, *, initialization):
                 errors.extend(f'key {index} {side}: {name}' for name in _state_differences(reference, replayed))
     result.update(comparison='projected_musical_opm', state_origin='projected_opm',
                   length_normalization=correction,
+                  intentional_omitted_gates=len(omitted),
+                  exact_source_equivalence=not omitted and not correction.get('adopted'),
                   source_key_observed=False, phase_preserved=False,
                   key_commands_match=commands_match, key_point_state_mismatches=len(errors),
                   first_key_point_mismatches=errors[:10],

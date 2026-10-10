@@ -424,7 +424,7 @@ def build_music(projection, segments, *, title='OPM music', loops=True,
         additional_headers=additional_headers,
         comments=(('; Musical OPM/PCM notes and source-linked control trajectories.' if additional_tracks
                    else '; Musical OPM notes and source-linked control trajectories.'),
-                  f'; Tempo inferred from VGM; @t{256-projection.sample_multiplier} = {256*projection.sample_multiplier} us/tick.'))
+                  f'; MDX target clock; @t{256-projection.sample_multiplier} = {256*projection.sample_multiplier} us/tick.'))
 
 
 def render_music_tracks(unit_tracks, voices, *, title, sample_multiplier=1,

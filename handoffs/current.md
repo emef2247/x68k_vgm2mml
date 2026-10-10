@@ -1,6 +1,18 @@
 Project: x68k_vgm2mml
 Branch: codex/pcm-stream-support
-Checkpoint: 2026-10-10
+Checkpoint: 2026-10-11
+
+LATEST CHECKPOINT (supersedes all next-action/authorization statements below):
+User requests committing current implementation before verification so they
+can take over during the usage reset. Commit is authorized; push is not.
+Complete <=8 ms gates are classified on original Key-On/Key-Off timing before
+normalization; source Segment/State/PCM IR and PDX bytes remain intact.
+PSG/SCC source-map timing is passed into classification. Short rests may
+coalesce with both key requests retained; loss is explicitly reported.
+Only minimal public checks are requested. Rebuild Rust release helper before
+exporting PCM; do not run local_only or repair canceled clock patterns.
+Commands and unverified limitations:
+field_notes/2026-10-11_short_gate_checkpoint.md.
 
 LATEST USER CHECKPOINT (supersedes clock next-action statements below):
 All clock_control cases are inaudible in XM6 TypeG / MMDSP, counters advance,

@@ -179,7 +179,6 @@ fn parse_pcm_track(text: &str) -> Result<PcmTrackPlan, Error> {
     let mut initial = HashSet::new();
     let mut hold = false;
     let mut ended = false;
-    let mut notes = 0;
     for row in rows.iter().skip(4) {
         if ended { return Err("Commands after PCM end".into()); }
         if hold && row[0] != "note" { return Err("PCM hold must immediately precede a note".into()); }
@@ -211,7 +210,6 @@ fn parse_pcm_track(text: &str) -> Result<PcmTrackPlan, Error> {
                 commands.push(MdxNote::new(0x80 + slot, ticks).ok_or("PCM note ticks must be 1..256")?.into());
                 total = total.checked_add(u64::from(ticks)).ok_or("PCM duration overflow")?;
                 hold = false;
-                notes += 1;
             }
             "rest" => {
                 if !row[1].is_empty() { return Err("PCM rest value must be empty".into()); }
@@ -227,8 +225,8 @@ fn parse_pcm_track(text: &str) -> Result<PcmTrackPlan, Error> {
             kind => return Err(format!("Unknown PCM command: {kind}").into()),
         }
     }
-    if !ended || notes == 0 || total != end_tick {
-        return Err(format!("PCM plan needs notes, final end and exact end_tick: {total} != {end_tick}").into());
+    if !ended || total != end_tick {
+        return Err(format!("PCM plan needs final end and exact end_tick: {total} != {end_tick}").into());
     }
     Ok(PcmTrackPlan { pdx_name: rows[1][1].to_owned(), tempo, end_tick, commands })
 }
@@ -788,6 +786,16 @@ mod tests {
         assert_eq!(result.pcm_sample_bytes(&result.pcm_references()[0]), Some([0x37, 0xfe, 0x01].as_slice()));
         assert_eq!(fs::read(directory.0.join("test.pdx")).unwrap(), pdx_bytes);
         assert!(!directory.0.join("combined.vgm").exists());
+    }
+
+    #[test]
+    fn direct_pcm_accepts_rest_only_after_intentional_note_omission() {
+        let plan = "kind\tvalue\tticks\npdx_name\ttest.pdx\t\ntempo\t191\t\nend_tick\t2\t\nrest\t\t2\nend\t\t\n";
+        let parsed = parse_pcm_track(plan).unwrap();
+        assert_eq!(parsed.end_tick, 2);
+        assert!(matches!(parsed.commands[0], soundlog::mdx::command::MdxCommand::Rest(_)));
+        assert!(matches!(parsed.commands[1], soundlog::mdx::command::MdxCommand::EndOfTrack(_)));
+        assert!(parse_pcm_track(&plan.replace("rest\t\t2", "rest\t\t1")).is_err());
     }
 
     #[test]

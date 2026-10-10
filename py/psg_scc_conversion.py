@@ -77,7 +77,7 @@ def _read_generated_csv(path):
         csv.field_size_limit(previous_limit)
 
 
-def _source_normalization_check(performance, source_loop, projection, report):
+def _source_normalization_check(performance, source_loop, projection, report, *, source_map=None):
     from opm_mdx import mdx_tick, projected_samples
     if source_loop.get('loop_offset') and source_loop.get('status') != 'valid':
         return dict(accepted=False, reason='Original source loop boundary is not valid')
@@ -94,6 +94,41 @@ def _source_normalization_check(performance, source_loop, projection, report):
     bound = report['correction_bound_samples'] + 6
     collapsed = sum(a == b for a, b in zip(ticks, ticks[1:]))
     worst = max(map(abs, errors), default=0)
+    if report.get('short_note_policy') is not None:
+        identities = {int(r['target_source_event_id']): int(r['write_id']) for r in source_map or ()}
+        source_writes = {w.write_id: w for w in performance.writes}
+        omitted = set()
+        for gate in report['short_note_policy']['omitted_gates']:
+            try:
+                on = source_writes[identities[gate['source_on_event_id']]]
+                off = source_writes[identities[gate['source_off_event_id']]]
+            except KeyError:
+                return dict(accepted=False, reason='Short-note omission has no original source mapping')
+            if not 0 <= off.vgmticks-on.vgmticks <= 352:
+                return dict(accepted=False, reason='Projected short note exceeds 8 ms in original source timing')
+            omitted.update((on.write_id, off.write_id))
+        key_times = {}
+        for w in performance.writes:
+            if w.register == 8 and w.write_id not in omitted:
+                key_times.setdefault(w.target_ch, []).append(w)
+        def target_tick(time):
+            return projection.mdx_tick(projected_samples(mdx_tick(time)))
+        protected_collapsed = sum(a.vgmticks < b.vgmticks and
+                                  (a.data & 0x78 or b.vgmticks-a.vgmticks > 352) and
+                                  target_tick(a.vgmticks) == target_tick(b.vgmticks)
+                                  for writes in key_times.values() for a, b in zip(writes, writes[1:]))
+        if source_loop.get('status') == 'valid':
+            protected_collapsed += (target_tick(source_loop['loop_start_samples'])
+                                    >= target_tick(source_loop['decoded_end_samples']))
+        accepted = not protected_collapsed and worst <= bound
+        return dict(accepted=accepted,
+                    reason=('Original source timing is bounded; surviving key operations remain ordered' if accepted
+                            else 'Bounded output violates surviving PSG/SCC key timing/order'),
+                    boundary_count=len(times), coalesced_control_intervals=collapsed,
+                    collapsed_protected_intervals=protected_collapsed,
+                    omitted_performance_write_ids=sorted(omitted),
+                    max_abs_source_to_final_error_samples=worst,
+                    source_to_final_timing_bound_samples=bound)
     accepted = not collapsed and worst <= bound
     return dict(accepted=accepted, reason=('Original source boundaries remain bounded and ordered' if accepted
                 else 'Normalized clock violates original PSG/SCC boundary timing/order'),
@@ -107,14 +142,20 @@ def _mark_projected_evidence(folder, source, target, performance, projection, no
     mapping = folder / (source.stem + '.source_map.csv')
     columns, rows = _read_generated_csv(mapping)
     errors = []
+    omitted_ids = {identity for gate in normalization.get('short_note_policy', {}).get('omitted_gates', [])
+                   for identity in (gate['source_on_event_id'], gate['source_off_event_id'])}
+    if not normalization.get('short_note_omission_adopted'):
+        omitted_ids.clear()
     for row in rows:
         tick = projection.mdx_tick(int(row['target_vgmticks']))
         sample = projection.projected_samples(tick)
         row.update(final_mdx_tick=tick, final_projected_vgmticks=sample,
-                   source_to_final_error_samples=sample-int(row['vgmticks']))
+                   source_to_final_error_samples=sample-int(row['vgmticks']),
+                   output_action=('omitted_short_note_key' if int(row['target_source_event_id']) in omitted_ids
+                                  else 'retained'))
         errors.append(row['source_to_final_error_samples'])
     errors.append(projection.end_projected_vgmticks-performance.source_end)
-    for name in ('final_mdx_tick', 'final_projected_vgmticks', 'source_to_final_error_samples'):
+    for name in ('final_mdx_tick', 'final_projected_vgmticks', 'source_to_final_error_samples', 'output_action'):
         columns.append(name)
     with mapping.open('w', encoding='utf-8', newline='') as stream:
         writer = csv.DictWriter(stream, fieldnames=columns, lineterminator='\n')
@@ -180,10 +221,13 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
         folder.mkdir(exist_ok=True)
         target = write_target_vgm(performance, folder / (source.stem + '.vgm'),
                                   mapping_csv=folder / (source.stem + '.source_map.csv'))
+        _, source_map = _read_generated_csv(folder / (source.stem + '.source_map.csv'))
         native_mml, analysis, projection = convert_opm(target, folder, dump_passes=True, title=title, loops=loops,
             normalize_lengths=normalize_lengths,
+            normalization_source_times={int(r['target_source_event_id']): int(r['vgmticks'])
+                                        for r in source_map},
             normalization_validator=lambda candidate, report: _source_normalization_check(
-                performance, source_loop, candidate, report))
+                performance, source_loop, candidate, report, source_map=source_map))
         normalization_path = folder / (source.stem + '.mdx.normalization.json')
         normalization = json.loads(normalization_path.read_text(encoding='utf-8'))
         shutil.copyfile(normalization_path, out / normalization_path.name)

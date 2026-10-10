@@ -189,7 +189,8 @@ class TargetVgmTests(unittest.TestCase):
             folder = root/'structured/projected_opm'
             provenance = json.loads((folder/'provenance.json').read_text())
             self.assertEqual(provenance['opm_pipeline'], 'opm_conversion.convert')
-            self.assertLessEqual(provenance['max_abs_source_to_final_error_samples'], 12)
+            self.assertLessEqual(provenance['max_abs_source_to_final_error_samples'],
+                                 provenance['source_to_final_timing_bound_samples'])
             with (folder/'short_pulses.opm.segments.csv').open() as stream:
                 rows = list(csv.DictReader(stream))
             self.assertTrue(all(r['state_origin'] == 'projected_opm' for r in rows))
@@ -197,7 +198,7 @@ class TargetVgmTests(unittest.TestCase):
     def test_validator_rejects_extra_same_mask_key_command(self):
         source = ROOT/'tests/fixtures/public/psg/short_pulses/short_pulses.vgm'
         with tempfile.TemporaryDirectory() as tmp:
-            _, baseline = convert(source, tmp)
+            _, baseline = convert(source, tmp, normalize_lengths=False)
             c = baseline.structured_context
             self.assertTrue(compare_performance(c, c.analysis, initialization=[])['passed'])
             on = next(e for e in c.analysis.events if e.rising_mask)
@@ -209,7 +210,7 @@ class TargetVgmTests(unittest.TestCase):
     def test_validator_rejects_wrong_state_at_key_even_if_boundary_recovers(self):
         source = ROOT/'tests/fixtures/public/psg/short_pulses/short_pulses.vgm'
         with tempfile.TemporaryDirectory() as tmp:
-            _, baseline = convert(source, tmp)
+            _, baseline = convert(source, tmp, normalize_lengths=False)
             c = baseline.structured_context
             events = list(c.analysis.events)
             index = next(i for i,e in enumerate(events) if e.rising_mask)

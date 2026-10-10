@@ -458,10 +458,11 @@ class PcmMdxTests(unittest.TestCase):
                 mml, analysis, projection = convert(source, out, dump_passes=True, normalize_lengths=requested)
                 report = json.loads((out / 'shared.mdx.normalization.json').read_text())
                 self.assertEqual(report['enabled'], requested is not False)
-                self.assertFalse(report['adopted'])
-                self.assertEqual(report['before'], report['selected'])
+                self.assertEqual(report['adopted'], requested is not False)
                 if requested is not False:
-                    self.assertEqual(report['reason'], 'no confident shared clock')
+                    self.assertEqual(report['clock_selection'], 'bounded_target_quantization')
+                    self.assertTrue(report['omitted_pcm_playback_ids'])
+                    self.assertLessEqual(report['max_abs_correction_samples'], 352)
                 timing = json.loads((out / 'shared.mdx.timing.json').read_text())
                 manifest = (out / 'shared.pcm/target.tsv').read_text()
                 self.assertIn(f'tempo\t{256-projection.sample_multiplier}\t\n', manifest)
@@ -469,7 +470,9 @@ class PcmMdxTests(unittest.TestCase):
                 outputs.append((mml.read_bytes(), (out / 'shared.pdx').read_bytes(),
                                 (out / 'shared.mdx').read_bytes(), (out / 'shared.pcm_segments.csv').read_bytes()))
             self.assertEqual(outputs[0], outputs[1])
-            self.assertEqual(outputs[0], outputs[2])
+            self.assertEqual(outputs[0][1], outputs[2][1])  # all original sample bytes remain packed
+            self.assertEqual(outputs[0][3], outputs[2][3])  # source PCM IR remains identical
+            self.assertNotEqual(outputs[0][2], outputs[2][2])
             self.assertEqual(source.read_bytes(), original)
 
     @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
@@ -577,7 +580,7 @@ class PcmMdxTests(unittest.TestCase):
             self.assertEqual(source.read_bytes(), original)
 
     @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
-    def test_pcm_normalization_control_collision_keeps_structured_baseline(self):
+    def test_pcm_normalization_coalesces_initial_setters_without_losing_samples(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             source = root / 'collision.vgm'
@@ -595,13 +598,14 @@ class PcmMdxTests(unittest.TestCase):
                 out = root / name
                 mml, _, projection = convert(source, out, dump_passes=True, normalize_lengths=enabled)
                 output[name] = (mml.read_bytes(), (out / 'collision.pdx').read_bytes(), projection)
-            self.assertEqual(output['on'], output['off'])
+            self.assertEqual(output['on'][1], output['off'][1])
+            self.assertEqual(output['on'][2].sample_multiplier, 40)
             report = json.loads((root / 'on/collision.mdx.normalization.json').read_text())
-            self.assertFalse(report['adopted'])
+            self.assertTrue(report['adopted'])
             self.assertGreater(report['collapsed_positive_intervals'], 0)
-            self.assertEqual(report['before'], report['selected'])
+            self.assertEqual(report['collapsed_protected_intervals'], 0)
             self.assertEqual(report['notation'], 'structured')
-            self.assertFalse((root / 'on/collision.mdx.before.normalize.mml').exists())
+            self.assertTrue((root / 'on/collision.mdx.before.normalize.mml').exists())
 
     @unittest.skipUnless(default_generator().is_file(), 'Build external MDX helper for integration checks')
     def test_unused_unsupported_opm_declaration_does_not_block_pcm_only(self):
@@ -687,7 +691,8 @@ class PcmMdxTests(unittest.TestCase):
                 source = folder / (name + '.vgm')
                 source.write_bytes(raw)
                 out = folder / 'out'
-                mml, analysis, projection = convert(source, out, dump_passes=True, pcm_policy='best-effort')
+                mml, analysis, projection = convert(source, out, dump_passes=True,
+                                                    pcm_policy='best-effort', normalize_lengths=False)
                 text = mml.read_text()
                 self.assertIn(f'#pcmfile "{name}.pdx"', text)
                 self.assertIn('/* Track P */', text)
@@ -775,7 +780,7 @@ class PcmMdxTests(unittest.TestCase):
                 source = folder / (name + '.vgm')
                 source.write_bytes(raw)
                 out = folder / 'out'
-                mml, _, _ = convert(source, out, dump_passes=True)
+                mml, _, _ = convert(source, out, dump_passes=True, normalize_lengths=False)
                 self.assertEqual(source.read_bytes(), raw)
                 self.assertIn('/* Track P */', mml.read_text())
                 self.assertTrue((out / (name + '.mdx')).is_file())

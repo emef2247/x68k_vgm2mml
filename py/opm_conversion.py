@@ -25,7 +25,7 @@ def _record_pcm_assessment(assessment, outdir, stem, *, requires_pdx, retained=(
     assessment.dump(outdir, stem)
 
 
-def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None):
+def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None, normalization_source_times=None):
     source, outdir = Path(source), Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     requested_normalization = normalize_lengths
@@ -62,7 +62,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         has_pcm = bool(pcm_analysis.transfers or pcm_analysis.raw_commands or pcm_analysis.blocks)
         if has_pcm:
             for suffix in ('.pcm_bindings.csv', '.pcm_projection.csv',
-                           '.pcm_clock.csv', '.pcm_target_commands.csv'):
+                           '.pcm_clock.csv', '.pcm_target_commands.csv', '.pcm_omitted_playbacks.csv'):
                 artifact = outdir / (source.stem + suffix)
                 if artifact.resolve() != source.resolve():
                     artifact.unlink(missing_ok=True)
@@ -106,21 +106,26 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         from opm_note_normalization import normalize_projection
         projection, normalization, evidence = normalize_projection(analysis.segments, before,
                                                                    loop_metadata=source_loop,
-                                                                   pcm_analysis=pcm_analysis if has_pcm else None)
+                                                                   pcm_analysis=pcm_analysis if has_pcm else None,
+                                                                   output_short_note_policy=True,
+                                                                   source_events=analysis.events,
+                                                                   source_event_times=normalization_source_times)
         if normalization['status'] == 'applied' and normalization_validator is not None:
             check = normalization_validator(projection, normalization)
             normalization['source_projection_check'] = check
             if not check['accepted']:
                 projection = before
-                normalization.update(status='unchanged', reason=check['reason'])
+                normalization.update(status='unchanged', reason=check['reason'],
+                                     short_note_omission_adopted=False, omitted_pcm_playback_ids=[])
                 for row in evidence:
                     row['projection_status'] = 'unchanged'
         if normalization['status'] == 'applied' and has_pcm:
             from pcm_mdx import project
             from opm_mdx_music import build_music
-            def preflight_pcm(selected):
+            def preflight_pcm(selected, *, omitted=()):
                 plan = project(pcm_analysis, stem=source.stem,
-                               sample_multiplier=selected.sample_multiplier, policy=pcm_policy)
+                               sample_multiplier=selected.sample_multiplier, policy=pcm_policy,
+                               omit_playback_ids=omitted)
                 build_music(selected, analysis.segments, title=source.stem, loops=loops,
                             additional_tracks={'P': plan.units} if plan.bindings else {})
                 return plan
@@ -132,12 +137,13 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             else:
                 normalization['baseline_pcm_projection'] = dict(status='available')
             try:
-                preflight_pcm(projection)
+                preflight_pcm(projection, omitted=normalization.get('omitted_pcm_playback_ids', ()))
             except ValueError as candidate_error:
                 if baseline_pcm_plan is not None:
                     projection = before
                     normalization.update(status='unchanged',
-                                         reason=f'normalized shared-clock projection rejected: {candidate_error}')
+                                         reason=f'normalized shared-clock projection rejected: {candidate_error}',
+                                         short_note_omission_adopted=False, omitted_pcm_playback_ids=[])
                     for row in evidence:
                         row['projection_status'] = 'unchanged'
     elif notation != 'structured':
@@ -162,7 +168,8 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         from pcm_assessment import ProjectionError
         try:
             candidate = project(pcm_analysis, stem=source.stem, sample_multiplier=multiplier,
-                                policy=pcm_policy)
+                                policy=pcm_policy,
+                                omit_playback_ids=normalization.get('omitted_pcm_playback_ids', ()))
         except ProjectionError as error:
             record_pcm_assessment(error.assessment, requires_pdx=bool(pcm_analysis.samples))
             raise ProjectionError(f'{error}; PCM assessment: {outdir / (source.stem + ".pcm.assessment.json")}',

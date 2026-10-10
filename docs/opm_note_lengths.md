@@ -48,22 +48,38 @@ The 12/6 values are score-grid subdivisions, not a rule that discards or snaps
 source intervals of six ticks or fewer. The 735-sample cap is a maximum timing
 correction (one nominal 60 Hz frame), not a minimum MDX interrupt period.
 Neither the attack IOI nor that cap alone selects the timer: intervening control
-and PCM boundaries also constrain it. Short intervals can prevent coarse-clock
-adoption, even for long notes. Sparse or irregular material still abstains;
-there is no new unconditional 60 Hz quantization policy.
+and PCM boundaries also constrain it. Since the 2026-10-11 output policy,
+sparse or irregular material also tries bounded target quantization; a missing
+musical fit alone no longer prevents correction.
 
-The candidate is accepted only if all Segment starts/ends, control writes,
-Key edges, song end and valid declared VGM loop boundaries stay within the
-correction bound measured against the actual MDX timer. Every positive interval
-between these source boundaries must stay positive. Same-time control order,
-source event IDs and register values remain intact. An invalid declared loop,
-unreliable fit, unrepresentable timer, excessive correction or collapsed
-interval rejects the candidate for the whole song.
+Before clock normalization, complete source Key-On/Key-Off gates of at most
+352 samples (8 ms at 44100 Hz, rounded down) may be omitted from the target.
+The decision covers the whole sounding gate, never a short control slice in
+a longer note. Partial changes, repeated Key-On requests, unclosed gates and
+gates crossing a loop boundary are retained conservatively. PSG/SCC uses the
+original source-map timestamps before intermediate OPM rounding. Source
+Segments, State and PCM IR remain unchanged.
+
+`py/opm_output_normalization.py` tries the fitted clock first, then multipliers
+65 down to 1. Multiplier 65 (16.640 ms) is a preferred fallback based on the
+user's approximate 60 Hz goal, neither a chip limit nor a guaranteed minimum
+period. Projected boundaries stay within 352 samples. Surviving sounding gates,
+longer rests, side-effect pulses and loop spans remain positive. Short rests
+and ordinary setter intervals may coalesce; both ordered Key-Off/Key-On
+requests remain present. Lost rest duration is reported separately from
+omitted notes. Absolute time is rounded without accumulating interval errors.
+An invalid loop or failed bound/protected interval check keeps the structured
+baseline. `--no-normalize-lengths` disables this policy. The earlier conservative
+fitted-clock helper remains internally available for regression checks.
 For PCM, the candidate PCM projection and structured score are checked before
 writing binaries. A candidate-specific failure keeps the baseline clock for
 both OPM and PCM; source eligibility failures remain ordinary diagnosed errors.
 The selected multiplier drives FM tempo and PCM target commands together.
 Source PCM IR, encoded samples and their PDX payloads remain unchanged.
+Short PCM playback spans may be omitted only after source eligibility checks;
+omission cannot make unsupported PCM representable. Rest-only PCM target
+plans are allowed after all short spans are omitted. Normalization JSON/CSV
+and `*.pcm_omitted_playbacks.csv` preserve the loss evidence.
 
 Raw/state traces and native Segment fields retain observed values. Corrected
 target ticks and source identifiers remain available for inspection. Normalized
