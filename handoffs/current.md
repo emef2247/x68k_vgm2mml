@@ -9,6 +9,20 @@ present without conflicts. Future repository updates mean file edits only;
 commit, push, PR creation, staging and branch changes require explicit user
 instructions. Leave existing staged state untouched.
 
+LATEST README COPYRIGHT UPDATE:
+README now displays Copyright (c) 2026 emef2247 with a link to the MIT LICENSE.
+Documentation-only edit; no stage, commit or push. No unfinished work for this request.
+
+LATEST ACKNOWLEDGED TOOL LICENSE CHECK:
+Checked installed mmlx0.2.0 MIT (Copyright2026 h1romas4), soundlog0.15.0 MIT
+(Copyright2025 h1romas4), pinned run68x GPL2-or-later, and MXC1.01 freeware
+redistribution statement and (c)1989 MFS soft, milk banner. Optional mdxtools'
+LICENSE is GPL3. README separates MXC/runner and records tool license terms;
+THIRD_PARTY_NOTICES.md retains exact direct-crate MIT texts and use/distribution
+boundaries. No executable change or conversion test. Full Rust binary transitive
+notice bundling remains required before binary redistribution, not completed
+by this direct-tool check. File edits only; no stage/commit/push/branch changes.
+
 LATEST ATTRIBUTION UPDATE:
 User asks about credit/license for the vgm-conv PSG FM reference. README credits
 the AY->OPM parameters and volume/TL mapping; THIRD_PARTY_NOTICES.md retains the

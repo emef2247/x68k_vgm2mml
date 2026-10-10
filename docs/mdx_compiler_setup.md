@@ -96,3 +96,13 @@ python3 scripts/export_mdx.py tests/fixtures/public/opm/from_fm/block_boundary/ 
 After setup the usual export command needs no tool-path options. Alternatively,
 use `--mxc /persistent/path/MXC.X --run68 /persistent/path/run68`.
 PCM uses the existing typed PCM backend; this setup does not change that route.
+
+## Tool licenses and redistribution
+
+See [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) for pinned versions,
+verified notices and distribution scope. MXC's freeware permission is in
+`.tools/mxc/mxc.doc`; run68x is GPL v2 or later, and optional mdxtools carries
+GPL v3. These are fetched/built local external tools, not bundled in listening
+exports. Keep their original documents and source checkouts. The Rust helper
+links MIT-licensed mmlx/soundlog; binary redistribution also requires notices
+for the applicable transitive dependencies.

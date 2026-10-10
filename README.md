@@ -200,19 +200,27 @@ python scripts/verify_opm_mdx_roundtrip.py tests/fixtures/public/opm \
 - [scripts](scripts/README.md)：一括出力、診断、往復検証、fixture生成、比較用ツール。
 - [設計原則](docs/project_knowledge.md)：変換の原則と制約。
 
+## ライセンス
+
+Copyright (c) 2026 emef2247. Licensed under the [MIT License](LICENSE).
+
 ## 謝辞
 
 本プロジェクトのMDX／VGM出力と往復検証では、以下のツールを利用しています。開発者・メンテナー・貢献者の皆様に感謝します。
 
-| プロジェクト | 本リポジトリでの用途 |
-|---|---|
-| MXC v1.01（MFS soft, milk）と[run68x](https://github.com/kg68k/run68x) | MML→MDXコンパイルとHuman68kプログラムの実行 |
-| [mmlx](https://github.com/h1romas4/chipstream/tree/main/crates/mmlx) | 明示選択時のMML→MDXコンパイル、およびPCM経路のFM部分 |
-| [soundlog](https://github.com/h1romas4/chipstream/tree/main/crates/soundlog) | FMのMDX→VGM、PDX構築・PCM参照検査 |
-| [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv)（Mitsutaka Okazaki and Contributors） | PSG→OPMのFM方式で、AY8910→YM2151の音色パラメータと音量→TL対応表を参考にしました。また、外部変換結果との比較に利用しています。 |
+| プロジェクト | 本リポジトリでの用途 | 確認した利用条件 |
+|---|---|---|
+| MXC v1.01（MFS soft, milk） | MML→MDXコンパイル | フリーウェア・配布自由（付属文書による） |
+| [run68x](https://github.com/kg68k/run68x)（TcbnErik・run68の貢献者） | MXCなどHuman68kプログラムの実行 | GPL v2以降 |
+| [mmlx](https://github.com/h1romas4/chipstream/tree/main/crates/mmlx) 0.2.0（h1romas4） | 明示選択時のMML→MDXコンパイル、およびPCM経路のFM部分 | MIT |
+| [soundlog](https://github.com/h1romas4/chipstream/tree/main/crates/soundlog) 0.15.0（h1romas4） | FMのMDX→VGM、PDX構築・PCM参照検査 | MIT |
+| [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv)（Mitsutaka Okazaki and Contributors） | PSG→OPMのFM方式で、AY8910→YM2151の音色パラメータと音量→TL対応表を参考にしました。また、外部変換結果との比較に利用しています。 | ISC |
+| [mdxtools](https://github.com/vampirefrog/mdxtools)（任意導入） | MDX／PDXの独立検査と逆コンパイル | GPL v3（上流LICENSE） |
 
 PSG→OPMのSegment処理とターゲット生成は本プロジェクトで実装しており、通常変換にvgm-convのライブラリは不要です。
 
-vgm-convはISCライセンスで公開されています。参照元の著作権表示は **Copyright (c) 2023 Mitsutaka Okazaki and Contributors** です。著作権表示・ISCライセンス全文・参照したソースとリビジョンは[第三者の表示](THIRD_PARTY_NOTICES.md)に保持しています。本プロジェクトのMITライセンス表記と併せて、この表示も配布物に含めてください。
+各ツールの使用版・確認元・著作権表示・配布時の扱いは[第三者の表示](THIRD_PARTY_NOTICES.md)に記録しています。vgm-convのISC全文と、mmlx／soundlogのMIT全文も保持しています。本プロジェクトのMITライセンス表記と併せて、この表示も配布物に含めてください。
+
+セットアップで取得するMXC・run68x・mdxtoolsはローカルの外部ツールで、リポジトリや試聴用出力には同梱しません。これらを別途再配布する場合は各ツールの条件に従います。Rust helperのバイナリを配布する場合は、直接利用するmmlx／soundlogに加えて、推移的依存のライセンス表示も必要です。
 
 外部コンパイラや再生ツールは、用途に応じて別途用意してください。OPMのみのVGM→MML変換はPython側で行います。
