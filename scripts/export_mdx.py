@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 from mdx_compiler import compile_mxc, compiler_evidence_paths
+from export_report import write_export_report
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'py'))
@@ -44,17 +45,40 @@ def _save_results(output, rows):
     fields = ('input', 'status', 'detail', 'compiler', 'compiler_input',
               'compiler_native_mdx', 'compiler_metadata', 'max_ticks', 'mml', 'mdx', 'vgm', 'pdx',
               'pcm_policy', 'pcm_projection_status', 'pcm_validation_status',
-              'pcm_validation_run', 'pcm_known_losses', 'pcm_assessment', 'error_log')
+              'pcm_validation_run', 'pcm_known_losses', 'pcm_assessment', 'report',
+              'report_status', 'report_error', 'error_log', 'safe_stem', 'source_sha256')
     with _bounded(output / 'results.csv', output).open('w', encoding='utf-8', newline='') as stream:
         writer = csv.DictWriter(stream, fieldnames=fields, lineterminator='\n')
         writer.writeheader()
         writer.writerows(rows)
 
 
+def inspect_export_commands(generator, mdx, census, timeout):
+    """Inspect the compiled file without replay; missing diagnostics stay explicit."""
+    try:
+        result = subprocess.run([str(generator), '--inspect-commands', str(mdx), str(census)],
+                                cwd=ROOT, capture_output=True, text=True,
+                                encoding='utf-8', errors='replace', timeout=timeout)
+        if result.returncode or not census.is_file():
+            raise ValueError(result.stdout + result.stderr or 'Helper produced no command census')
+        return ''
+    except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+        census.unlink(missing_ok=True)
+        return f'MDX command statistics unavailable: {str(error).strip()[:180]}'
+
+
 def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
               max_ticks=None, psg_model=None, psg_gain=None, scc_gain=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mxc', mxc=None, run68=None,
-              normalize_lengths=None):
+              normalize_lengths=None, no_vgm=False, listening_layout=False, _title=None,
+              _report_source=None, _display_name=None):
+    if listening_layout:
+        from export_listening import run_listening_batch
+        return run_listening_batch(source, output, core=run_batch, options=dict(
+            target=target, generator=generator, timeout=timeout, max_ticks=max_ticks,
+            psg_model=psg_model, psg_gain=psg_gain, scc_gain=scc_gain,
+            opm_pitch_policy=opm_pitch_policy, pcm_policy=pcm_policy, compiler=compiler,
+            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, no_vgm=no_vgm))
     source, output = Path(source).resolve(), Path(output).resolve()
     if target not in ('mdx', 'opm', 'opm-additive'):
         raise ValueError('Target must be mdx, opm or opm-additive')
@@ -105,6 +129,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
                      for suffix in ('.mdx.mml', '.mdx', '.vgm')]
         pdx = _bounded(folder / (path.stem + '.pdx'), output)
         assessment = _bounded(folder / (path.stem + '.pcm.assessment.json'), output)
+        census = _bounded(folder / (path.stem + '.mdx.commands.csv'), output)
         error_log = _bounded(output / '_errors' / relative.with_suffix(relative.suffix + '.log'), output)
         compiler_input = _bounded(output / '_compiler_inputs' /
                                   relative.with_suffix(relative.suffix + '.mxc.mml'), output)
@@ -113,20 +138,26 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
                    mml='', mdx='', vgm='', pdx='', error_log='', compiler_input='',
                    compiler_native_mdx='', compiler_metadata='', pcm_policy='',
                    pcm_projection_status='', pcm_validation_status='',
-                   pcm_validation_run='', pcm_known_losses='', pcm_assessment='')
+                   pcm_validation_run='', pcm_known_losses='', pcm_assessment='', report='',
+                   report_status='', report_error='', safe_stem='', source_sha256='')
         stage = 'conversion'
         try:
             folder.mkdir(parents=True, exist_ok=True)
             # Only our generated files are replaced. Old binaries must
             # not look like current successes if this run fails.
             for artifact in [*artifacts, pdx, assessment, compiler_input, native_copy, compiler_metadata,
-                             folder / (path.stem + '.pcm.assessment.csv')]:
+                             folder / (path.stem + '.pcm.assessment.csv'),
+                             folder / (path.stem + '.report.txt'), census,
+                             folder / (path.stem + '.conversion.json'),
+                             folder / (path.stem + '.mdx.normalization.json')]:
                 artifact.unlink(missing_ok=True)
             command = [sys.executable, str(ROOT / 'vgm2mml.py'), str(path),
                        '--target', target, '--outdir', str(folder), *options]
             if target == 'mdx':
                 command.extend(['--pcm-generator', str(generator),
                                 '--pcm-policy', pcm_policy or 'strict'])
+            if _title is not None:
+                command.extend(['--title', _title])
             run = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
                                  encoding='utf-8', errors='replace', timeout=timeout)
             if run.returncode:
@@ -134,35 +165,43 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
             if not artifacts[0].is_file() or not artifacts[0].stat().st_size:
                 raise RuntimeError('Converter produced no nonempty MML')
             stage = 'generation'
-            limit = max_ticks if max_ticks is not None else tick_budget(path)
-            row['max_ticks'] = limit
-            if pdx.is_file() and artifacts[1].is_file():
+            limit = None if no_vgm else (max_ticks if max_ticks is not None else tick_budget(path))
+            if limit is not None:
+                row['max_ticks'] = limit
+            command = None
+            if pdx.is_file():
                 row['compiler'] = 'typed_pcm_mmlx'
-                stage = 'replay'
-                command = [str(generator), '--from-mdx', str(artifacts[1]),
-                           str(artifacts[2]), '--max-ticks', str(limit)]
-            elif not pdx.is_file() and compiler == 'mxc':
+                if not pdx.stat().st_size or not artifacts[1].is_file() or not artifacts[1].stat().st_size:
+                    raise RuntimeError('Converter produced no complete typed PCM MDX/PDX pair; '
+                                       'readable PCM MML is not a replacement compilation input')
+                if not no_vgm:
+                    stage = 'replay'
+                    command = [str(generator), '--from-mdx', str(artifacts[1]),
+                               str(artifacts[2]), '--max-ticks', str(limit)]
+            elif compiler == 'mxc':
                 stage = 'compilation'
                 compile_mxc(artifacts[0], artifacts[1], timeout=timeout,
                             mxc=mxc, run68=run68, generator=generator,
                             prepared_output=compiler_input)
-                stage = 'replay'
-                command = [str(generator), '--from-mdx', str(artifacts[1]),
-                           str(artifacts[2]), '--max-ticks', str(limit)]
+                if not no_vgm:
+                    stage = 'replay'
+                    command = [str(generator), '--from-mdx', str(artifacts[1]),
+                               str(artifacts[2]), '--max-ticks', str(limit)]
             else:
-                if pdx.is_file():
-                    row['compiler'] = 'typed_pcm_mmlx'
+                row['compiler_input'] = str(artifacts[0].relative_to(output))
+                if no_vgm:
+                    stage = 'compilation'
+                    command = [str(generator), '--compile-only', str(artifacts[0]), str(artifacts[1])]
                 else:
-                    row['compiler_input'] = str(artifacts[0].relative_to(output))
-                command = [str(generator), *(str(p) for p in artifacts), '--max-ticks', str(limit)]
-                if pdx.is_file():
-                    command.extend(['--pcm-mode', 'standard'])
-            run = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
-                                 encoding='utf-8', errors='replace', timeout=timeout)
-            if run.returncode:
-                raise RuntimeError(run.stdout + run.stderr or f'Generator exited with {run.returncode}')
-            if any(not p.is_file() or not p.stat().st_size for p in artifacts):
-                raise RuntimeError('Generator did not produce all three nonempty files')
+                    command = [str(generator), *(str(p) for p in artifacts), '--max-ticks', str(limit)]
+            if command is not None:
+                run = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
+                                     encoding='utf-8', errors='replace', timeout=timeout)
+                if run.returncode:
+                    raise RuntimeError(run.stdout + run.stderr or f'Generator exited with {run.returncode}')
+            required = artifacts[:2] if no_vgm else artifacts
+            if any(not p.is_file() or not p.stat().st_size for p in required):
+                raise RuntimeError('Generator did not produce all requested nonempty files')
             row['status'] = 'success'
             error_log.unlink(missing_ok=True)
         except subprocess.TimeoutExpired as error:
@@ -203,11 +242,24 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
         for label, evidence in (('compiler_native_mdx', native_copy), ('compiler_metadata', compiler_metadata)):
             if evidence.is_file() and evidence.stat().st_size:
                 row[label] = str(evidence.relative_to(output))
-        if row['status'] != 'success':
+        if row['mdx']:
+            diagnostic = inspect_export_commands(generator, artifacts[1], census, timeout)
+            if diagnostic:
+                row['detail'] = '\n'.join(filter(None, (row['detail'], diagnostic)))
+        try:
+            summary_path = write_export_report(_report_source or path, folder, path.stem, row)
+            row['report'] = str(summary_path.relative_to(output))
+            row['report_status'] = 'success'
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            row['report_status'] = 'failed'
+            row['report_error'] = f'Cannot write TXT report: {error}'
+            error_log.parent.mkdir(parents=True, exist_ok=True)
+            error_log.write_text((row['detail'] + '\n' + row['report_error']).strip() + '\n', encoding='utf-8')
+        if row['status'] != 'success' or row['report_status'] == 'failed':
             row['error_log'] = str(error_log.relative_to(output))
         rows.append(row)
         _save_results(output, rows)
-        print(f"{relative}: {row['status']}", flush=True)
+        print(f"{_display_name or relative}: {row['status']}", flush=True)
     return rows
 
 
@@ -234,6 +286,8 @@ def main():
                         help='Rust replay helper and explicit mmlx/typed PCM compiler')
     parser.add_argument('--timeout', type=positive, default=180, help='Seconds per stage per input')
     parser.add_argument('--max-ticks', type=positive, help='Playback limit; default derived from source waits')
+    parser.add_argument('--no-vgm', action='store_true',
+                        help='Export MML, MDX and optional PDX without replay VGM generation')
     parser.add_argument('--psg-model', choices=('fm', 'additive'))
     parser.add_argument('--psg-gain', type=float)
     parser.add_argument('--scc-gain', type=float)
@@ -247,12 +301,13 @@ def main():
                          timeout=args.timeout, max_ticks=args.max_ticks, psg_model=args.psg_model,
                          psg_gain=args.psg_gain, scc_gain=args.scc_gain,
                           opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy,
-                          normalize_lengths=args.normalize_lengths)
+                          normalize_lengths=args.normalize_lengths, no_vgm=args.no_vgm,
+                          listening_layout=True)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     success = sum(row['status'] == 'success' for row in rows)
     print(f'{success}/{len(rows)} exported; results: {args.outdir / "results.csv"}')
-    return 0 if success == len(rows) else 1
+    return 0 if success == len(rows) and not any(row.get('report_status') == 'failed' for row in rows) else 1
 
 
 if __name__ == '__main__':

@@ -16,6 +16,8 @@ import struct
 
 from vgm_io import read_vgm_header
 from vgm_timing import command_times
+from pcm_stream import (PcmStreamControl, PcmStreamSupply, REFERENCE_REVISION, SCHEDULING_MODEL,
+                        StreamDecoder, StreamSupplyLog, pack_supply)
 
 DIVIDERS = (1024, 768, 512, 512)
 _TRANSFER = struct.Struct('<QQQBBB')
@@ -125,6 +127,10 @@ class PcmPlayback:
     consumed_nibbles: int | None
     issues: tuple[str, ...]
     control_event_ids: tuple[int, ...]
+    stream_transfer_start: int = 0
+    stream_transfer_end: int = 0
+    delivery_max_error_vgmticks: float | None = None
+    unfed_tail_vgmticks: float | None = None
 
     @property
     def rate_hz(self):
@@ -146,6 +152,9 @@ class PcmAnalysis:
     initialization: str
     source_loop_vgmticks: int | None
     blocks: tuple[PcmDataBlock, ...]
+    stream_supplies: StreamSupplyLog = StreamSupplyLog()
+    stream_controls: tuple[PcmStreamControl, ...] = ()
+    observations: tuple[PcmIssue, ...] = ()
 
     @property
     def segments(self):
@@ -165,6 +174,11 @@ class PcmAnalysis:
         rows_csv('state', (asdict(row) for row in self.controls), tuple(PcmControl.__dataclass_fields__))
         rows_csv('segments', (asdict(row) for row in self.playbacks), tuple(PcmPlayback.__dataclass_fields__))
         rows_csv('issues', (asdict(row) for row in self.issues), tuple(PcmIssue.__dataclass_fields__))
+        rows_csv('observations', (asdict(row) for row in self.observations), tuple(PcmIssue.__dataclass_fields__))
+        rows_csv('stream_supplies', (asdict(row) for row in self.stream_supplies),
+                 tuple(PcmStreamSupply.__dataclass_fields__))
+        rows_csv('stream_controls', (asdict(row) for row in self.stream_controls),
+                 tuple(PcmStreamControl.__dataclass_fields__))
         sample_dir = out / f'{stem}.pcm_samples'
         sample_dir.mkdir(exist_ok=True)
         sample_rows = []
@@ -193,8 +207,13 @@ class PcmAnalysis:
             options=self.options, initialization=self.initialization,
             source_loop_vgmticks=self.source_loop_vgmticks,
             consumption_origin='unknown_not_emulated', cadence_tolerance_vgmticks=1,
+            stream_scheduling_model=SCHEDULING_MODEL,
+            stream_reference_revision=REFERENCE_REVISION,
+            codec_flag_profile='libvgm-bit2-set-is-adpcm4',
+            stream_transfer_count=len(self.stream_supplies),
             transfer_count=len(self.transfers), sample_count=len(self.samples),
-            playback_count=len(self.playbacks), issues=[asdict(issue) for issue in self.issues]),
+            playback_count=len(self.playbacks), issues=[asdict(issue) for issue in self.issues],
+            observations=[asdict(issue) for issue in self.observations]),
             indent=2) + '\n', encoding='utf-8')
 
 
@@ -203,8 +222,8 @@ def analyze(raw, *, initialization='reset'):
 
     ``explicit`` leaves initial play/pan state unknown; ``reset`` assumes a
     stopped chip and stereo pan at file origin, and records that assumption.
-    Streams are retained verbatim and diagnosed until their transfer scheduler
-    can be validated independently. They are never silently omitted.
+    Finite bank-4 streams retain their commands and separately derived byte
+    supplies. Stream exhaustion/STOP never introduces a chip STOP or reset.
     """
     if initialization not in ('explicit', 'reset'):
         raise ValueError('PCM initialization must be explicit or reset')
@@ -223,6 +242,10 @@ def analyze(raw, *, initialization='reset'):
     blocks, bank_length = [], 0
     repeated_issue_counts = {}
     transfers = bytearray()
+    stream_supplies = bytearray()
+    decoder = StreamDecoder(raw)
+    observations = []
+    stopped_stream_supply = []
     buckets = {}
     active = None
     end = 0
@@ -244,6 +267,7 @@ def analyze(raw, *, initialization='reset'):
     def begin(tick, event_id, reset, origin, observed=False):
         return dict(start=tick, first=event_id, last=event_id, bytes=bytearray(),
                     transfer_start=len(transfers) // _TRANSFER.size, clock=clock,
+                    stream_start=decoder.transfer_count,
                     divider=divider, pan=pan, reset=reset, observed=observed,
                     origin=origin, ticks=array('Q'), issues=[], controls=[])
 
@@ -253,7 +277,7 @@ def analyze(raw, *, initialization='reset'):
             return
         a = active
         data = bytes(a['bytes'])
-        codec = 'okim6258-adpcm4-low-first' if not options & 4 else 'okim6258-adpcm3'
+        codec = 'okim6258-adpcm4-low-first' if options & 4 else 'okim6258-adpcm3'
         sample_id = None
         if data:
             digest = hashlib.sha256(data).hexdigest()
@@ -268,12 +292,13 @@ def analyze(raw, *, initialization='reset'):
                 buckets.setdefault(key, []).append(sample_id)
         rate = Fraction(a['clock'], a['divider'])
         cadence = bool(data and rate)
+        max_error = tail = None
         if cadence:
             first = a['ticks'][0]
-            cadence = abs(first - a['start']) <= 1 and all(
-                abs(Fraction(t - first) - Fraction(i * 88200, 1) / rate) <= 1
-                for i, t in enumerate(a['ticks']))
-            cadence = cadence and Fraction(tick - first) <= Fraction(len(data) * 88200, 1) / rate + 1
+            max_error = max(abs(Fraction(t - first) - Fraction(i * 88200, 1) / rate)
+                            for i, t in enumerate(a['ticks']))
+            tail = Fraction(tick - first) - Fraction(len(data) * 88200, 1) / rate
+            cadence = abs(first - a['start']) <= 1 and max_error <= 1 and tail <= 1
         codes = list(a['issues'])
         if not a['reset']:
             codes.append('decoder_start_unknown_or_continuation')
@@ -283,7 +308,7 @@ def analyze(raw, *, initialization='reset'):
             codes.append('irregular_byte_supply')
         if not data:
             codes.append('play_without_data')
-        if options & 4:
+        if not options & 4:
             codes.append('unsupported_adpcm3')
         if not a['clock']:
             codes.append('clock_unknown')
@@ -298,57 +323,35 @@ def analyze(raw, *, initialization='reset'):
                                     a['clock'], a['divider'], rate.numerator, rate.denominator,
                                     a['pan'], a['observed'], a['reset'], a['origin'], reason, cadence,
                                     bool(data and not codes), nominal, None, tuple(codes),
-                                    tuple(a['controls'])))
+                                    tuple(a['controls']), a['stream_start'], decoder.transfer_count,
+                                    float(max_error) if max_error is not None else None,
+                                    float(tail) if tail is not None else None))
         active = None
 
     if raw_clock & 0xc0000000:
         issue('unsupported_clock_flags', None, 0, f'OKIM6258 clock flags {raw_clock >> 30:#x}')
     if options & 0xf0:
         issue('reserved_options', None, 0, f'OKIM6258 options {options:#x}')
-    for event_id, event in enumerate(command_times(raw)):
-        end = event.vgmticks + event.wait_samples
-        if event.address == loop_address:
-            loop_tick = event.vgmticks
-        cmd, pos, tick = event.command, event.address, event.vgmticks
-        if cmd == 0x67:
-            kind = raw[pos + 2]
-            if kind in (4, 0x44):
-                size = int.from_bytes(raw[pos + 3:pos + 7], 'little') & 0x7fffffff
-                commands.append(PcmRawCommand(event_id, pos, tick, cmd, raw[pos + 1:pos + 7]))
-                blocks.append(PcmDataBlock(len(blocks), kind, bank_length if kind == 4 else None,
-                              event_id, pos, tick, raw[pos + 7:pos + 7 + size]))
-                if kind == 4:
-                    bank_length += size
-                issue('unsupported_pcm_data_bank', event_id, tick,
-                      f'Bank type {kind:#x}, {size} bytes retained in source_raw at {pos + 7:#x}')
-            continue
-        if 0x90 <= cmd <= 0x95:
-            size = {0x90:5, 0x91:5, 0x92:6, 0x93:11, 0x94:2, 0x95:5}[cmd]
-            commands.append(PcmRawCommand(event_id, pos, tick, cmd, raw[pos + 1:pos + size]))
-            issue('unsupported_stream_control', event_id, tick,
-                  'Stream operands retained; physical transfer schedule is not inferred')
-            continue
-        if cmd != 0xb7:
-            continue
+    def chip_write(event_id, pos, tick, instance, reg, value, *, derived=False):
+        nonlocal missing_clock_reported, active, playing, clock, divider, pan
         if not original_clock and not missing_clock_reported:
             issue('absent_chip_declaration', event_id, tick,
-                  'B7 writes retained, but the VGM header declares no OKIM6258')
+                  'PCM supplies retained, but the VGM header declares no OKIM6258')
             missing_clock_reported = True
-        addr, value = raw[pos + 1:pos + 3]
-        instance, reg = addr >> 7, addr & 0x7f
-        transfers.extend(_TRANSFER.pack(event_id, pos, tick, instance, reg, value))
         if instance:
             issue('unsupported_chip_instance', event_id, tick, 'Second OKIM6258 write retained')
-            continue
+            return
         if reg == 1:
             if active is not None:
                 active['bytes'].append(value)
                 active['ticks'].append(tick)
                 active['last'] = event_id
+            elif derived and playing is False:
+                stopped_stream_supply.append((event_id, tick))
             else:
                 issue('data_outside_known_playback', event_id, tick,
                       'Data supplied while stopped or with unknown play state')
-            continue
+            return
         reset = False
         if reg == 0:
             if value & 1 or not value & 2:
@@ -400,12 +403,54 @@ def analyze(raw, *, initialization='reset'):
                                    bool(reset and observed), reset))
         if active is not None:
             active['controls'].append(event_id)
+
+    def supply_until(tick):
+        for supply in decoder.advance(tick):
+            stream_supplies.extend(pack_supply(supply))
+            chip_write(supply.source_event_id, supply.address, supply.vgmticks,
+                       supply.chip_instance, supply.register, supply.data, derived=True)
+
+    for event_id, event in enumerate(command_times(raw)):
+        supply_until(event.vgmticks)
+        end = event.vgmticks + event.wait_samples
+        if event.address == loop_address:
+            loop_tick = event.vgmticks
+        cmd, pos, tick = event.command, event.address, event.vgmticks
+        decoder.process(event_id, event)
+        if cmd == 0x67:
+            kind = raw[pos + 2]
+            if kind in (4, 0x44):
+                size = int.from_bytes(raw[pos + 3:pos + 7], 'little') & 0x7fffffff
+                commands.append(PcmRawCommand(event_id, pos, tick, cmd, raw[pos + 1:pos + 7]))
+                blocks.append(PcmDataBlock(len(blocks), kind, bank_length if kind == 4 else None,
+                              event_id, pos, tick, raw[pos + 7:pos + 7 + size]))
+                if kind == 4:
+                    bank_length += size
+            continue
+        if 0x90 <= cmd <= 0x95:
+            size = {0x90:5, 0x91:5, 0x92:6, 0x93:11, 0x94:2, 0x95:5}[cmd]
+            commands.append(PcmRawCommand(event_id, pos, tick, cmd, raw[pos + 1:pos + size]))
+            continue
+        if cmd == 0xb7:
+            addr, value = raw[pos + 1:pos + 3]
+            instance, reg = addr >> 7, addr & 0x7f
+            transfers.extend(_TRANSFER.pack(event_id, pos, tick, instance, reg, value))
+            chip_write(event_id, pos, tick, instance, reg, value)
+    supply_until(end)
+    issues.extend(PcmIssue(row.code, row.source_event_id, row.vgmticks, row.detail)
+                  for row in decoder.issues)
     finish(end, 'source_end')
+    if stopped_stream_supply:
+        first_id, first_tick = stopped_stream_supply[0]
+        observations.append(PcmIssue('stream_supply_while_stopped', first_id, first_tick,
+            f'{len(stopped_stream_supply)} derived supplies while known/assumed stopped; '
+            f'last tick {stopped_stream_supply[-1][1]}; all supplies retained. '
+            'libvgm stop-to-play clears its FIFO; native buffered-data behavior is unverified'))
     if loop_address is not None and loop_tick is None:
         issue('invalid_loop_address', None, end, 'Loop offset does not address a command boundary')
     if loop_tick is not None and any(p.start_vgmticks <= loop_tick < p.end_vgmticks for p in playbacks):
-        issue('decoder_continuation_at_song_loop', None, loop_tick,
-              'Song loop enters active ADPCM state; no independent reset inferred')
+        observations.append(PcmIssue('decoder_continuation_at_song_loop', None, loop_tick,
+                                    'Song loop enters active ADPCM state; no independent reset inferred'))
     for code, (count, index) in repeated_issue_counts.items():
         if count > 1:
             first = issues[index]
@@ -413,4 +458,6 @@ def analyze(raw, *, initialization='reset'):
                                     f'{first.detail}; {count} writes (all raw rows retained)')
     return PcmAnalysis(end, tuple(samples), tuple(playbacks), tuple(controls), tuple(issues),
                        TransferLog(bytes(transfers)), tuple(commands), raw, original_clock,
-                       options, initialization, loop_tick, tuple(blocks))
+                       options, initialization, loop_tick, tuple(blocks),
+                       StreamSupplyLog(bytes(stream_supplies)), tuple(decoder.controls),
+                       tuple(observations))

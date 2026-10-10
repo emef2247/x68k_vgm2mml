@@ -40,12 +40,12 @@ IOCS reset／実消費nibble数はunverifiedのまま。strictの既知loss停�
 WSLでhelperをrelease buildし、public fixtureのCLI変換を実行した。
 
 ```bash
-python vgm2mml.py tests/fixtures/public/pcm/reset_pan_hold.vgm \
+python vgm2mml.py tests/fixtures/public/opm_oki6258/reset_pan_hold.vgm \
   --outdir outputs/pcm_target_2026-10-09/strict --dump-passes
-python vgm2mml.py tests/fixtures/public/pcm/reset_pan_hold.vgm \
+python vgm2mml.py tests/fixtures/public/opm_oki6258/reset_pan_hold.vgm \
   --outdir outputs/pcm_target_2026-10-09/best-effort \
   --pcm-policy best-effort --dump-passes
-python scripts/export_mdx.py tests/fixtures/public/pcm \
+python scripts/export_mdx.py tests/fixtures/public/opm_oki6258 \
   --outdir outputs/pcm_target_2026-10-09/batch --pcm-policy best-effort
 ```
 

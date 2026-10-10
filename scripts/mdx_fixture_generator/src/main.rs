@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// External fixture-generation utility. The converter does not depend on it.
+// External MDX/PDX construction, fixture-generation and replay utility.
 use std::{collections::HashSet, env, fs, path::{Component, Path, PathBuf}, fmt::Write};
 use soundlog::mdx::{convert::{to_vgm_document, MdxToVgmOptions}, package::MdxPackage};
 use soundlog::mdx::pdx::{PdxBuilder, PdxDocument};
@@ -313,7 +313,7 @@ fn compile_pcm(fm_input: &Path, plan_input: &Path, output: &Path) -> Result<(), 
 }
 
 fn compile_pcm_inner(fm_input: &Path, plan_input: &Path, output: &Path) -> Result<(), Error> {
-    use soundlog::mdx::{command::MdxCommand, document::{MdxBuilder, MdxDocument}};
+    use soundlog::mdx::{command::{MdxCommand, MdxEndOfTrack}, document::{MdxBuilder, MdxDocument}};
     let plan = parse_pcm_track(&fs::read_to_string(plan_input)?)?;
     let parsed = mmlx::mdx::parse(&fs::read_to_string(fm_input)?)?;
     let fm = mmlx::mdx::compile(&parsed)?;
@@ -336,13 +336,21 @@ fn compile_pcm_inner(fm_input: &Path, plan_input: &Path, output: &Path) -> Resul
     for tone in &fm.tone_bank.tones { builder.append_tone(tone.clone()); }
     for (index, track) in fm.tracks.iter().take(8).enumerate() { builder.set_track(index, track.clone()); }
     builder.set_track(8, plan.commands.clone());
+    // The sixteen-track layout selects the reference-verified PCM extension
+    // route. MdxBuilder supplies its initial E8 marker on track A.
+    for index in 9..16 { builder.set_track(index, vec![MdxEndOfTrack.into()]); }
     let bytes = builder.finalize()?.to_bytes()?;
     if bytes.len() > 65535 { return Err("Combined native MDX exceeds 65535 bytes".into()); }
     let mut package = MdxPackage { mdx: MdxDocument::parse(&bytes)?, pdx: None };
-    if package.mdx.tracks.len() != 9 || package.mdx.header.track_count() != 9 || package.mdx.tracks[8] != plan.commands {
+    if package.mdx.tracks.len() != 16 || package.mdx.header.track_count() != 16 || package.mdx.tracks[8] != plan.commands
+        || !matches!(package.mdx.tracks[0].first(), Some(MdxCommand::PcmMode(_)))
+        || package.mdx.tracks.iter().flatten().filter(|command| matches!(command, MdxCommand::PcmMode(_))).count() != 1
+        || package.mdx.tracks[9..].iter().any(|track| track.as_slice() != [MdxEndOfTrack.into()]) {
         return Err("Serialized direct PCM track/layout differs from plan".into());
     }
-    if package.mdx.tracks[..8] != fm.tracks[..8] || package.mdx.tone_bank != fm.tone_bank || package.mdx.header.to_bytes()[..package.mdx.header.title_byte_len()] != title_bytes {
+    if package.mdx.tracks[0][1..] != fm.tracks[0] || package.mdx.tracks[1..8] != fm.tracks[1..8]
+        || package.mdx.tone_bank != fm.tone_bank || package.mdx.header.to_bytes()[..package.mdx.header.title_byte_len()] != title_bytes
+        || package.mdx.header.pdx_name.as_deref() != Some(plan.pdx_name.as_str()) {
         return Err("Serialized direct PCM MDX changed FM tracks, tones or title".into());
     }
     fs::create_dir_all(parent_directory(output))?;
@@ -356,7 +364,52 @@ fn compile_pcm_inner(fm_input: &Path, plan_input: &Path, output: &Path) -> Resul
     Ok(())
 }
 
+fn command_census(package: &MdxPackage) -> Result<String, Error> {
+    use soundlog::mdx::command::MdxCommand;
+    let mut csv = String::from("track,index,kind,opcode_hex,operands_hex,ticks\n");
+    for (track, commands) in package.mdx.tracks.iter().enumerate() {
+        let label = if track < 8 { (b'A' + track as u8) as char } else { (b'P' + (track - 8) as u8) as char };
+        for (index, command) in commands.iter().enumerate() {
+            let (kind, ticks) = match command {
+                MdxCommand::Note(note) => ("Note", u64::from(note.length)),
+                MdxCommand::Rest(rest) => ("Rest", u64::from(rest.ticks)),
+                MdxCommand::KeyOffDisable(_) => ("KeyOffDisable", 0),
+                MdxCommand::OpmRegisterWrite(_) => ("OpmRegisterWrite", 0),
+                MdxCommand::Tempo(_) => ("Tempo", 0),
+                MdxCommand::LoopStart(_) => ("LoopStart", 0),
+                MdxCommand::LoopEnd(_) => ("LoopEnd", 0),
+                MdxCommand::LoopEscape(_) => ("LoopEscape", 0),
+                MdxCommand::EndOfTrackLoop(_) => ("EndOfTrackLoop", 0),
+                MdxCommand::Jump(_) => ("Jump", 0),
+                MdxCommand::EndOfTrack(_) => ("EndOfTrack", 0),
+                MdxCommand::PcmMode(_) => ("PcmMode", 0),
+                _ => ("Control", 0),
+            };
+            let bytes = command.to_mdx_bytes().ok_or("MDX command serialization unavailable")?;
+            let opcode = bytes.first().ok_or("Empty MDX command")?;
+            let operands: String = bytes.iter().skip(1).map(|byte| format!("{byte:02x}")).collect();
+            writeln!(&mut csv, "{label},{index},{kind},{opcode:02x},{operands},{ticks}")?;
+        }
+    }
+    Ok(csv)
+}
+
+fn inspect_commands(input: &Path, output: &Path) -> Result<(), Error> {
+    if output.canonicalize().ok().as_ref() == Some(&input.canonicalize()?) {
+        return Err("Command census output must not replace its MDX input".into());
+    }
+    let package = MdxPackage::parse(&fs::read(input)?, None)?;
+    let csv = command_census(&package)?;
+    fs::create_dir_all(parent_directory(output))?;
+    fs::write(output, csv)?;
+    Ok(())
+}
+
 fn run_args(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    if args.get(1).is_some_and(|arg| arg == "--inspect-commands") {
+        if args.len() != 4 { return Err("usage: --inspect-commands INPUT.mdx OUTPUT.csv".into()); }
+        return inspect_commands(Path::new(&args[2]), Path::new(&args[3]));
+    }
     if args.get(1).is_some_and(|arg| arg == "--compile-pcm") {
         if args.len() != 5 { return Err("usage: --compile-pcm FM_ONLY.mml PLAN.tsv OUTPUT.mdx".into()); }
         return compile_pcm(Path::new(&args[2]), Path::new(&args[3]), Path::new(&args[4]));
@@ -366,7 +419,7 @@ fn run_args(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return write_pdx_atomic(Path::new(&args[2]), Path::new(&args[3]));
     }
     if args.len() < 4 || (args.len() - 4) % 2 != 0 {
-        return Err("usage: mdx-fixture-generator INPUT.mml OUTPUT.mdx OUTPUT.vgm [--max-ticks N] [--pcm-mode standard] | --compile-pcm FM_ONLY.mml PLAN.tsv OUTPUT.mdx | --compile-only INPUT.mml OUTPUT.mdx [--pcm-mode standard] | --from-mdx INPUT.mdx OUTPUT.vgm [--max-ticks N] | --inspect-mdx INPUT.mdx OUTPUT.csv | --build-pdx MANIFEST.tsv OUTPUT.pdx".into());
+        return Err("usage: mdx-fixture-generator INPUT.mml OUTPUT.mdx OUTPUT.vgm [--max-ticks N] [--pcm-mode standard] | --compile-pcm FM_ONLY.mml PLAN.tsv OUTPUT.mdx | --compile-only INPUT.mml OUTPUT.mdx [--pcm-mode standard] | --from-mdx INPUT.mdx OUTPUT.vgm [--max-ticks N] | --inspect-mdx INPUT.mdx OUTPUT.csv | --inspect-commands INPUT.mdx OUTPUT.csv | --build-pdx MANIFEST.tsv OUTPUT.pdx".into());
     }
     if args[1] == "--inspect-mdx" {
         if args.len() != 4 { return Err("--inspect-mdx takes only INPUT.mdx OUTPUT.csv".into()); }
@@ -471,6 +524,40 @@ mod tests {
     fn package(name: &str, note: usize) -> MdxPackage {
         let parsed = mmlx::mdx::parse(&format!("#title \"PCM test\"\n#pcmfile \"{name}\"\nP @0 F4 n{note},4\n")).unwrap();
         MdxPackage { mdx: mmlx::mdx::compile(&parsed).unwrap(), pdx: None }
+    }
+
+    #[test]
+    fn command_census_preserves_encoded_events_and_does_not_replace_input() {
+        use soundlog::mdx::command::{MdxCommand, MdxNote, MdxRest, MdxKeyOffDisable, MdxOpmRegisterWrite, MdxEndOfTrack, MdxPcmMode};
+        let directory = Directory::new();
+        let mut source = package("", 0);
+        source.mdx.tracks[0] = vec![
+            MdxPcmMode.into(),
+            MdxOpmRegisterWrite { register: 8, value: 0x78 }.into(),
+            MdxKeyOffDisable.into(),
+            MdxNote::new(0x80, 256).unwrap().into(),
+            MdxRest { ticks: 128 }.into(),
+            MdxEndOfTrack.into(),
+        ];
+        source.mdx.tracks.resize(16, vec![MdxEndOfTrack.into()]);
+        source.mdx.tracks[15] = vec![MdxEndOfTrack.into()];
+        let input = directory.0.join("input.mdx");
+        let bytes = source.to_mdx_bytes().unwrap();
+        fs::write(&input, &bytes).unwrap();
+        let output = directory.0.join("commands.csv");
+        inspect_commands(&input, &output).unwrap();
+        let census = fs::read_to_string(&output).unwrap();
+        assert!(census.contains("A,0,PcmMode,e8,,0\n"));
+        assert!(census.contains("A,1,OpmRegisterWrite,fe,0878,0\n"));
+        assert!(census.contains("A,2,KeyOffDisable,f7,,0\n"));
+        assert!(census.contains("A,3,Note,80,ff,256\n"));
+        assert!(census.contains("A,4,Rest,7f,,128\n"));
+        assert!(census.contains("A,5,EndOfTrack,f1,00,0\n"));
+        assert!(census.contains("P,"));
+        assert!(census.contains("W,"));
+        assert!(inspect_commands(&input, &input).is_err());
+        assert_eq!(fs::read(&input).unwrap(), bytes);
+        assert_eq!(source.mdx.tracks[0].iter().filter(|command| matches!(command, MdxCommand::Note(_))).count(), 1);
     }
 
     #[test]
@@ -672,7 +759,7 @@ mod tests {
         let inputs = directory.0.join("passes");
         fs::create_dir(&inputs).unwrap();
         let fm_path = inputs.join("fm.mml");
-        let fm_text = "#title \"直接PCM\"\nA @t255 [r%128]2\nB p2 r%256\n";
+        let fm_text = "#title \"直接PCM\"\n@0 = {31,0,0,15,0,127,0,1,0,0,0,31,0,0,15,0,127,0,1,0,0,0,31,0,0,15,0,127,0,1,0,0,0,31,0,0,15,0,24,0,1,0,0,0,0,7,15}\nA @t255 @0 p3 @v96 q8 o4 [c%64 r%64]2\nB p2 r%256\n";
         fs::write(&fm_path, fm_text).unwrap();
         let plan_path = inputs.join("plan.tsv");
         fs::write(&plan_path, pcm_plan_rows(256, "hold\t\t\nnote\t95\t128\npan\t2\t\nnote\t95\t128\n")).unwrap();
@@ -684,13 +771,22 @@ mod tests {
         run_args(&["helper".into(), "--compile-pcm".into(), fm_path.to_string_lossy().into_owned(), plan_path.to_string_lossy().into_owned(), output.to_string_lossy().into_owned()]).unwrap();
         let result = MdxPackage::parse(&fs::read(output).unwrap(), Some(&pdx_bytes)).unwrap();
         let fm = mmlx::mdx::compile(&mmlx::mdx::parse(fm_text).unwrap()).unwrap();
-        assert_eq!(result.mdx.tracks.len(), 9);
-        assert_eq!(result.mdx.tracks[..8], fm.tracks[..8]);
+        assert_eq!(result.mdx.tracks.len(), 16);
+        assert_eq!(result.mdx.header.track_count(), 16);
+        assert!(matches!(result.mdx.tracks[0].first(), Some(MdxCommand::PcmMode(_))));
+        assert_eq!(result.mdx.tracks.iter().flatten().filter(|command| matches!(command, MdxCommand::PcmMode(_))).count(), 1);
+        assert_eq!(result.mdx.tracks[0][1..], fm.tracks[0]);
+        assert_eq!(result.mdx.tracks[1..8], fm.tracks[1..8]);
+        assert!(result.mdx.tracks[9..].iter().all(|track| matches!(track.as_slice(), [MdxCommand::EndOfTrack(_)])));
+        assert_eq!(result.mdx.tracks[8], parse_pcm_track(&fs::read_to_string(&plan_path).unwrap()).unwrap().commands);
         assert_eq!(result.mdx.tone_bank, fm.tone_bank);
+        assert_eq!(result.mdx.tone_bank.tones.len(), 1);
+        assert_eq!(result.mdx.header.pdx_name.as_deref(), Some("test.pdx"));
         assert_eq!(&result.mdx.header.to_bytes()[..result.mdx.header.title_byte_len()], &fm.header.to_bytes()[..fm.header.title_byte_len()]);
         assert!(matches!(result.mdx.tracks[8][5], MdxCommand::KeyOffDisable(_)));
         assert!(matches!(result.mdx.tracks[8][6], MdxCommand::Note(note) if note.note == 0xdf && note.length == 128));
         assert_eq!(result.pcm_sample_bytes(&result.pcm_references()[0]), Some([0x37, 0xfe, 0x01].as_slice()));
+        assert_eq!(fs::read(directory.0.join("test.pdx")).unwrap(), pdx_bytes);
         assert!(!directory.0.join("combined.vgm").exists());
     }
 

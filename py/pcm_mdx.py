@@ -4,12 +4,14 @@ from dataclasses import asdict, dataclass
 from fractions import Fraction
 from pathlib import Path
 import struct
+import re
 import subprocess
 import sys
 
 from mdx_duration import duration_spelling
 from opm_mdx import mdx_tick, projected_samples
 from pcm_assessment import PcmAssessment, ProjectionError, PAN_EVIDENCE
+from pcm_stream import REFERENCE_REVISION
 
 # Standard MXDRV F0..F4 nibble rates, not incoming VGM byte-write rates.
 RATES = tuple(Fraction(clock, divider) for clock, divider in
@@ -61,6 +63,7 @@ class PcmMdxProjection:
     clock_rows: tuple[dict, ...] = ()
     assessment: PcmAssessment | None = None
     typed_commands: tuple[dict, ...] = ()
+    omitted_playbacks: tuple[dict, ...] = ()
 
     @property
     def boundary_times(self):
@@ -71,9 +74,17 @@ class PcmMdxProjection:
         return dict(pcm_sample_count=len(self.bindings),
                     pcm_playback_count=sum(u.kind == 'pcm_note' for u in self.units),
                     pcm_pdx_file=self.pdx_name,
-                    pcm_target='standard MXDRV PCM1; one bank, 96 slots',
-                    pcm_raw_bytes_preserved=True,
-                    pcm_consumption_scope='observed byte supply; decoder consumption not measured',
+                    pcm_target='MDX PCM4/8 enabled; single P track, one bank, 96 slots',
+                    pcm_track_count=16, pcm_mode_command='E8',
+                    pcm_inactive_tracks=list('QRSTUVW'),
+                    pcm_sample_bytes_preserved=True,
+                    pcm_omitted_playback_count=len(self.omitted_playbacks),
+                    pcm_omitted_duration_samples=sum(p['duration_samples'] for p in self.omitted_playbacks),
+                    pcm_intended_omissions=list(self.omitted_playbacks),
+                    pcm_byte_preservation_scope='encoded playback samples stored in PDX; '
+                                                'all source supply operations are retained in source IR',
+                    pcm_consumption_scope='direct or profile-derived byte supply; '
+                                          'decoder consumption not measured',
                     pcm_max_abs_timing_error_samples=max(
                         [abs(row[field]) for row in self.rows
                          for field in ('start_error_samples', 'end_error_samples')]
@@ -86,6 +97,8 @@ class PcmMdxProjection:
             ('projection', self.rows, tuple(self.rows[0]) if self.rows else ('playback_id',)),
             ('clock', self.clock_rows, tuple(self.clock_rows[0]) if self.clock_rows else ('source_event_id',)),
             ('target_commands', self.typed_commands, tuple(self.typed_commands[0]) if self.typed_commands else ('kind',)),
+            ('omitted_playbacks', self.omitted_playbacks,
+             tuple(self.omitted_playbacks[0]) if self.omitted_playbacks else ('playback_id',)),
         ):
             with (out / f'{stem}.pcm_{suffix}.csv').open('w', newline='', encoding='utf-8') as stream:
                 writer = csv.DictWriter(stream, fieldnames=fields, lineterminator='\n')
@@ -115,8 +128,8 @@ def boundaries(analysis):
                         | {c.vgmticks for c in analysis.controls}))
 
 
-def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
-    """Allocate once; both MML and PDX consume the returned binding."""
+def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playback_ids=()):
+    """Bind unchanged samples; optionally omit selected positive notes up to 8 ms."""
     assessment = PcmAssessment(policy)
     def reject(detail, *, code='projection_undefined', status='unverified', criterion='eligibility'):
         assessment.add(criterion, status, code, detail,
@@ -151,19 +164,40 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
         if not sample.encoded_bytes or len(sample.encoded_bytes) > 0xffffff:
             reject('PDX sample must contain 1..16777215 encoded bytes', status='fail', code='invalid_sample_length')
         if len(sample.encoded_bytes) > 65535:
-            assessment.add('sample', 'lossy', 'sample_length_exceeds_native',
-                           'Native PCM1 uses the low 16 bits of PDX length; no truncation fallback is defined',
-                           cause='target_constraint', source_value=len(sample.encoded_bytes),
-                           evidence='MXDRV 2.06+17 Rel.X5-S PCM1 length low-word load')
-            assessment.block('Native PCM1 sample length exceeds 65535 bytes; no defined fallback')
+            assessment.add('sample', 'unverified', 'sample_length_exceeds_projection_scope',
+                           'Samples above 65535 bytes are outside the verified projection scope; '
+                           'extended-mode playback has not been validated and no truncation fallback is defined',
+                           cause='implementation_scope', source_value=len(sample.encoded_bytes),
+                           evidence='Earlier PCM1 low-word limit is not an extended-mode limit')
+            assessment.block('Sample length exceeds verified 65535-byte projection scope; no defined fallback')
     if assessment.block_reasons:
         raise ProjectionError('; '.join(assessment.block_reasons), assessment)
+    if analysis.source_loop_vgmticks is not None:
+        assessment.add('loop', 'lossy', 'song_loop_not_emitted',
+                       'MDX projection currently emits one finite source pass; the VGM song loop is lost',
+                       cause='target_constraint', start_vgmticks=analysis.source_loop_vgmticks,
+                       fallback='finite_source_pass', source_value=analysis.source_loop_vgmticks,
+                       projected_value=None)
+    for observation in analysis.observations:
+        if observation.code == 'stream_supply_while_stopped':
+            assessment.add('delivery', 'lossy', 'stopped_stream_supply_not_projected',
+                           'Supplies during chip STOP are retained in source IR but omitted from PDX playback',
+                           cause='target_constraint', source_event_id=observation.source_event_id,
+                           start_vgmticks=observation.vgmticks,
+                           fallback='omit_stopped_supplies_under_libvgm_reset_profile',
+                           evidence=f'libvgm {REFERENCE_REVISION} okim6258.c: '
+                                    'stopped update is silent; stop-to-play reinitializes FIFO')
+            assessment.add('buffer', 'unverified', 'native_buffer_reset_unconfirmed',
+                           'Stopped-byte carryover is resolved only under the libvgm reset profile; '
+                           'native buffered-data behavior is unverified', scope='runtime_validation')
     bindings = tuple(PcmBinding(s.sample_id, 0, i, f'samples/{s.sample_id:03}.adpcm')
                      for i, s in enumerate(analysis.samples))
     by_sample = {b.sample_id: b for b in bindings}
     by_event = {c.source_event_id: c for c in analysis.controls}
-    units, rows, commands = [], [], []
+    units, rows, commands, omitted = [], [], [], []
+    omit_ids = set(omit_playback_ids)
     cursor = source_cursor = 0
+    previous_source_end = 0
 
     def emit(kind, value='', ticks='', start_tick=0, playback_id=None, source_event_id=None):
         row = dict(kind=kind, value=value, ticks=ticks, start_tick=start_tick,
@@ -208,7 +242,11 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
                           target_note=note, unlooped_command=text)
 
     for p in analysis.playbacks:
-        if not p.independently_playable or p.sample_id not in by_sample:
+        schedule_fallback = (set(p.issues) == {'irregular_byte_supply'}
+                             and p.decoder_reset_known and p.pan is not None
+                             and p.stream_transfer_end - p.stream_transfer_start == p.supplied_bytes
+                             and p.supplied_bytes > 0 and not analysis.issues)
+        if (not p.independently_playable and not schedule_fallback) or p.sample_id not in by_sample:
             for reason in p.issues:
                 known = reason in ('rate_change_during_playback', 'unsupported_adpcm3')
                 assessment.add('playback', 'lossy' if known else 'unverified', reason,
@@ -218,11 +256,52 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
                                end_vgmticks=p.end_vgmticks)
             reject(f'PCM playback {p.playback_id} cannot begin an independent PDX note: '
                    + ', '.join(p.issues), code='independent_sample_unknown')
+        if schedule_fallback:
+            assessment.add('delivery', 'lossy', 'byte_supply_schedule_not_preserved',
+                           'Timestamped stream byte writes are projected as continuous PDX delivery; '
+                           'a sample ends at byte exhaustion even if source PLAY remains asserted',
+                           cause='target_constraint', playback_id=p.playback_id,
+                           start_vgmticks=p.start_vgmticks, end_vgmticks=p.end_vgmticks,
+                           source_value=dict(max_cadence_error_vgmticks=p.delivery_max_error_vgmticks,
+                                             unsupplied_play_tail_vgmticks=p.unfed_tail_vgmticks),
+                           fallback='continuous_pdx_delivery')
         try:
             frequency = RATES.index(p.rate_hz)
         except ValueError:
             reject(f'PCM rate {p.rate_num}/{p.rate_den} Hz has no exact standard MDX F0..F4 setting',
                    status='lossy', code='unsupported_rate', criterion='rate')
+        if p.end_vgmticks <= p.start_vgmticks:
+            reject(f'PCM playback {p.playback_id} has no positive source interval',
+                   status='fail', code='invalid_playback_length')
+        if p.start_vgmticks < previous_source_end:
+            reject('Multiple overlapping physical PCM playbacks are unsupported', code='overlap')
+        previous_source_end = p.end_vgmticks
+        changed_pan = []
+        current_pan = p.pan
+        for event_id in p.control_event_ids:
+            control = by_event[event_id]
+            if control.register == 2 and control.pan != current_pan:
+                changed_pan.append(control)
+                current_pan = control.pan
+        changed_pan = [c for c in changed_pan if c.vgmticks < p.end_vgmticks]
+        for index, c in enumerate(changed_pan):
+            affected_end = changed_pan[index + 1].vgmticks if index + 1 < len(changed_pan) else p.end_vgmticks
+            if c.pan != p.pan and affected_end > c.vgmticks:
+                assessment.add('pan', 'lossy', 'held_pan_latched',
+                               'Held PCM pan change is lost; source mute/audibility may differ',
+                               cause='projection_constraint', playback_id=p.playback_id,
+                               source_event_id=c.source_event_id, start_vgmticks=c.vgmticks,
+                               end_vgmticks=affected_end, source_value=c.pan, projected_value=p.pan,
+                               fallback='hold_start_pan_until_next_attack', evidence=PAN_EVIDENCE)
+        duration = p.end_vgmticks - p.start_vgmticks
+        if p.playback_id in omit_ids and duration <= 352:
+            omitted.append(dict(playback_id=p.playback_id, sample_id=p.sample_id,
+                                source_start_vgmticks=p.start_vgmticks,
+                                source_end_vgmticks=p.end_vgmticks, duration_samples=duration,
+                                reason='intentional output omission of a positive PCM note at most 8 ms',
+                                source_first_event_id=p.first_source_event_id,
+                                source_last_event_id=p.last_source_event_id))
+            continue
         start, end = mdx_tick(p.start_vgmticks, sample_multiplier), mdx_tick(p.end_vgmticks, sample_multiplier)
         if end <= start:
             reject(f'PCM playback {p.playback_id} collapses on the MDX clock', status='lossy', code='clock_collapse')
@@ -237,23 +316,6 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
                      source_event_id=p.first_source_event_id)
                 for kind, value in (('bank', binding.bank), ('frequency', frequency),
                                     ('pan', pan), ('gate', 8), ('volume', 128))]
-        changed_pan = []
-        current_pan = p.pan
-        for event_id in p.control_event_ids:
-            control = by_event[event_id]
-            if control.register == 2 and control.pan != current_pan:
-                changed_pan.append(control)
-                current_pan = control.pan
-        changed_pan = [c for c in changed_pan if c.vgmticks < p.end_vgmticks]
-        for index, c in enumerate(changed_pan):
-            affected_end = changed_pan[index + 1].vgmticks if index + 1 < len(changed_pan) else p.end_vgmticks
-            if c.pan != p.pan and affected_end > c.vgmticks:
-                assessment.add('pan', 'lossy', 'held_pan_latched',
-                               'Held PCM pan change is lost; source mute/audibility may differ',
-                               cause='target_constraint', playback_id=p.playback_id,
-                               source_event_id=c.source_event_id, start_vgmticks=c.vgmticks,
-                               end_vgmticks=affected_end, source_value=c.pan, projected_value=p.pan,
-                               fallback='hold_start_pan_until_next_attack', evidence=PAN_EVIDENCE)
         trajectory = []
         body.extend(duration_commands('note', start, end, slot=binding.slot,
                                       playback_id=p.playback_id, source_event_id=p.first_source_event_id))
@@ -271,6 +333,9 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
                          end_error_samples=projected_samples(end, sample_multiplier)-p.end_vgmticks,
                          rate_num=p.rate_num, rate_den=p.rate_den, mdx_frequency=frequency,
                          reset_origin=p.reset_origin, reset_observed=p.reset_observed,
+                         delivery_fallback='continuous_pdx_delivery' if schedule_fallback else '',
+                         delivery_max_error_vgmticks=p.delivery_max_error_vgmticks,
+                         unfed_tail_vgmticks=p.unfed_tail_vgmticks,
                          source_first_event_id=p.first_source_event_id,
                          source_last_event_id=p.last_source_event_id))
         cursor = end
@@ -287,18 +352,19 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict'):
                        for c in analysis.controls)
     assessment.add('sample', 'pass', 'sample_bytes_exact', 'PDX binding retains encoded source sample bytes')
     assessment.add('reset', 'unverified', 'iocs_reset_unconfirmed',
-                   'Physical decoder reset/continuation through native IOCS is not yet confirmed',
+                   'Physical decoder reset/continuation through the selected PCM extension is not yet confirmed',
                    scope='runtime_validation')
     assessment.add('consumption', 'unverified', 'consumed_nibbles_unknown',
                    'Observed byte supply does not establish actual decoder consumption',
                    scope='runtime_validation')
     if policy == 'strict' and any(item['status'] == 'lossy' for item in assessment.items):
-        detail = 'Strict PCM projection blocks known loss: held_pan_latched'
+        detail = 'Strict PCM projection blocks known loss: ' + ', '.join(
+            dict.fromkeys(item['code'] for item in assessment.items if item['status'] == 'lossy'))
         assessment.block(detail)
         raise ProjectionError(detail, assessment)
     emit('end', start_tick=end)
     return PcmMdxProjection(bindings, tuple(units), tuple(rows), stem+'.pdx', sample_multiplier,
-                            clock_rows, assessment, tuple(commands))
+                            clock_rows, assessment, tuple(commands), tuple(omitted))
 
 
 def default_generator():
@@ -376,5 +442,47 @@ def write_mdx(plan, fm_structure, outdir, stem, *, generator=None):
     (folder / 'mdx_build.log').write_text(result.stdout + result.stderr, encoding='utf-8')
     if result.returncode or not mdx.is_file() or not mdx.stat().st_size:
         mdx.unlink(missing_ok=True)
-        raise ValueError('PCM MDX construction failed: ' + result.stdout + result.stderr)
+        detail = result.stdout + result.stderr
+        if re.search(r'MDX track \d+ offset exceeds the maximum 0xfffe|Combined native MDX exceeds 65535 bytes', detail):
+            assessment = plan.assessment
+            assessment.add('format', 'lossy', 'mdx_capacity_exceeded',
+                           'The projected data exceed native MDX capacity; no truncation or splitting fallback is defined',
+                           cause='target_constraint', evidence=detail.strip())
+            assessment.block('MDX capacity exceeded; generated MML and PDX are retained')
+            raise ProjectionError('MDX capacity exceeded; generated MML and PDX are retained: ' + detail,
+                                  assessment)
+        raise ValueError('PCM MDX construction failed: ' + detail)
+    try:
+        validate_extended_layout(mdx.read_bytes())
+    except ValueError:
+        mdx.unlink(missing_ok=True)
+        raise
     return mdx
+
+
+def validate_extended_layout(raw):
+    """Reject stale helpers selecting standard9 instead of the required target mode.
+
+    Full typed command validation is performed by the helper. This independent
+    envelope check verifies its mode selection before recording generated output.
+    """
+    try:
+        title_end = raw.index(b'\r\n\x1a') + 3
+        data_start = raw.index(0, title_end) + 1
+        offsets = struct.unpack_from('>17H', raw, data_start)
+        tone_offset, *tracks = offsets
+        if min(t for t in offsets if t) != 34:
+            raise ValueError('invalid extended header')
+        if tracks != sorted(set(tracks)) or not all(34 <= t < len(raw) - data_start for t in tracks):
+            raise ValueError('invalid extended track offsets')
+        if tone_offset and not 34 <= tone_offset <= len(raw) - data_start:
+            raise ValueError('invalid tone offset')
+        if raw[data_start + tracks[0]] != 0xe8:
+            raise ValueError('missing initial E8')
+        for start in tracks[9:]:
+            end = min([len(raw) - data_start] + [t for t in offsets if t > start])
+            if end - start < 2 or raw[data_start + start:data_start + start + 2] != b'\xf1\x00':
+                raise ValueError('active extra PCM track')
+    except (ValueError, struct.error, IndexError) as error:
+        raise ValueError('PCM MDX requires 16 tracks, initial E8 and inactive Q-W; '
+                         'rebuild scripts/mdx_fixture_generator or update --pcm-generator') from error

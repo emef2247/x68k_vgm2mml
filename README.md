@@ -2,7 +2,7 @@
 
 X68000向けのOPM/YM2151 VGMを、検査可能な中間表現を経由してMDX MMLへ変換します。
 通常変換の入口は `vgm2mml.py` です。Python 3.10以降を使用します。
-直接書き込み型のOKIM6258入力には、標準PCMトラックとPDXの生成経路があります。
+直接書き込み型と有限Data Bank／DAC Stream型のOKIM6258入力には、標準PCMトラックとPDXの生成経路があります。
 PSG/SCCのVGMをOPM向けに変換し、MDX MMLを生成する経路もあります。
 
 ## 通常変換
@@ -143,9 +143,48 @@ python scripts/export_mdx.py input.vgm --outdir outputs/listen/input \
 ```
 
 曲のフォルダにMML・MDX・VGMを生成し、成否と使用したコンパイラを`results.csv`に記録します。
+試聴用ファイルは`tracks/<公開名>/<公開名>.mml`／`.mdx`／`.pdx`／`.txt`に置き、
+VGMを生成する場合は`.vgm`も置きます。8文字以内のASCII英数字・`_`からなる名前は維持し、
+長い名前・追加のドット・予約名などは短い名前へ変換します。元入力との対応は`results.csv`の
+`input`／`safe_stem`列と`listening_manifest.json`に記録します。
+元入力と同じbytesを短い名前でステージングして変換するため、MML／MDX内のPDX参照も公開名と
+一致します。タイトルの選択方法は維持します。`.mdx.mml`やcompiler用MMLなどの診断成果物は
+`_diagnostics/`に分け、原入力のコピーは`_source_inputs/`に保持します。
+再実行ではmanifestとhashが一致する前回の公開ファイルだけを更新します。変更済み・所有不明の
+ファイルや公開名の衝突は上書きせず診断します。通常の`vgm2mml.py`の出力名は変更しません。
 元VGMとの比較検証は行いません。生成MDXをX68000エミュレータ上のMMDSPで再生して、
 音とGUI表示を確認できます。VGMはsoundlogによる同じMDXの再生結果です。
 ファイル生成の成功と、MXDRV／MMDSP上の表示・再生確認は区別してください。
+
+各入力のフォルダに`<stem>.report.txt`も生成します。sourceの長さ、OPMのKey-On/Off要求数と
+operator edge数、コンパイル済みMDXの音符・保持・休符数、PDXへ格納したサンプルのbyte一致、
+PCM周波数の写像、時刻誤差、既知損失・未確認事項を簡潔に表示します。blocked／失敗でも
+レポートを残し、`results.csv`の`report`列から参照できます。
+MDXの件数はループ展開前の命令数です。サンプルbyte一致は外部packerへの入力との比較で、
+波形や実機の再生精度を保証しません。独立比較していないOPM音程精度・再生結果は未検証と表示します。
+helper更新後は再ビルドしてください。検証中はJSON・CSVなどの中間ファイルも保持します。
+
+更新間隔が比較的長いpublic入力は次の例です。約8.4秒のFMパターンで、
+通常変換は8192µs/tickを選びます。ただし現在のCLOCK.mdxはMMDSPでロードに失敗し、
+旧CLK参照4件は無音・表示なしとの試聴結果があるため、正常な試聴基準には使えません。
+失敗結果と対象ハッシュはfixtureの`listening_results.json`に記録しています。
+
+```bash
+python scripts/export_mdx.py tests/fixtures/public/opm/clock_listening \
+  --outdir outputs/listen/clock_native --no-vgm
+```
+
+比較の再確認には、音・表示を確認済みのpublic FMSTATEを基準とした次のセットを使います。
+`outputs/listen/clock_controls/`にFMSTATEの変更なしコピー、PDX参照だけを外したFMONLY、
+同じフレーズを約6.3秒にしたFM0256／FM2048／FM4096／FM8192／FM16384を生成します。
+後者5件は音色・音程・発音時刻・音量・パン・A/Pの総時間を維持しclockを変えます。
+MMDSPでの確認結果は、全件無音、カウンターは進み、演奏中も操作可能でした。
+ユーザーの判断でこの比較は終了しています。テストパターンの追加修正は行いません。
+この結果だけから、clockと表示・発音の関係は確定できません。
+
+```bash
+python tests/scripts/generate_fmstate_clock_controls.py
+```
 
 従来のmmlxを使う場合は、`--compiler mmlx`を明示します。MXCの失敗時に自動で
 mmlxへ切り替えることはありません。helper自体のMMLを渡す3引数モードは、
@@ -158,26 +197,42 @@ mmlxへ切り替えることはありません。helper自体のMMLを渡す3引
 ```bash
 python vgm2mml.py input.vgm --outdir outputs/input --dump-passes
 
-# 確認済みの途中pan損失を診断付きで許容する場合
+# 定義済みの投影損失を診断付きで許容する場合
 python vgm2mml.py input.vgm --outdir outputs/input-best \
   --pcm-policy best-effort --dump-passes
 ```
 
 一度の変換で `input.mdx.mml`、`input.mdx`、`input.pdx`を生成します。
-OPMは通常の構造化MML経路を使い、PCMは型付き命令列から標準9トラックMDXへ直接組み立てます。
+OPMは通常の構造化MML経路を使い、PCMは型付き命令列から16トラックMDXへ直接組み立てます。
+A先頭のE8でPCM拡張モードを指定し、PCMはPのみを使用、Q〜Wは終了命令だけにします。
+このモードで試聴用6件の演奏・正常停止を確認しています。PCM拡張を利用できる再生環境が必要です。
+helperの更新後は上記のビルドを再実行してください。
 可読MMLにも `#pcmfile "input.pdx"` とPトラックを出力しますが、PCMのMDX生成はこのテキストに依存しません。
 MDXとPDXを一緒にX68000のプレイヤーへ渡してください。
 helperを別の場所に置く場合は、変換時に `--pcm-generator PATH` を指定します。
 
-初期対応は、直接 `0xB7` 書き込みによる4-bit／10-bit出力のOKIM6258、一つの物理PCMチャンネル、
-標準F0〜F4と一致する速度、PDX bank 0の96サンプル、1サンプル65535バイトまでです。STOP→PLAYと供給時刻を検査し、
+対応するPCM sourceは、直接 `0xB7` 書き込みと、非圧縮bank `0x04`を使う有限DAC Streamです。
+Streamのsetup/data/frequency、`0x95`の有限block再生、`0x93`のcommand数／bank終端指定、
+`0x94`の供給停止に対応します。供給停止やbank終端をchipのSTOPやresetへ置き換えません。
+原コマンドとは別に `*.pcm_stream_supplies.csv`へ展開した転送時刻とbank位置を保存します。
+対象は4-bit／10-bit出力のOKIM6258、一つの物理PCMチャンネル、
+標準F0〜F4と一致する速度、PDX bank 0の96サンプル、現在確認済みの範囲として1サンプル65535バイトまでです。STOP→PLAYと供給時刻を検査し、
 符号化バイト列の完全一致でサンプルを共有します。保持はタイで記述します。
 既定の `--pcm-policy strict` は既知の意味損失を伴う生成を止めます。
 `best-effort`では発音開始時のpanを保持し、途中pan変更やmuteの損失を区間付きで診断します。
 次の新規発音では元のpanを明示します。近似方法を定義できない入力はbest-effortでも生成を止めます。
-ストリーム転送、不規則なbyte供給、再生途中の速度変更、decoder状態を引き継ぐ曲ループなどは
-未対応として報告します。PCMを含む場合、長さ補正は共有OPM/PCM clockを保持して見送り、
-その理由をnormalization JSONに記録します。PCMのstrict／best-effort判定は別途行います。
+有限streamの供給時刻をそのままPDXで保持できない場合、best-effortは元の符号化bytesを連続再生へ
+投影し、時刻列の損失と供給終了後のPLAY区間を診断します。paddingや再エンコードは行いません。
+STOP中のstream供給は、明記したlibvgm reset profileで省略を診断します。実機でのbuffer状態は未確認です。
+VGMの曲ループはbest-effortで一回分の演奏として生成し、`song_loop_not_emitted`を記録します。
+strictではこれらの損失を伴う生成を止めます。圧縮bank、stream内のreverse／loop、未対応のlength mode、
+周波数0でのstream開始、再生中のdata setup変更、chip再生途中の速度変更、未解決のdecoder開始状態は診断します。
+MDXのoffset／容量制限でビルドできない場合は、生成済みMMLとPDXを残し、
+`mdx_capacity_exceeded`としてMDXの生成停止を記録します。これはMDX＋PDXの完成を意味しません。
+PCMを含む場合も長さ補正を検討し、開始・停止・制御境界をOPMと同じclockで検証します。
+採用時はFM／PCMを同じclockで生成し、不成立なら両方とも従来clockを使います。
+PCM IRと符号化bytesは変更せず、採否・理由をnormalization JSONに記録します。
+PCMのstrict／best-effort判定は別途行います。
 
 **PCMを含むMDXからのVGM生成は現在利用できません。** 外部ライブラリsoundlogの保持中カーソル消失と、
 元VGMの再生状態を保持できない問題があるため、現在はMDX＋PDXまでを生成します。
@@ -239,8 +294,17 @@ MXC v1.01＋run68では、タイトルがCP932で65バイト以上になると�
 PCMにも `--pcm-policy strict|best-effort` を渡せます（既定strict）。
 PCMを含む入力は既存の型付きMDX＋PDX生成を使用し、FM部分のコンパイルはmmlxです。
 この経路は`compiler=typed_pcm_mmlx`と記録します。`--compiler`の選択はFMのみの入力に適用します。
-生成できた場合はMML＋MDX＋PDXを保存し、`results.csv`に
-`pcm_replay_unavailable`と記録して終了コード1を返します。PCMのVGM欄は空です。
+MML＋MDX＋PDXを試聴用に一括生成する場合は、`--no-vgm`を指定します。
+
+```bash
+python scripts/export_mdx.py tests/fixtures/public/opm_oki6258 \
+  --outdir outputs/listen/opm_oki6258 --no-vgm --pcm-policy best-effort
+```
+
+生成が完了した曲は`success`となり、VGM欄は空です。これは往復検証や個々の曲の実機確認を意味しません。
+`best-effort`は途中panなどの既知損失を診断付きで許容する場合だけ指定し、通常は省略してstrictを使えます。
+FMのみの入力ではMML＋MDXを生成します。`--no-vgm`を省略した従来の経路では、PCMの再生VGMを作れないため
+`pcm_replay_unavailable`と記録して終了コード1を返します。MDX→VGMおよび往復検証の経路は保持します。
 strictで既知損失を拒否した場合は `pcm_projection_blocked` となります。
 `pcm_projection_status`、`pcm_validation_status`、`pcm_validation_run`、`pcm_known_losses`、
 `pcm_assessment`を別の列に記録します。PCMのbinding／projection CSV、命令列、評価レポートとpacking用サンプルも診断用に残ります。

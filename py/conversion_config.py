@@ -19,9 +19,24 @@ def inspect_source(source):
     header = read_vgm_header(raw)
     chips, counts, first, unsupported, streams = set(), Counter(), {}, [], {}
     opll_key_on = scc_nonzero_volume = False
+    psg_volumes = [0] * 3
+    psg_silent = True
+    # AY/SCC reset volumes and SCC enable are zero. SCC waveform RAM is
+    # treated as unknown until written; a constant nonzero wave is not mute.
+    scc_volumes = [0] * 5
+    scc_waves = [[None] * 32 for _ in range(5)]
+    scc_enabled = 0
+    scc_silent = True
+    previous_time = 0
     banks = []
     for event in command_times(raw):
         cmd, pos = event.command, event.address
+        if event.vgmticks > previous_time and 'psg' in chips:
+            psg_silent &= psg_volumes == [0, 0, 0]
+        if event.vgmticks > previous_time and 'scc' in chips:
+            scc_silent &= not any(scc_enabled & (1 << ch) and scc_volumes[ch]
+                and any(value != 0 for value in scc_waves[ch]) for ch in range(5))
+        previous_time = event.vgmticks
         counts[f'{cmd:#04x}'] += 1
         item = dict(command=f'{cmd:#04x}', address=pos, source_samples=event.vgmticks)
         chip = {0x54: 'opm', 0xa4: 'opm', 0xa0: 'psg', 0xd2: 'scc',
@@ -35,10 +50,31 @@ def inspect_source(source):
                 reg, value = raw[pos + 1:pos + 3]
                 opll_key_on |= bool((0x20 <= reg <= 0x28 and value & 0x10)
                                    or (reg == 0x0e and value & 0x20 and value & 0x1f))
+            elif cmd == 0xa0:
+                reg, value = raw[pos + 1:pos + 3]
+                # Only explicitly muted, ordinary AY initialization is exempt.
+                # Any nonzero/envelope volume or variant register stays used.
+                if 8 <= reg <= 10:
+                    psg_volumes[reg - 8] = value
+                    psg_silent &= value == 0
+                elif reg > 13:
+                    psg_silent = False
             elif cmd == 0xd2:
                 scc_nonzero_volume |= raw[pos + 1] == 2 and bool(raw[pos + 3] & 15)
                 if raw[pos + 1] not in (0, 1, 2, 3):
                     unsupported.append(dict(item, reason='SCC test/variant/instance writes are not supported'))
+                port, reg, value = raw[pos + 1:pos + 4]
+                if port == 0 and reg < 128:
+                    channel = reg // 32
+                    scc_waves[channel][reg % 32] = value
+                    if channel == 3:
+                        scc_waves[4][reg % 32] = value
+                elif port == 2 and reg < 5:
+                    scc_volumes[reg] = value & 15
+                elif port == 3 and reg == 0:
+                    scc_enabled = value & 31
+                elif not (port == 1 and reg < 10):
+                    scc_silent = False
         elif cmd == 0x67:
             kind = raw[pos + 2]
             banks.append(dict(item, bank_type=f'{kind:#04x}'))
@@ -47,12 +83,14 @@ def inspect_source(source):
                 first.setdefault('pcm', item)
         elif 0x90 <= cmd <= 0x95:
             stream_id = raw[pos + 1]
+            if stream_id == 255:
+                # Reserved stream ID; 94/FF stops all configured supplies.
+                continue
             if cmd == 0x90:
                 streams[stream_id] = raw[pos + 2]
             destination = streams.get(stream_id)
             if destination == 0x17:
-                # Route to the existing PCM analyzer, which retains and rejects
-                # these commands as unsupported_stream_control/data_bank.
+                # The PCM analyzer retains commands and validates their supplies.
                 chips.add('pcm')
                 first.setdefault('pcm', item)
             else:
@@ -68,13 +106,20 @@ def inspect_source(source):
     opll_clock = int.from_bytes(raw[0x10:0x14], 'little') if header['version'] >= 0x110 else 0
     declarations = dict(opm=opm_clock, opll=opll_clock, psg=header['ay_clock_raw'],
                         scc=header['scc_clock_raw'], pcm=header['okim6258_clock_raw'])
+    has_song_loop = bool(int.from_bytes(raw[0x1c:0x20], 'little'))
     initialization = {}
+    if 'opm' in chips and 'psg' in chips and psg_silent and psg_volumes == [0, 0, 0]:
+        initialization['psg'] = dict(command_count=counts['0xa0'],
+            reason='Muted AY initialization: reset volumes remain zero; no nonzero/envelope volume writes; source commands retained')
     if 'opll' in chips and not opll_key_on:
         initialization['opll'] = dict(command_count=counts['0x51'],
             reason='Existing compatibility initialization: no melodic/rhythm Key-On; source commands retained')
     if 'scc' in chips and not declarations['scc'] and not scc_nonzero_volume:
         initialization['scc'] = dict(command_count=counts['0xd2'],
             reason='Existing compatibility initialization: SCC is undeclared and no nonzero volume is written')
+    elif 'opm' in chips and 'scc' in chips and scc_silent and not has_song_loop:
+        initialization['scc'] = dict(command_count=counts['0xd2'],
+            reason='Finite silent SCC setup: reset volume/enable zero; every positive-duration enabled nonzero-volume interval has explicitly all-zero waveform RAM; source commands retained')
     for chip in chips - {'pcm'} - initialization.keys():
         if not declarations[chip]:
             unsupported.append(dict(first[chip], reason=f'Used {chip.upper()} commands have no clock declaration'))

@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / 'py'))
 from okim6258 import analyze
 
 
-def source(commands, *, clock=8000000, flags=2, loop_command_offset=None):
+def source(commands, *, clock=8000000, flags=6, loop_command_offset=None):
     header = bytearray(0x100)
     header[:4] = b'Vgm '
     struct.pack_into('<I', header, 8, 0x171)
@@ -141,7 +141,7 @@ class Okim6258Tests(unittest.TestCase):
         self.assertFalse(a.playbacks[0].delivery_cadence_compatible)
 
     def test_unsupported_register_mode_and_instance_remain_inspectable(self):
-        a=analyze(source(run()+write(0x81,0x56)+write(3,7),flags=6))
+        a=analyze(source(run()+write(0x81,0x56)+write(3,7),flags=2))
         self.assertIn('unsupported_adpcm3',a.playbacks[0].issues)
         self.assertEqual(a.transfers[len(a.transfers)-2].chip_instance,1)
         self.assertEqual({i.code for i in a.issues},{'unsupported_chip_instance','unsupported_register'})
@@ -153,14 +153,17 @@ class Okim6258Tests(unittest.TestCase):
         a=analyze(source(block+setup+start+wait(10)))
         self.assertFalse(a.playbacks)
         self.assertEqual([c.command for c in a.raw_commands],[0x67,0x90,0x95])
-        self.assertEqual([i.code for i in a.issues],['unsupported_pcm_data_bank','unsupported_stream_control','unsupported_stream_control'])
+        self.assertIn('stream_configuration_incomplete', [i.code for i in a.issues])
         self.assertIn(b'\x12\x34',a.source_raw)
         self.assertEqual(a.blocks[0].payload,b'\x12\x34')
 
-    def test_source_loop_inside_decoder_state_is_not_independent(self):
+    def test_source_loop_inside_decoder_state_is_an_observation(self):
         a=analyze(source(run(),loop_command_offset=12))
         self.assertEqual(a.source_loop_vgmticks,0)
-        self.assertIn('decoder_continuation_at_song_loop',[i.code for i in a.issues])
+        self.assertIn('decoder_continuation_at_song_loop',[i.code for i in a.observations])
+        self.assertNotIn('decoder_continuation_at_song_loop', [i.code for i in a.issues])
+        self.assertTrue(a.playbacks[0].reset_observed)
+        self.assertEqual([c.data for c in a.controls if c.register == 0], [1, 2, 1])
 
     def test_dump_retains_source_rows_and_exact_binary_asset(self):
         a=analyze(source(run()))

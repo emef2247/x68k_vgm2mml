@@ -5,8 +5,9 @@ import json
 from pathlib import Path
 
 
-TARGET_PROFILE = 'MXDRV 2.06+17 Rel.X5-S; standard PCM1'
-PAN_EVIDENCE = 'native mxdrv17.s FC/ED store track state; applied at new ADPCMOUT'
+TARGET_PROFILE = 'MDX PCM4/8 enabled (E8); 16 tracks; single P projection'
+PAN_EVIDENCE = ('Projection retains onset pan; original PCM1 evidence: mxdrv17.s FC/ED '
+                'store track state until new ADPCMOUT. Extended-mode live pan is not certified')
 
 
 def generated_binary_artifacts(outdir, stem):
@@ -86,6 +87,8 @@ class PcmAssessment:
 
     def as_dict(self):
         return dict(schema_version=1, policy=self.policy, target_profile=self.target_profile,
+                    target_layout=dict(track_count=16, pcm_mode_command='E8',
+                                       active_pcm_tracks=['P'], inactive_pcm_tracks=list('QRSTUVW')),
                     artifact_status=self.artifact_status, assessment_status=self.assessment_status,
                     validation_status=aggregate(self.items), validation_run=self.validation_run,
                     artifacts=self.artifacts,

@@ -1,7 +1,12 @@
 # Native OKIM6258 PCM and PDX
 
 The canonical `vgm2mml.py --target mdx` path emits readable MDX MML and, when
-PCM samples are present, a standard nine-track MDX plus PDX. OPM-only MML
+PCM samples are present, a sixteen-track MDX plus PDX with initial E8 (PCM4/8
+enable) on A. Only P carries PCM playback; Q-W contain finite end commands.
+The mode requires an available PCM extension in the playback environment.
+Six mode-projected listening cases played and stopped correctly in the user's
+MMDSP environment; this is bounded evidence, not universal runtime certification.
+OPM-only MML
 conversion remains Python-only; typed PCM construction and packing require
 the built `scripts/mdx_fixture_generator` helper. See README for commands.
 Stopped PCM setup writes without any samples do not create an empty PDX or
@@ -12,6 +17,12 @@ require the helper; their source control evidence is still available in dumps.
 - Direct VGM `0xB7` writes, one physical OKIM6258 instance, 4-bit ADPCM with
   low nibble first and standard X68000 10-bit output. The chip must be declared
   in the VGM header; runtime clock writes do not invent an absent source chip.
+- Uncompressed bank `0x04` and finite OKIM6258 DAC streams: setup `0x90`,
+  bank/step/base `0x91`, byte frequency `0x92`, `0x95` block starts without
+  reverse/loop flags, and `0x93` command-count or bank-end modes. `0x94`,
+  including stop-all `0xFF`, stops supply only. Zero frequency pauses an
+  already started stream; a zero-frequency start is explicitly unsupported.
+  Source commands at a tick precede derived supplies for that tick.
 - Known independent decoder starts: observed stopped-to-PLAY transitions, or
   the explicitly labelled fresh-VGM initialization assumption. Repeated PLAY
   while playing is a continuation, not a new sample.
@@ -26,33 +37,70 @@ require the helper; their source control evidence is still available in dumps.
   binary note chunk; its readable tie follows the chunk. Canonical PCM output
   is currently uncompressed; readable MML may use exact finite repeats.
   Runtime STOP/reset equivalence remains unverified.
-- One bank of 96 samples, each at most 65535 bytes for this native PCM1
-  profile. Encoded bytes remain unchanged; no waveform
+- One bank of 96 samples, each at most 65535 bytes in the currently verified
+  projection scope. Longer samples remain blocked as unverified extension
+  behavior, not as proven extended-mode format loss. Encoded bytes remain unchanged; no waveform
   deduplication, resampling or ADPCM re-encoding is used.
 - PCM-only songs and native OPM+PCM songs use the same inferred MDX clock and
   common source end. The existing six-VGM-sample boundary error bound includes
   PCM start/end and controls. Structured MDX normalization defaults ON, but
-  PCM-containing inputs retain this baseline shared clock until PCM-aware
-  correction is verified. Non-adoption and its reason are recorded in
+  PCM playback starts also contribute to musical clock inference. All PCM
+  playback/control boundaries are checked together with OPM on one candidate
+  clock; bounded, ordered candidates use that multiplier for both outputs.
+  Sparse fits, collapsed intervals or candidate-only structure failures retain
+  the baseline shared clock. Source PCM IR and encoded bytes are unchanged.
+  Non-adoption and its reason are recorded in
   `*.mdx.normalization.json`; they are not PCM eligibility/runtime failure.
 
-Other modes are diagnosed before a successful MML is produced. These include
-VGM data-bank/stream playback, 3-bit encoding, 12-bit output, multiple chips,
-irregular supplies/underfeed, mid-play rate changes, unknown decoder starts,
-and a source song-loop boundary inside an active decoder. Raw stream operands
-and relevant data-block bytes are retained; no synthetic stream schedule is
-claimed. A stopped, independent source loop boundary can be inspected, but
-emitting the VGM header's song loop remains unsupported by the MDX generator.
+Other modes remain diagnosed: compressed bank `0x44`, stream reverse/loop or
+other length modes, frequencies above 44100 Hz, active stream data-setup
+changes, 3-bit encoding, 12-bit output, multiple chips, mid-play decoder rate
+changes and unknown decoder starts. Their operands/block bytes remain retained.
+Source-loop entry into active ADPCM is an observation, not a fabricated reset;
+MDX song-loop omission is assessed separately in the target.
+
+The stream scheduling and codec-flag profile is libvgm revision
+`70e1d1fad8c03df2ce4bfb13f8599c56920dcdc8`, at 44100 Hz with its 32.32
+counter. This identifies an implementation reference, not a physical decoder
+oracle. Bit 2 set selects 4-bit ADPCM in that implementation; the earlier
+converter interpreted it backwards. Authored public fixtures now use flag
+`0x06`, retaining their original encoded payloads. See the
+[stream implementation note](../field_notes/2026-10-09_pcm_stream_support.md)
+for primary sources, hashes and independent C-counter checks.
 
 ## Projection policy and assessment
 
 `--pcm-policy strict` is the default and blocks known semantic loss.
 `--pcm-policy best-effort` allows a specifically defined fallback with explicit
-diagnostics. For the pinned MXDRV 2.06+17 Rel.X5-S PCM1 profile, FC pan is
-latched until the next new IOCS playback. Best-effort retains onset pan,
+diagnostics. The projection retains onset pan rather than emitting held pan
+changes. Original MXDRV 2.06+17 Rel.X5-S PCM1 evidence described latched FC pan;
+immediate pan behavior in the selected extension is not certified. Best-effort retains onset pan,
 discards held changes without artificial attacks, records the affected source
 intervals (including mute/audibility loss), and explicitly sets the next onset
 pan. Strict blocks that projection before invoking the helper.
+
+For completely reconstructed finite streams with known independent reset,
+stable supported rate and no unresolved source issues, a second defined
+best-effort fallback projects timestamped supplies as continuous PDX delivery
+(`byte_supply_schedule_not_preserved`). The existing one-sample cadence check
+and `independently_playable=false` source result are unchanged. Target
+diagnostics retain per-playback cadence error and the nominal unsupplied PLAY
+tail. Bytes and source start/STOP boundaries are retained through the shared
+clock; no padding, re-encoding or extra decoder resets are inserted. The PDX
+sample ends when its encoded bytes are exhausted, even if the projected note
+extends to a later source STOP. The audible source tail and actual consumption
+remain unverified.
+
+Supplies while known/assumed stopped remain in the source table and observation
+log. Under the pinned libvgm profile, stopped updates do not consume bytes and
+stopped-to-PLAY reinitializes its FIFO. Best-effort explicitly omits those
+supplies (`stopped_stream_supply_not_projected`); strict blocks that loss.
+Native buffered-data behavior remains a separate runtime unknown. Direct B7
+data outside known playback and unknown initial play state remain unresolved.
+
+The VGM header song loop is currently not emitted, whether it enters a stopped
+or active PCM state. Strict blocks `song_loop_not_emitted`; best-effort emits
+one finite source pass and reports the loss. Finite phrase repeats are separate.
 
 No fallback is defined for unsupported rates, 12-bit output, excessive native
 sample lengths or unresolved source scheduling. Best-effort still blocks such
@@ -105,9 +153,12 @@ left/right order for operands 1 and 2; do not reuse the FM mapping for PCM.
 | Artifact | Evidence |
 |---|---|
 | `*.pcm_raw.csv` | Ordered B7 writes, byte addresses and source event IDs |
-| `*.pcm_commands.csv`, `*.pcm_blocks.csv` | Uninterpreted stream/block operands and block spans |
+| `*.pcm_commands.csv`, `*.pcm_blocks.csv` | Original stream/block operands and block spans |
+| `*.pcm_stream_controls.csv` | Stream setup/start/stop state with original command provenance |
+| `*.pcm_stream_supplies.csv` | Derived supplies, trigger event/address, byte index and bank/block offset |
 | `*.pcm_state.csv` | Non-data control changes and reset knowledge |
 | `*.pcm_segments.csv`, `*.pcm_issues.csv` | Playback boundaries, supply eligibility and rejection reasons |
+| `*.pcm_observations.csv` | Nonfatal stopped-supply and active-loop-entry observations |
 | `*.pcm_samples.csv`, `*.pcm_samples/*.adpcm` | Exact sample bytes and hashes |
 | `*.pcm_blocks/`, `*.pcm_source.json` | Retained blocks, header and consumption scope |
 
@@ -140,10 +191,21 @@ hold/note/rest/end commands. Python completes timing projection and duration
 chunking. The helper validates command bounds, durations, shared FM tempo/end,
 finite FM repeat offsets, standard layout and PDX references. It compiles only
 the FM MML, preserves its typed tracks/tones/title, adds typed PCM using the
-existing soundlog MdxBuilder, then serializes/reparses the nine-track document.
+existing soundlog MdxBuilder, then serializes/reparses the sixteen-track document.
+The builder adds E8 at the beginning of A and inactive Q-W. Validation compares
+A after removing precisely that E8, B-H, P, tones, title and PDX name against
+the compiled FM and typed PCM plan. It requires exactly one E8 and inactive
+extra tracks; shared clock, timing, source PCM IR and PDX payloads are unchanged.
+Python independently checks the emitted layout so an old helper cannot report
+a standard-nine output as success. Rebuild the helper when updating this code.
 PDX lookup is relative to OUTPUT, allowing inputs under `<stem>.pcm/`.
 No new compiler, raw binary concatenation or PCM text compilation is used.
 Native-length checks and a conservative 65535-byte combined MDX limit apply.
+An explicit track-offset/combined-size capacity error is target loss
+`mdx_capacity_exceeded`, with no splitting/truncation fallback. Existing MML,
+PDX, source dumps and detailed target dumps remain inspectable. The assessment
+marks MDX blocked and retains per-artifact generation states; these partial
+outputs are not a completed MDX/PDX pair or an unexpected runtime mismatch.
 
 Readable MML can still be compiled separately using the older helper mode:
 
@@ -165,12 +227,15 @@ PCM compile-and-replay writes the structurally validated MDX, rejects VGM
 replay and removes a stale requested VGM. The batch exporter replays the
 canonical pair via `--from-mdx`, without recompiling its readable PCM. It retains
 MML/MDX/PDX and reports `pcm_replay_unavailable` with a nonzero exit status.
-FM-only replay is unaffected. Use an X68000 player for the PCM pair; hardware,
+`export_mdx.py --no-vgm` skips replay and reports successful MML/MDX/PDX
+generation independently of runtime validation. It never recompiles readable
+PCM MML as a substitute for a missing typed pair. Default replay and existing
+roundtrip tooling remain available. FM-only replay is unaffected. Use an X68000 player for the PCM pair; hardware,
 MMDSP GUI and waveform comparison remain separate validation work.
 
 ## Evidence and remaining work
 
-Original public fixtures live in `tests/fixtures/public/pcm/`: PCM-only
+Original public fixtures live in `tests/fixtures/public/opm_oki6258/`: PCM-only
 reset/retrigger, held pan changes/mute, exact asset reuse, and concurrent OPM
 with F0/F4 playback, plus a 512-tick hold followed by STOP/rest. Their independent expected schedule/hashes are regenerated
 without calling the production analyzer. Target tests independently inspect

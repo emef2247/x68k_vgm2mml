@@ -22,7 +22,7 @@
 - `py/opm_conversion.py`: native OPM-to-MDX pipeline orchestration.
 - `py/opm_mdx.py`, `py/opm_mdx_music.py`: native OPM target projection and structured MDX rendering.
 - `py/okim6258.py`: backend-neutral PCM source evidence, encoded samples and playback spans.
-- `py/pcm_mdx.py`: standard PCM1 binding/projection and externally packed PDX byte verification.
+- `py/pcm_mdx.py`: single-P PCM binding/projection, 16-track/E8 target layout and externally packed PDX byte verification.
 - `py/opm_target_state.py`: explicitly projected OPM state/write trajectories and interval CSVs for PSG/SCC targets.
 - `py/opm_performance.py`, `py/opm_target_vgm.py`: inferred PSG/SCC musical gates and inspectable OPM target VGM feeding the ordinary OPM converter.
 - `py/opll.py`, `py/opll_mml.py`: OPLL processing and MML generation.

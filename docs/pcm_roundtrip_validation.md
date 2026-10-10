@@ -1,6 +1,11 @@
 # PCM往復検証と独立基準
 
 2026-10-09の検討結果。これは検証の設計であり、PCM往復検証の実装・成功報告ではない。
+
+2026-10-10追記：通常のPCM付きMDX生成は、試聴で確認できた16トラック＋E8のPCM拡張経路へ変更した。
+下記の標準9トラック／PCM1基準は独立検証候補として残すが、現在の出力を検証するには
+PCM拡張の版と実行経路も固定した別profileが必要になる。6件の演奏・停止成功は個別の試聴結果であり、
+A/B/C往復成功やreset・消費ニブル数・途中panの保証へは拡大しない。
 現在の生成条件とCLIは [pcm_pdx.md](pcm_pdx.md)、調査根拠は
 [field note](../field_notes/2026-10-09_pcm_mxdrv_roundtrip_review.md) を参照する。
 
@@ -28,8 +33,9 @@ strictとbest-effortで成果物の生成方針を分ける。
 以前のtie+途中pan出力は、この版で元VGMの即時pan変更を再現する根拠にならない。
 現行投影はstrictで拒否し、best-effortで開始panを保持して損失区間を記録する。
 
-入力VGMのstream展開やdecoder消費が未確定という問題も別に残る。
-現行IRの`consumed_nibbles=None`とstream未対応を、MMLを外すことで解消したとは扱わない。
+有限bank `0x04`のstream展開は、固定したlibvgm profileに基づく転送列として実装・検証した。
+これはdecoderの消費や標準MXDRVの実行を検証したことではなく、`consumed_nibbles=None`は維持する。
+未対応の圧縮bank／stream modeも明示的に診断する。詳細は [PCM/PDX](pcm_pdx.md) を参照する。
 
 ## strict / best-effortと四種類の判定
 

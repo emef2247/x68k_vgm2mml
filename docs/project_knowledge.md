@@ -21,6 +21,12 @@ Not every statement is a formal specification. Distinguish:
 Do not silently promote a hypothesis, test expectation, or
 fixture-specific observation into a project invariant.
 
+Export statistics must separate generated artifacts, encoded-byte identity,
+projected frequency/timing checks and native load/playback/ending/display.
+Raw Key-On/Off requests, operator edges and encoded MDX NOTE/hold counts are
+different measurements. Do not combine them into an unsupported fidelity
+percentage; explicitly label independent comparisons not yet performed.
+
 ---
 
 # 1. Project Goal
@@ -699,6 +705,13 @@ clock/projection; it does not select legacy/registers notation. Explicit
 `--no-normalize-lengths` disables correction. MGSDRV correction remains opt-in.
 Projected PSG/SCC output must check cumulative timing against original source
 boundaries as well as intermediate OPM boundaries before adopting correction.
+PCM-only and OPM+PCM output use that same target normalization stage: logical
+playback starts contribute anchors, while playback/control boundaries constrain
+one shared timer. Raw supply cadence and encoded bytes remain source IR.
+Candidate-only projection/score failure falls back for both FM and PCM; source
+eligibility errors are not hidden. The estimator's 735-sample bound is a timing
+error limit, not a minimum interrupt period; its 12/6 grids are musical score
+subdivisions rather than a short-source-interval deletion rule.
 
 ---
 
@@ -925,67 +938,36 @@ meaning differs.
 
 ---
 
-# Native PCM source evidence and target placement
+## 22. PCM source evidence and target projection
 
-OKIM6258 encoded sample identity uses codec plus exact supplied bytes. Decoder
-reset/continuation, rational nibble rate, raw pan and source timing belong to
-playback evidence, not sample identity. Hashes index candidates; actual bytes
-resolve equality. Observed STOP/PLAY resets and a fresh-VGM initialization
-assumption must remain distinguishable. Supplied bytes and nominal duration
-do not establish measured decoder consumption or waveform equivalence.
+PCM source evidence is target-independent. Preserve exact encoded bytes,
+source timing, playback/control events, decoder state evidence, and
+observed-versus-assumed distinctions without rewriting them to satisfy
+MDX/PDX constraints.
 
-Target-independent PCM records preserve source options, blocks/commands,
-ordered B7 transfers and control/playback spans. MDX PDX bank/slot limits and
-allocation belong to the target. PCM MML text is optional: target MDX commands,
-PDX and any readable rendering must consume the same immutable binding.
-Future Z_MUSIC output must consume source evidence with its own
-placement; neither MDX text nor PDX slot numbers become the common IR.
+Raw → State → Segment/PCM IR → Target boundaries must remain explicit.
+Sample identity is based on codec and exact encoded bytes; playback state
+and timing are separate. Unknown decoder consumption and effective runtime
+behavior must not be inferred from byte equality or nominal duration.
 
-PCM validation separates target note/gate intent, IOCS/DMA playback requests,
-chip PLAY/STOP/decoder state and VGM stream scheduling. A stream stop is not
-a chip stop; cursor restart is not by itself decoder reset. Use a versioned
-MXDRV/IOCS profile and an independent playback baseline. Matching A/B after
-reusing an uncertified player is internal consistency, not standard playback
-proof. Unknown consumption/reset/effective-control fields remain unverified.
+MDX/PDX placement, capacity limits, command encoding, and approximations
+belong exclusively to target projection. OPM and PCM share one MDX clock.
+Strict conversion rejects known semantic loss; explicit best-effort may
+emit lossy artifacts with source-linked diagnostics. Artifact generation
+and runtime validation are separate results.
 
-MDX target projection owns fidelity/eligibility and explicit approximation;
-never rewrite common PCM evidence to fit target limits. Strict conversion
-disallows known semantic loss. An explicitly selected best-effort policy may
-emit usable MDX+PDX using a defined fallback with source-linked loss diagnostics.
-Separate pass, lossy (known target loss), unverified and fail, and keep artifact
-generation status separate. Unknown IOCS behavior is not a confirmed target
-constraint; unexpected mismatches are not acceptable best-effort loss. Known
-losses and unresolved items can coexist and must both remain visible. Lossy
-artifacts do not pass strict roundtrip validation. Target projection success
-does not certify runtime equivalence; unexecuted runtime comparisons stay
-unverified/not_run even when all requested artifacts were generated.
+Reference playback evidence must be distinguished from assumptions and
+tool-specific behavior. Successful MDX/PDX generation does not establish
+native playback equivalence.
 
-For MXDRV 2.06+17 Rel.X5-S PCM1, held FC pan changes do not request an immediate
-IOCS update. The defined best-effort projection retains onset pan until the
-next attack, records each affected source interval, and inserts no artificial
-retrigger. F7 precedes the note whose gate keyoff it suppresses; readable ties
-follow that note. One typed PCM target command list drives both MDX construction
-and readable rendering. Native PCM1 uses the low length word, so sample lengths
-above 65535 have a known target limitation and no defined fallback yet.
-
-OPM and PCM share one MDX clock and common source end. Target-only
-normalization cannot move one chip's boundaries independently. PCM pan
-operands 1/2 have the opposite left/right meaning from MDX FM. Standard X68000
-PCM uses 4-bit encoding and 10-bit output; preserving bytes alone cannot
-represent a 12-bit decoder clamp. Keep unsupported source values inspectable
-and diagnose them in the target.
-The normalization default must not itself reject PCM input. Until PCM-aware
-correction is verified, keep the baseline shared OPM/PCM clock and record
-non-adoption separately from PCM loss/eligibility and runtime validation.
-Data Bank/DAC Stream decoding is separate from frontend cleanup; unsupported
-source stream evidence and its existing diagnostics remain intact.
-
-See `docs/pcm_pdx.md` for current eligibility and tool limitations and
-`docs/pcm_roundtrip_validation.md` for the independent validation design.
+Details:
+- `docs/pcm_source_and_target.md`
+- `docs/pcm_pdx.md`
+- `docs/pcm_roundtrip_validation.md`
 
 ---
 
-# 22. Final Rule
+# 23. Final Rule
 
 When uncertain whether to simplify, merge, split, normalize, quantize,
 discard, restructure, or reinterpret data:

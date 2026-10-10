@@ -20,14 +20,17 @@ It runs after native analysis and before note/trajectory keys and loop planning.
 Reference MML is never an input. MDX macroization remains outside the task.
 Rejected or abstained correction retains the same structured renderer and
 baseline clock/timing projection. It never changes notation to legacy/registers.
-PCM-containing inputs keep their baseline shared OPM/PCM clock until PCM-aware
-correction is verified; enabling correction is not an input rejection reason.
+PCM-only and OPM+PCM inputs participate in the same candidate correction.
+PCM playback starts contribute attack anchors; playback start/end and all PCM
+controls constrain the shared clock. Encoded byte supply timing is not treated
+as a musical attack grid. Enabling correction is not an input rejection reason.
 PSG/SCC projected output checks original source boundaries and cumulative timing
 through the intermediate OPM lattice before accepting a nominated clock.
 
 ## Reuse and target boundary
 
-`py/opm_note_normalization.py` feeds native OPM rising Key edges into the shared
+`py/opm_note_normalization.py` feeds native OPM rising Key edges and PCM playback
+starts into the shared
 MGSDRV estimator in `py/note_normalization.py`. The current estimator uses
 clustered attacks, at least 16 anchors, candidate tempos 80..200, and 12/6-step
 grids. It requires at least 95% anchor coverage. Its correction tolerance is
@@ -41,6 +44,14 @@ remains sample zero. The fitted phase and grid are recorded but are not used to
 snap individual attacks. MGSDRV gate inference, `q` generation and short-state
 pruning are specific to that compatibility target and are not applied to OPM.
 
+The 12/6 values are score-grid subdivisions, not a rule that discards or snaps
+source intervals of six ticks or fewer. The 735-sample cap is a maximum timing
+correction (one nominal 60 Hz frame), not a minimum MDX interrupt period.
+Neither the attack IOI nor that cap alone selects the timer: intervening control
+and PCM boundaries also constrain it. Short intervals can prevent coarse-clock
+adoption, even for long notes. Sparse or irregular material still abstains;
+there is no new unconditional 60 Hz quantization policy.
+
 The candidate is accepted only if all Segment starts/ends, control writes,
 Key edges, song end and valid declared VGM loop boundaries stay within the
 correction bound measured against the actual MDX timer. Every positive interval
@@ -48,6 +59,11 @@ between these source boundaries must stay positive. Same-time control order,
 source event IDs and register values remain intact. An invalid declared loop,
 unreliable fit, unrepresentable timer, excessive correction or collapsed
 interval rejects the candidate for the whole song.
+For PCM, the candidate PCM projection and structured score are checked before
+writing binaries. A candidate-specific failure keeps the baseline clock for
+both OPM and PCM; source eligibility failures remain ordinary diagnosed errors.
+The selected multiplier drives FM tempo and PCM target commands together.
+Source PCM IR, encoded samples and their PDX payloads remain unchanged.
 
 Raw/state traces and native Segment fields retain observed values. Corrected
 target ticks and source identifiers remain available for inspection. Normalized
@@ -101,9 +117,12 @@ With `--dump-passes`:
 
 - `<stem>.mdx.normalization.csv` records source controls and end/loop boundaries,
   before/candidate ticks and sample times, errors and the acceptance status.
+  PCM playback/control boundaries participate in the same table; `source_chip`
+  distinguishes OPM controls, PCM controls and shared boundary evidence.
   Candidate columns remain candidate evidence if correction is rejected.
 - `<stem>.mdx.before.normalize.mml` records the conventional target when
   correction is applied; the JSON then includes before/after structure counts.
+  With PCM, this MML includes the baseline-clock P track and PDX reference.
 - Existing trace, Segment, control, structure and timing dumps remain available.
   Integrated Segment-to-target membership may change while native fields do not.
   `score_clock_inference` is explicitly the conventional, pre-normalization fit;

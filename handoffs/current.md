@@ -1,160 +1,220 @@
 Project: x68k_vgm2mml
+Branch: codex/pcm-stream-support
+Checkpoint: 2026-10-10
 
-Current checkpoint (2026-10-09): approved CLI cleanup implemented. The canonical
-normal command is python vgm2mml.py input.vgm --outdir OUTPUT. Actual VGM commands
-select native OPM/PCM or PSG/SCC-to-OPM, unused declarations do not change routing,
-and unsupported used chips/streams cannot silently produce partial success.
-Structured MDX normalization defaults ON; --no-normalize-lengths disables it.
-Declined correction keeps the same structured renderer and original clock, with
-adoption/reason/before/selected diagnostics. PCM retains its shared clock and
-records PCM-aware normalization as unverified; default ON alone never blocks it.
+LATEST USER CHECKPOINT (supersedes clock next-action statements below):
+All clock_control cases are inaudible in XM6 TypeG / MMDSP, counters advance,
+and MMDSP remains responsive during playback. The user ended this experiment;
+do not repair or regenerate authored clock patterns. Responsiveness is the
+only positive native result; the timer hypothesis remains unproven.
+Active work: fix public opm/from_fm routing failures without ignoring active
+chips, and apply output normalization across structured MDX source paths
+including shared OPM/PCM timing. Source times, Segments, PCM IR and sample
+bytes remain immutable; fallback retains structured baseline timing.
+No local_only conversions or commit/push authorized.
 
-Latest user scope: no public articulation option, no source IR or PCM stream
-decoder rewrite in CLI cleanup. Registers-held behavior is separated internally.
-Compatibility/advanced/diagnostics are separated in help and README. Retain
-MDX-to-VGM and semantic roundtrip verification. Native GUI and the separate PCM
-stopping investigation remain paused/unverified.
+LATEST CLOCK FAILURE CHECKPOINT (supersedes listening-ready statements below):
+User reports canonical CLOCK.mdx no-song-data/file-read-error; all four old
+CLK references load but are inaudible and have no animation. Record in public
+clock_listening/listening_results.json; unchanged failed bytes archived under
+outputs/listen/clock_failed_20261010/. mdxinfo Success and identical FMSTATE/
+CLK8192 voice bytes do not establish native validity. No timer/voice-format
+cause found. Do not present old clock package as a working baseline.
+New generator generate_fmstate_clock_controls.py uses exact proven public
+FMSTATE copy, FMONLY PDX-header-only probe and five equal-time repeated phrase
+clock cases with baseline voices/A/P. outputs/listen/clock_controls/ is the
+separate new package; native outcomes unverified. Next allowed action: user
+checks FMSTATE -> FMONLY -> FM4096 -> remaining clocks. No production timing,
+sourceIR, end or command-order change; no local_only conversion. Details:
+field_notes/2026-10-10_clock_baseline_failure.md. Do not use mdxtools mdx2pcm
+WAV duration as oracle: it saves only half each interleaved sample block.
 
-MXC title investigation is complete for the selected MXC v1.01 + run68 pair:
-64 CP932 bytes survive, 65 become empty despite the intact #title and unchanged
-native arguments. The adapter restores only empty titles above this threshold,
-preserves the complete data suffix, validates the result and saves native MDX
-plus audit metadata. No MMDSP display fix is claimed.
+NEW PUBLIC CLOCK/LISTENING CHECKPOINT:
+User's vgm-conv NEMESIS inputs still show frozen GUI after multi-dot filenames
+are manually corrected. Both GRA1_01 paths select256us; ARMBS1 selects8192us.
+The vgm-conv source has onlyinitialKeyOn and nativeoutput rawheldregister/rest
+commands; inspectclock andarticulation separately. No productiontimingfix.
+Authored tests/fixtures/public/opm/clock_listening/CLOCK.vgm is sparseFM,
+8notes/~8.4s, from16384us reference; canonicalprojection selects8192us.
+Four fixedclockrefs256/2048/8192/16384us preservephysicalscore expectations.
+outputs/listen/clock_listening_reference/ and clock_native/ are listening-ready,
+nativeoutcomes unverified. Use ordinaryNOTE comparisons before timerhypotheses.
+export_mdx CLI nowpublishes singleextension shortnames undertracks/<safe>/,
+preservesportable8char names, stagesidenticalsourcebytes, keepsdiagnostics
+separate andconsistentPDXreference. Source/name/hash mappinginmanifest/results.
+No binarypatching, no diagnosticdeletion; reportgenerationstatus separate from
+artifactstatus. Details inREADME and latestlisteningfollowupfieldnote.
+Validation:42export/report/listeningtests+13Rusttests pass. Realshortnamepublic
+PCMexport11/11; independent11/11source/name/hash/PDXreferenceaudits pass.
+CLOCKcanonicalMXCexport1/1 with8NOTEcommands/@t224. NativeGUI/endresults
+remainusercheck; no claim that timerhypothesis orARMBS1ending was fixed.
 
-FM export/roundtrip still default to MXC. Explicit --compiler mmlx remains
-available without fallback. PCM retains typed MDX+PDX generation whose FM portion
-uses mmlx, reported as typed_pcm_mmlx. Compilation, semantic validation and
-native display are separate results.
+LATEST FOLLOW-UP (supersedes earlier next-action lines): production listening
+results are recorded in field_notes/2026-10-10_mmdsp_listening_followup.md.
+BOSCON04/06/08 play/stop; other successful BOSCON files exceed native track
+buffer. Public tiny stream fixtures contain their expected 2-4 byte payloads,
+but reported PCM load failures remain unresolved. Long PDX names are a candidate
+to isolate, not a proven cause. ARMBS1 has no PCM, animates but leaves sound;
+NEMESIS plays/stops but has no animation and blocks user controls during play.
+Fast MDX clock/driver load is a hypothesis only. Existing finite_end_tail passes
+remain valid. Do not rerun local_only conversions automatically or change source
+IR, clock, end gates or MML command order from these observations alone.
+export_mdx.py writes per-input TXT statistics and keeps diagnostic artifacts.
+Rebuild helper for --inspect-commands. Next: public short-name/load probe and
+longer authored listening cases; inspect FM end boundary before a stop fix.
+No deletion/commit/push requested.
 
-Branch: codex/psg_data_quality. The accidental git switch main / git pull was
-audited: the pulled merge had the same tree as the previous state and working
-changes survived. No reset or rollback was performed. The workspace is shared
-with WSL; no copying is required. Current CLI/title changes are unstaged and
-uncommitted; the prior MXC-default checkpoint was committed by the user.
-Tool binaries, generated music and private evidence are ignored, not staged.
+CURRENT PRODUCTION CHECKPOINT (supersedes pending/paused statements below):
+User confirmed all six current16-track/E8 finite_end_tail rootMDX play and stop
+correctly. New hashes/listeningpass are recorded, oldstandard9failures retained.
+Production --compile-pcm now selects16/E8 with onlyP active, Q-W finiteends;
+typedcommand/title/tone/PDX preservation is checked. Python layout guard rejects
+oldhelpers. Rebuildscripts/mdx_fixture_generator beforeWSL use. NeutralPCMIR,
+samplebytes/sharedclock/sourceinterpretation are unchanged. Longerthan65535
+samples stayblocked asunverified scope, not assertedextendedformatloss.
+export_mdx.py --no-vgm generates MML/MDX/PDX withoutreplay; defaultreplay and
+roundtrip remain. Public inputfixtures movedto tests/fixtures/public/opm_oki6258.
+138public/authored tests and12Rusttests pass; actual11-inputpublicbatchsuccess,
+10pairs independentaudit16/E8/validbindings. mdxinfoSuccess/title/PDXresolved,
+butzero-toneoffset triggersitsTracks=-1limitation; nofalsemodeverificationclaim.
+See field_notes/2026-10-10_pcm_extended_production.md forcommands/evidence.
+Next: userlocal_only conversion/listening. Do notrunlocalchecks automatically,
+resumeorderingresearch, changePCMsourceIR orclaimruntime/roundtripcertification.
+No commit/push requested.
 
-Read first:
-- docs/project_knowledge.md
-- field_notes/2026-10-09_cli_cleanup.md (current implementation/validation)
-- field_notes/2026-10-09_mxc_title_boundary.md (title evidence and adaptation)
-- field_notes/2026-10-09_mdx_compiler_baseline.md (tools/path/dialect/checks/scope)
-- field_notes/2026-10-09_psg_export_data_audit.md (batch, size and Segment audit)
-- docs/psg_scc_opm.md
-- field_notes/2026-10-09_mmdsp_pcm_stop_observation.md (paused runtime problem)
+CURRENT LISTENING CHECKPOINT: per user request, extra ordering investigation is
+paused. finite_end_tail root now contains six16-track/E8 versions, preserving
+all original notes/control order/time/tones/MML/PDX. Failed9-track generation
+and its listening evidence are archived under original_standard9/. New bytes
+have native outcomes unverified; mdxinfo Success/16/PCM8=1 for all six. See
+validation_extended.json and expected_extended/. User will test animation,
+natural ending and sustained silence. No production conversion change.
 
-Implemented in the current checkpoint:
-- py/conversion_config.py inventories source usage and resolves format/routing
-  without changing chip decoders. Deprecated target aliases preserve their
-  source scope and model defaults.
-- Compact conversion and normalization JSON are written for ordinary conversion;
-  source/state/Segment and detailed target dumps remain first-class artifacts.
-- PSG/SCC correction checks cumulative error against original boundaries. PCM
-  correction declines with a reason, preserving the shared clock and outputs.
-- Failed preflight invalidates owned target MML/reports. Adjacent reference
-  MDX/PDX must survive; previous generated binaries may be deleted only when
-  assessment path/status/hash match. PCM refuses unowned binary overwrite and
-  reports an artifact conflict, independent of source eligibility.
-- Compiler title audit preserves canonical UTF-8 MML, exact prepared CP932/CRLF
-  input, unmodified native .mxc.mdx and .mxc.metadata.json.
+RayForce full-bank audit: RAY01C has3banks64/66/26 populated slots, uses0/1;
+RAYFOR has1bank28 populated slots. All360/446 interpreted PCM requests bind.
+Existing soundlog0.15 PdxBuilder repacks BOTH entire PDX byte-identically.
+The new data chain is nativeMXC9 output -> typed soundlog extended-mode
+projection, with fixedPDX; a separate mmlx default16 RATES also preserved
+requested events/used voice, retaining one unused extra voice. Neither new
+chain has yet passed user listening. Limited pre-note ordering probes passed;
+do not expand them now. Relevant23 tests passed. Details/reproduction:
+field_notes/2026-10-10_rayforce_extended_structure.md.
 
-Earlier implementation retained:
-- Large PSG projected CSV provenance fields are preserved, with the process-wide
-  field limit restored after reads/errors. No field truncation or source IR
-  rewrite. The earlier private82-file mmlx batch improved from8 to57 artifact
-  successes;24 explicit unsupported inputs and1 track-offset capacity failure.
-- scripts/compare_opm_vgm.py: explicit zero-based channel mapping, union of
-  positive-duration state/Segment intervals, separate Key command events,
-  nominal pitch and command/wait-size diagnostics. Raw/state/Segment/interval
-  CSV and hashes retained. This is not the strict instantaneous-Key comparator.
-- Fixed psg_scc_to_mdx.py's obsolete summary key for structured verification.
-- scripts/mdx_compiler.py: short isolated invocation, strict CP932/CRLF,
-  errors/missing output/parser rejection before publication. Exact prepared
-  input saved under _compiler_inputs/, canonical UTF-8 MML unchanged.
-  Preparation joins ties, splits long rests, and uses o8 at a known relative
-  octave8 ascent for a verified MXC v1.01 defect. No source/IR pitch clamping,
-  and unknown octave state is not inferred.
-- Export CSV records selected/effective compiler and compiler_input. Missing
-  tools and stage failures remain explicit; validated MDX survives replay
-  failure. The compiler column on conversion failure does not mean it ran.
-- OPM roundtrip CLI uses MXC for both initialization and converted MML, then
-  --from-mdx replay and the unchanged comparator. Native input and selected
-  compiler are recorded. Existing internal diagnostic callers keep mmlx.
-- README documents native dependencies, explicit mmlx and the PCM exception.
+Do not rerun historical tail generators/recording helpers on the updated root
+package: they may overwrite16-mode data or mislabel new bytes with old failures.
+generate_mdx_extended_tail_trials.py safely consumes archived9-mode originals.
 
-Current completed checks:
--150 focused tests passed, including reference binary preservation and PCM clock
- invariance. See outputs/cli_cleanup_2026-10-09/focused_tests.log.
--Actual default-MXC public OPM roundtrip9/9 and PSG export11/13; remaining2 are
- existing noise/hardware-EG conversion errors.
--Authored OPM/PSG correction adoption and positive-interval-collapse fallback
- inspected with persistent source/Segment/target dumps. Source bytes and Segment
- CSVs match ON/OFF; declined correction gives identical structured baseline MML.
--BOSCON01 remains blocked/unverified with original bank/stream diagnostics and
- runtime not_run. No new source stream decoding.
--Four authored native MXC title/parser cases passed; DSLY4_02 restores103 CP932
- bytes with identical native data suffix. GUI remains unverified.
--Public MGSDRV regression passed in a broad run interrupted later during the
- optional private OPLL catalog. Do not report the whole suite as passing.
--Architect final review cleared unused OPM declaration, stale target evidence and
- reference binary preservation fixes after focused regressions.
+LATEST LISTENING FOLLOW-UP: all six MDX files in finite_end_tail leave continuing
+noise: RATES, RATESF, RATESP, FS432, FS432F and FS432P.
+Trailing-rest extension is a failed remedy. RATES later emits scale-like sounds
+with rising octaves while the GUI remains stopped; whether this is FM is not
+established. Final explicit clarification: both RAY01C and RAYFOR0 in
+finite_end_references end normally. These two originals are now user-confirmed
+finite-ending references; earlier ambiguous replies are superseded. Recorded
+static and listening outcomes remain separate; package listening_results.json
+retains chronology.
 
-Earlier completed checks:
--79 focused Python tests passed:18 export,11 adapter,7 roundtrip-batch,
- 43 PSG/OPM/audit tests.
--Actual MXC public OPM9/9 compiled, parsed and replayed.
--Actual MXC public OPM9/9 semantic roundtrip passed, maximum source timing
- error0samples, existing comparison conditions unchanged.
--Actual MXC public PSG11/13 generated; the other2 fail during conversion for
- existing noise/hardware-EG limits, with no compilation failures remaining.
--Independent mdxdump decoding of the public upper-octave case confirms all434
- note numbers/durations match canonical MML, including highest note93.
--Actual private DSLY4_03 MXC listening artifacts generated.
--Architect completion review found no blocking implementation issue; its
- requested decoded octave-boundary check was completed.
--Roundtrip review also found a failed-rerun stale-evidence gap. Cleanup now
- precedes conversion/preflight, the regression passes, and review is clear.
--No native GUI, all-song strict roundtrip or PCM runtime certification claimed.
+Focused encoded comparison: RAY01C, RAYFOR0, HOLDEND, RATES and FS432 all end
+each track with F1 00 within its boundary; no bytes remain after that ending.
+First 96 PDX slot ranges are valid. Finite originals have 16 tracks and E8;
+trials/HOLDEND have 9 and no E8. The difference is not a proven cause: HOLDEND
+already stops with 9 tracks. Private results: outputs/reference_validation_
+2026-10-10/ending_structure/. Production remains paused. Do not add more rests
+blindly or attribute the noise to source IR or runtime from these facts alone.
 
-Ignored evidence:
-- outputs/cli_cleanup_2026-10-09/ (current checks and listening data)
-- outputs/mxc_title_2026-10-09/recheck/ (authored native title boundaries)
-- outputs/mxc_export_2026-10-09/public_opm_prepared/results.csv
-- outputs/mxc_roundtrip_2026-10-09/public_opm/results.csv
-- outputs/mxc_export_2026-10-09/public_psg_prepared/results.csv
-- outputs/mxc_export_2026-10-09/block_boundary_fixed/note_fidelity.json
-- outputs/mxc_export_2026-10-09/listen_dslayer4/tracks/DSLY4_03.vgm/
-- outputs/mdx_compiler_2026-10-09/mmdsp_pairs.zip (reference pairs and native
-  MXC/mmlx authored controls; GUI observation not_run)
-- outputs/psg_data_2026-10-09/ and outputs/listen/psg_data_2026-10-09/ (earlier
-  mmlx batch and comparison; do not label these MXC outputs)
-- Native tools: outputs/research/mxc_tools/extracted/mxc.x and
-  outputs/research/run68x/build/run68. Versions/hashes in compiler field note.
+LATEST UPDATE: user reports original FF4SIREN loops and F7 duringplay stops;
+RATES and all three private finite phrases leave the same noise after natural
+completion, while F7 during replay stops. RATES F7 after noise starts fails.
+RATES already ends with72ticks rest onA/P. Cause remainsunknown; buffer overrun
+is a hypothesis. New native-MXC diagnostic trials extend onlyA or onlyP by
+equal silent intervals, preserving originals/PDX/prefix: RATESF/P add4.194s;
+FS432F/P add5.210s. See outputs/listen/finite_end_tail/README.md. All static
+checks pass; native tail outcomes unverified. No production change.
 
-Historical findings retained for future requests, not current blockers:
-- GRA1_01 strict Key-Off comparison differs because a KF write occurs before
-  release in target and after release in replay at the same sample. Positive
-  durations/end/Key commands match. Do not weaken the comparator or source IR.
-- Source VGM song-loop emission is incomplete; finite phrase loops are separate.
-- XANADU14 exceeds track offsets;8 earlier independent VGM comparisons show
-  10-44x expansion, dominated by soundlog's per-MDX-tick waits. No packing fix.
-- CLI format/projection/policy separation is now implemented. Future Z_MUSIC
-  should consume source IR with its own target profile.
+Original reference audit:15decoded/alldeclaredPDXpairsfound,13loops/2finite.
+RAY01C.MDX/RAY01C.PDX is finite with PCM U/V/W lastnote/q8release4080tick,
+FM lastnote/release3864 with216ticktailrest; all16tracksend4080. RAYFOR0 is
+also nominalPCMlast3192vsFM3122, but finalU/Vvolume0 andotherheldPCMnotes
+prevent an acoustic-latest claim. Exactoriginalcopies are in
+outputs/listen/finite_end_references/. FullCSV/JSON+compactoverview under
+outputs/reference_validation_2026-10-10/original_end_timeline/.
+Diagnostic reader now hasopt-in16tracks/E8/F2encoded-only; source IR unchanged.
+17reference/audit tests+5selector/tailtests pass. See
+field_notes/2026-10-10_finite_end_tail_and_reference_audit.md.
+Next: user listening of tail variants and finite RAY01C original. Keep physical
+cessation separate from gate/sequence intentions and manualF7 separate from
+MDXholdF7. Historical generated-only native-unverified statements below refer
+to initialgeneration; newlistening_results.json contains actualfailedendings.
 
-PCM investigation is explicitly paused. User environment: XM6 TypeG3.32,
-MXDRV30.x+PCM8, MMDSP displays MXDRV, audio remains after ended/stopped for two
-short generated pairs. Cause, resident profile and actual IOCS/DMA stopping
-are unknown. Do not request further probes or change gate/EOF/reset until the
-user resumes this work. Production PCM code was not changed here. Keep
-strict/best-effort target-side loss assessment and unverified/not_run runtime.
+Current scope: the user is validating generated MML/PCM data against working
+references. Production conversion changes remain paused. Authorized validation
+tools/assets and private reference-derived phrases have been created. Do not
+repair unrelated replay tools or ask playback-environment questions as a
+prerequisite. Do not commit/push automatically.
 
-For resumed PCM work read docs/pcm_roundtrip_validation.md, docs/pcm_pdx.md,
-field_notes/2026-10-09_pcm_mxdrv_roundtrip_review.md and
-field_notes/2026-10-09_pcm_target_projection.md. Independent runtime R, direct
-MDX/PDX C0/C1, source stream expansion and A/B/C comparison are unimplemented.
-soundlog/native-port stubs/NanoDrive8 are not a standard PCM oracle. Known loss,
-unknown behavior and confirmed mismatch stay separate. Do not put target limits
-into PCM IR or infer hidden F7/q and decoder reset from VGM/logical stop.
+Latest user listening evidence (copied public reference files):
+- All four files animate correctly in MMDSP and are audible.
+- HOLDEND stops correctly.
+- RATES leaves continuing noise after the data ends: retained runtime fail.
+- GATEEND cessation was not separately reported.
+- Cause is unknown; no compiler/player/sample/rate attribution established.
+Public listening_results.json retains results separately from static checks.
 
-Do not commit or push automatically. The user authorized staging related files
-and requested an English commit comment. Private fixtures and tool binaries
-must remain ignored. Wait for the user's next work request after this checkpoint.
+Latest deliverables:
+- tests/scripts/generate_local_mdx_reference_phrases.py creates private FF4SIREN
+  FS432 (5.86 s/3 PCM requests), FS768 (10.42 s/30), FSONE (49.66 s/255).
+- local_only/derived_mdx/FF4SIREN/ contains MML, PCM expectation JSON, native MXC
+  MDX, exact regenerated original PDX, original/candidate JSON/CSV and provenance.
+- outputs/listen/reference_ff4siren/ is the listening copy. Playback needs the
+  three MDX files and FF4SIREN.PDX together. Disable automatic repeat.
+- Short cases retain prefix timing/control execution and select shared event
+  boundaries; finite repeats are expanded with source-line/iteration provenance.
+  FSONE preserves original finite repeats and removes only song-loop markers.
+- G's original r16 offsets it 12 ticks; D4 is detune. FSONE G ends3660, other
+  tracks3648. No forced stop/extra silence/default PCM initialization is added.
+- Whole-PDX bytes match the original; original slot1 and payload are preserved.
+  Root JSON sample-relative paths resolve in the copied listening package.
+
+Verification: three native builds, independent raw command/event/state/tone
+comparison, PDX whole-file equality and mdxinfo titles/9tracks/PDX resolution pass.
+Twelve reader/public tests plus three authored selector tests pass. Native
+private display/cessation is unverified pending user listening. VGM capture and
+vgm2mml Segment/PCM extraction comparison remain not_run. Source expectation is
+MDX-requested performance, not invented source PcmAnalysis; reset/consumption/
+physical stopping stay unknown. Effective LFO trajectories are not statically
+certified. Architect review recommendations were addressed.
+
+Timing correction: initial public seconds annotations used1024us per multiplier
+instead of1024cycles/4MHz=256us. Corrected @t240 gives4.096ms/tick; HOLDEND
+gate/end1.31072/1.572864s. Public MDX/PDX hashes are unchanged. RATES F4 naturally
+exhausts before gate; F0 needs early gating. GATEEND short asset also needs gating.
+
+Next allowed action: collect the user's private-phrase listening results, then
+choose an evidence-based source/capture, IR, target/MML, tool-usage or PDX-packer
+comparison. The primary objective remains vgm2mml Segment/PCM IR completeness.
+Do not use faulty soundlog PCM replay as an oracle or call audible/static output
+a completed roundtrip. Keep pass/lossy/unverified/fail distinct.
+
+Prior source-stream implementation remains present on this branch, separately
+from current validation-only changes: finite bank4 DAC supplies are source-derived
+evidence, and stream STOP/exhaustion never creates chip STOP/reset. Strict vs
+best-effort loss assessment is target-side. BOSCON06 cessation and PSG-generated
+display failures remain unresolved; current public reference display success
+does not establish their cause. Typed production PCM route still uses mmlx for
+FM, while the validated reference builds use native MXC. No integration change
+was authorized by this validation trial.
+
+Read:
+- field_notes/2026-10-10_ff4siren_private_phrases.md (latest results and scope)
+- field_notes/2026-10-10_reference_expectations_public_patterns.md
+- field_notes/2026-10-10_ff4siren_converter_validation.md
+- field_notes/2026-10-09_reference_compiler_validation.md (original native
+  FF4SIREN MML reproduces working reference MDX exactly; PDX initially copied)
+- field_notes/2026-10-09_pcm_stream_support.md
+- docs/project_knowledge.md, docs/pcm_pdx.md, docs/pcm_roundtrip_validation.md
+
+Native tools: outputs/research/mxc_tools/extracted/mxc.x,
+outputs/research/run68x/build/run68, external helper under
+scripts/mdx_fixture_generator/target/release/. Direct mdxtools source is under
+outputs/mdx-reference-tools/mdxtools. Private fixtures/tools stay ignored.
+Older handoff snapshot: outputs/reference_validation_2026-10-10/prior_handoff.md.
