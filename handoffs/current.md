@@ -2,6 +2,36 @@ Project: x68k_vgm2mml
 Branch: main
 Checkpoint: 2026-10-11
 
+LATEST MDX LOOP LINE FORMATTING:
+User requests a new physical line before each '[' and after ']'+repeat count.
+Shared mdx_format.wrap_track now formats structured and legacy native renderers,
+including their PCM additional tracks. Existing110-column word wrapping remains;
+individual commands are never split. Source IR, timing and repeat structure stay
+unchanged. Files were edited BEFORE verification, as the user explicitly requires.
+22 existing renderer tests pass; public nested_phrase_loops before/after MXC
+compilation yields byte-identical MDX. Evidence:outputs/mdx_loop_line_format_2026-10-11.
+No Git mutation; no NOTE integration or VGM song-loop implementation.
+
+LATEST POWERE COMPILER DIAGNOSIS:
+Additional WBIIIA02 investigation: same native SIGSEGV/false unclosed repeat
+on F, but mmlx explicitly rejects track6 start offset above0xfffe. F alone
+compiles to50327-byte MDX and C to14384 bytes; full target exceeds offset
+capacity. This is NOT fixed by switching compiler. Source/target4MHz,10240us
+clock,no PCM. User defers size-dependent issues. Existing generated MML only
+was compiled; no source reconversion or algorithm changes. See same field note.
+User asks to investigate compilation_failed before implementing song loops.
+Existing conversion succeeded (4MHz,7424us @t227,no PCM); native MXC/run68
+crashes with SIGSEGV. Unbuffered stdout reveals false unclosed-loop diagnostic.
+Balanced H alone and A-G together compile. Public no-loop raw-write MML
+reproduces the size-dependent failure:43560-byte MDX succeeds,~45000 bytes
+fails; larger whitespace-only input succeeds. Exact internal defect unlocated;
+do not label this a format limit or a source-loop/pitch error.
+Existing generated POWERE MML compiles with mmlx to54667 bytes and passes
+command inspection; native listening is untested. Artifact in ignored
+outputs/powere_compiler_check_2026-10-11. User workaround:export --compiler mmlx
+--no-vgm to a separate directory. No private VGM reconversion, compiler fallback,
+song-loop implementation or Git mutation. See POWERE field note.
+
 LATEST USER COMMIT CHECKPOINT / SONG LOOP NEXT:
 User confirms all15 GENPEI tracks play and animate in MMDSP. Residuals:
 GENPEI10 animation briefly stalls near intro then recovers; GENPEI07 abruptly
