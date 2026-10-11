@@ -14,6 +14,7 @@ from opm import NOTE_NAMES, key_counts
 from opm_mdx import mdx_tick, projected_samples
 from opm_loops import build_source_loops, OpmLoopProjection
 from mdx_compaction import compact
+from mdx_format import wrap_track
 from mdx_duration import timed
 
 KC_CODES = (0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14)
@@ -293,20 +294,11 @@ def build_structure(projection, source_segments, *, title='OPM Segment replay', 
         plans[track], reports[track] = plan, report
         # Identical wrapping makes the loop/no-loop size comparison meaningful.
         # Track prefixes resume the same stream across physical lines.
-        def wrapped(body):
-            lines, line = [], track
-            for word in body.split():
-                if len(line)+len(word)+1 > 110:
-                    lines.append(line); line = track
-                line += ' '+word
-            if line != track:
-                lines.append(line)
-            return lines
-        plain += wrapped(' '.join(commands))
-        uncompacted += wrapped(text)
+        plain += wrap_track(track, ' '.join(commands))
+        uncompacted += wrap_track(track, text)
         compacted, decisions = compact(text, track, durations=loops)
         compaction.extend(decisions)
-        structured += wrapped(compacted)
+        structured += wrap_track(track, compacted)
     return MdxStructure(units_by_track, tuple(voices), plans, reports,
                         '\n'.join(structured)+'\n', '\n'.join(plain)+'\n',
                         '\n'.join(uncompacted)+'\n', tuple(compaction))

@@ -14,6 +14,7 @@ from tempfile import TemporaryDirectory
 from opm_mdx import mdx_tick, projected_samples
 from opm_mdx_structure import note_spelling, voice_key
 from mdx_compaction import compact
+from mdx_format import wrap_track
 from source_loop_plan import SourceLoopPlan
 from mdx_duration import duration_spelling, timed
 
@@ -442,13 +443,6 @@ def render_music_tracks(unit_tracks, voices, *, title, sample_multiplier=1,
     for vid,(ops,alg,fb,mask) in enumerate(voices):
         header += [f'@{vid} = {{',*['  '+','.join(map(str,ops[i]))+',' for i in (0,2,1,3)],f'  {alg},{fb},{mask}','}']
     header += ['/* Track A */', f'A @t{256-sample_multiplier}']
-    def wrapped(track,body):
-        lines=[];line=track
-        for word in body.split():
-            if len(line)+len(word)+1>110: lines.append(line);line=track
-            line+=' '+word
-        if line!=track: lines.append(line)
-        return lines
     plans,reports,plain,uncompacted,structured={}, {},header[:],header[:],header[:]
     decisions=[]
     for track,units in unit_tracks.items():
@@ -460,7 +454,7 @@ def render_music_tracks(unit_tracks, voices, *, title, sample_multiplier=1,
         text,report=plan.render(commands) if loops else (' '.join(commands),[])
         result,changes=compact(text,track,durations=loops)
         plans[track]=plan;reports[track]=report;decisions.extend(changes)
-        plain+=wrapped(track,' '.join(u.unlooped_command for u in units))
-        uncompacted+=wrapped(track,text);structured+=wrapped(track,result)
+        plain+=wrap_track(track,' '.join(u.unlooped_command for u in units))
+        uncompacted+=wrap_track(track,text);structured+=wrap_track(track,result)
     return MusicalMdx(unit_tracks,tuple(voices),plans,reports,'\n'.join(structured)+'\n',
                       '\n'.join(plain)+'\n','\n'.join(uncompacted)+'\n',tuple(decisions),tuple(inner_reports))
