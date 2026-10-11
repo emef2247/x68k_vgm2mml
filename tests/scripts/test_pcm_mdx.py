@@ -32,6 +32,22 @@ def record_previous_binaries(out, stem):
 
 
 class PcmMdxTests(unittest.TestCase):
+    def test_pcm_uses_allocated_shared_clock_for_playback_controls_and_song_end(self):
+        from opm_output_normalization import bounded_ticks
+        body, _ = playback(bytes(range(32)))
+        source = analyze(vgm(body))
+        note = replace(source.playbacks[0], start_vgmticks=1000, end_vgmticks=1353)
+        source = replace(source, playbacks=(note,), source_end_vgmticks=1353)
+        times = sorted({0, 1000, 1353} | {c.vgmticks for c in source.controls})
+        ticks = bounded_ticks(times, [dict(start_vgmticks=1000, end_vgmticks=1353)], 65, 352)
+        self.assertIsNotNone(ticks)
+        plan = project(source, stem='shared', sample_multiplier=65, policy='best-effort',
+                       tick_mapper=ticks.__getitem__)
+        row = plan.rows[0]
+        self.assertEqual((row['start_mdx_tick'], row['end_mdx_tick']), (ticks[1000], ticks[1353]))
+        self.assertEqual(plan.units[-1].end_tick, ticks[1353])
+        self.assertEqual([r['mdx_tick'] for r in plan.clock_rows], [ticks[c.vgmticks] for c in source.controls])
+
     def test_configured_pcm_omission_uses_the_same_original_duration_cutoff(self):
         body, _ = playback(bytes(range(32)))
         source = analyze(vgm(body))

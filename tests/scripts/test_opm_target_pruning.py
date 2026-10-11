@@ -10,6 +10,8 @@ sys.path[:0] = [str(ROOT / 'py'), str(ROOT / 'scripts')]
 from opm_conversion import convert
 from opm_mdx import project_segments
 from opm_note_normalization import normalize_projection
+from opm_output_normalization import bounded_ticks
+from opm_mdx import projected_samples
 from opm_target_pruning import omit_short_gates
 from test_opm_mdx import analyze, write, wait
 from test_opm_reader import vgm
@@ -25,6 +27,61 @@ def setup():
 
 
 class ShortOutputGateTests(unittest.TestCase):
+    def test_terminal_unclosed_gates_get_bounded_positive_ticks_without_omission(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            end = 748139
+            prefix = wait(65535) * ((end-11)//65535) + wait((end-11)%65535)
+            source, analysis, before = self.fixture(root, prefix + write(8, 121)
+                + wait(2) + write(0x28, 0x40)  # nonchanging source event
+                + wait(2) + write(8, 123) + wait(4) + write(8, 125) + wait(3))
+            _, returned, after = convert(source, root / 'normalized', dump_passes=True)
+            report = json.loads((root / 'normalized/gates.mdx.normalization.json').read_text())
+            self.assertEqual(returned, analysis)
+            self.assertEqual(report['status'], 'applied')
+            self.assertEqual(report['boundary_allocation'], 'bounded_ordered')
+            self.assertEqual(report['short_note_policy']['omitted_gate_count'], 0)
+            self.assertGreater(after.sample_multiplier, 1)
+            self.assertLessEqual(report['max_abs_correction_samples'], 352)
+            self.assertEqual(after.mdx_tick(end), after.end_mdx_tick)
+            for event in analysis.events:
+                self.assertIn(event.vgmticks, dict(after.boundary_ticks))
+            event_ticks = [after.mdx_tick(e.vgmticks) for e in analysis.events]
+            self.assertEqual(event_ticks, sorted(event_ticks))
+            for w in after.writes:
+                self.assertEqual(after.mdx_tick(w.source_vgmticks), w.mdx_tick)
+                if w.register == 8:
+                    self.assertLess(w.mdx_tick, after.end_mdx_tick)
+            self.assertEqual([w.data for w in before.writes if w.register == 8],
+                             [w.data for w in after.writes if w.register == 8])
+            from opm_mdx_structure import compare_hybrid
+            replay, cursor = b'', 0
+            for control in after.writes:
+                gap = control.projected_vgmticks-cursor
+                replay += wait(65535)*(gap//65535) + wait(gap%65535) + write(control.register, control.data)
+                cursor = control.projected_vgmticks
+            replay += wait(after.end_projected_vgmticks-cursor)
+            replay_path = root / 'replay.vgm'; replay_path.write_bytes(vgm(replay))
+            returned = analyze(replay_path, root / 'replay')
+            check = compare_hybrid(after, analysis, returned, initialization=[],
+                                   source_timing_tolerance_samples=352)
+            self.assertTrue(check['passed'], check)
+
+    def test_ordered_allocation_feasibility_matches_exhaustive_integer_domains(self):
+        from itertools import product
+        for times in ([0, 1, 3], [0, 4, 8, 14], [0, 10, 11, 20]):
+            protected = [dict(start_vgmticks=a, end_vgmticks=b) for a, b in zip(times, times[1:])]
+            for bound in (0, 3, 8, 12):
+                feasible = any(all(abs(projected_samples(tick)-t) <= bound for t, tick in zip(times, ticks))
+                               and all(a < b for a, b in zip(ticks, ticks[1:]))
+                               for ticks in product([0], *[range(5) for _ in times[1:]]))
+                result = bounded_ticks(times, protected, 1, bound)
+                self.assertEqual(result is not None, feasible, (times, bound))
+                if result is not None:
+                    self.assertEqual(result[0], 0)
+                    self.assertTrue(all(abs(projected_samples(result[t])-t) <= bound for t in times))
+                    self.assertTrue(all(result[a] < result[b] for a, b in zip(times, times[1:])))
+
     def test_configurable_thresholds_use_original_samples_and_preserve_off_mode(self):
         for milliseconds, threshold in ((4, 176), (8, 352), (16, 705)):
             with self.subTest(milliseconds=milliseconds), tempfile.TemporaryDirectory() as temp:

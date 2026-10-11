@@ -12,6 +12,40 @@ SHORT_NOTE_SAMPLES = 352  # floor(44100 * 0.008); 353 samples exceeds 8 ms.
 FRAME_MULTIPLIER = 65  # 16.640 ms; a preferred fallback, not a minimum period.
 
 
+def bounded_ticks(times, protected, multiplier, bound):
+    """Choose ordered ticks in exact integer domains, preserving positive gates.
+
+    Edges form a DAG in source-time order: adjacent boundaries may coalesce,
+    protected start/end pairs must differ by at least one tick. Tighten latest
+    feasible ticks backwards, then select nearest feasible ticks forwards.
+    """
+    numerator, denominator = 7056 * multiplier, 625
+    ceil_div = lambda a: -(-a // numerator)
+    lower = [max(0, ceil_div((t-bound)*denominator)) for t in times]
+    upper = [ceil_div((t+bound+1)*denominator)-1 for t in times]
+    lower[0] = upper[0] = 0
+    index = {t: i for i, t in enumerate(times)}
+    outgoing = [[(i+1, 0)] if i+1 < len(times) else [] for i in range(len(times))]
+    incoming = [[] for _ in times]
+    for interval in protected:
+        a, b = interval['start_vgmticks'], interval['end_vgmticks']
+        if b > a:
+            outgoing[index[a]].append((index[b], 1))
+    for i in range(len(times)-1, -1, -1):
+        for j, delta in outgoing[i]:
+            upper[i] = min(upper[i], upper[j]-delta)
+            incoming[j].append((i, delta))
+        if lower[i] > upper[i]:
+            return None
+    chosen = []
+    for i, t in enumerate(times):
+        earliest = max([lower[i]] + [chosen[j]+delta for j, delta in incoming[i]])
+        if earliest > upper[i]:
+            return None
+        chosen.append(min(upper[i], max(earliest, mdx_tick(t, multiplier))))
+    return dict(zip(times, chosen))
+
+
 def normalize_output(segments, original, *, source_events=None, pcm_analysis=None,
                      loop_metadata=None, source_event_times=None, normalization_ms=8):
     bound = normalization_samples(normalization_ms)
@@ -30,7 +64,7 @@ def normalize_output(segments, original, *, source_events=None, pcm_analysis=Non
             allowed = {i for g in pruning['omitted_gates'] if g not in crossing
                        for i in (g['source_on_event_id'], g['source_off_event_id'])}
             pruned = replace(original, writes=tuple(w for w in original.writes
-                                                   if w.source_event_id not in allowed))
+                                                   if w.register != 8 or w.source_event_id not in allowed))
             omitted = [g for g in pruning['omitted_gates'] if g not in crossing]
             pruning.update(omitted_gates=omitted, omitted_gate_count=len(omitted),
                            omitted_key_write_count=len(allowed),
@@ -43,7 +77,7 @@ def normalize_output(segments, original, *, source_events=None, pcm_analysis=Non
     protected += [r for r in rest_intervals if r['duration_samples'] > bound]
     # A partial slot change/retrigger is an operation, not a short complete note.
     by_ch = {}
-    surviving_ids = {w.source_event_id for w in pruned.writes}
+    surviving_ids = {w.source_event_id for w in pruned.writes if w.register == 8}
     for e in events:
         if e.register == 8 and e.source_event_id in surviving_ids:
             by_ch.setdefault(e.ch, []).append(e)
@@ -95,6 +129,9 @@ def normalize_output(segments, original, *, source_events=None, pcm_analysis=Non
     fitted = infer_timing(channels)
     times = {0, original.source_end_vgmticks}
     times.update(w.source_vgmticks for w in pruned.writes)
+    # Validation also observes nonchanging source events. Give them the same
+    # ordered map, rather than reverting to nearest rounding between moved nodes.
+    times.update(e.vgmticks for e in events)
     if pcm_analysis is not None:
         times.update(c.vgmticks for c in pcm_analysis.controls)
         times.update(t for p in pcm_analysis.playbacks for t in (p.start_vgmticks, p.end_vgmticks))
@@ -121,15 +158,24 @@ def normalize_output(segments, original, *, source_events=None, pcm_analysis=Non
     selected = None
     for multiplier in (() if invalid_loop else multipliers):
         ticks = {t: mdx_tick(t, multiplier) for t in times}
+        nearest = ticks.copy()
+        collapsed = [r for r in protected if r['end_vgmticks'] > r['start_vgmticks']
+                     and ticks[r['end_vgmticks']] <= ticks[r['start_vgmticks']]]
+        if collapsed:
+            allocated = bounded_ticks(times, protected, multiplier, bound)
+            if allocated is not None:
+                ticks = allocated
         errors = {t: projected_samples(ticks[t], multiplier) - t for t in times}
         worst = max(map(abs, errors.values()), default=0)
         collapsed = [r for r in protected if r['end_vgmticks'] > r['start_vgmticks']
                      and ticks[r['end_vgmticks']] <= ticks[r['start_vgmticks']]]
-        if worst > bound or collapsed:
+        ordered = ticks[0] == 0 and all(ticks[a] <= ticks[b] for a, b in zip(times, times[1:]))
+        if worst > bound or collapsed or not ordered:
             rejected.append(dict(multiplier=multiplier, max_abs_error_samples=worst,
                                  collapsed_protected_intervals=len(collapsed), examples=collapsed[:3]))
             continue
         selected = replace(pruned, sample_multiplier=multiplier,
+            boundary_ticks=tuple(ticks.items()),
             writes=tuple(replace(w, mdx_tick=ticks[w.source_vgmticks],
                                  projected_vgmticks=projected_samples(ticks[w.source_vgmticks], multiplier))
                          for w in pruned.writes),
@@ -139,6 +185,8 @@ def normalize_output(segments, original, *, source_events=None, pcm_analysis=Non
                       clock_selection=('musical_fit' if fitted and multiplier == report.get('nominated_multiplier')
                                        else 'bounded_target_quantization'),
                       max_abs_correction_samples=worst,
+                      boundary_allocation='bounded_ordered' if ticks != nearest else 'nearest',
+                      adjusted_nearest_boundaries=sum(ticks[t] != nearest[t] for t in times),
                       collapsed_positive_intervals=sum(ticks[a] == ticks[b] for a, b in zip(times, times[1:])),
                       collapsed_protected_intervals=0, candidate=selected.timing_report(),
                       coalesced_rest_intervals=[r for r in rest_intervals
@@ -156,11 +204,12 @@ def normalize_output(segments, original, *, source_events=None, pcm_analysis=Non
                       short_note_omission_adopted=False, omitted_pcm_playback_ids=[])
         return original, report, []
     report['short_note_omission_adopted'] = True
-    after_by_id = {w.source_event_id: w for w in selected.writes}
+    after_by_id = {(w.source_event_id, w.target_sequence): w for w in selected.writes}
     evidence = []
     for w in original.writes:
-        after = after_by_id.get(w.source_event_id)
+        after = after_by_id.get((w.source_event_id, w.target_sequence))
         evidence.append(dict(source_chip='opm', source_event_id=w.source_event_id,
+            target_sequence=w.target_sequence,
             source_segment_ids=list(w.source_segment_ids), source_samples=w.source_vgmticks,
             register=w.register, data=w.data, before_tick=w.mdx_tick,
             before_projected_samples=w.projected_vgmticks,

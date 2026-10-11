@@ -1020,3 +1020,29 @@ at 255. It is an output policy, not a chip specification or a
 guarantee of minimum interrupt period. Unsupported PCM remains unsupported
 even when its playback is short. Native MMDSP behavior requires listening.
 
+### Native OPM clock correction at the target boundary (2026-10-11)
+
+One positive-clock YM2151 instance may target 4MHz MDX. Preserve native
+State/Segment clock and pitch bytes. Project nominal KC/KF base pitch by the
+logarithmic source/target clock ratio, rounding to 1/64 semitone. The common
+projection drives structured, legacy, registers and PCM-associated FM output.
+Added target KC/KF writes retain source identities and intra-event sequence;
+target-state views and roundtrip expectations replay those same writes.
+Keep pitch correction independent of optional time normalization. Unwritten
+pitch components may use an explicitly reported target-only reset-zero
+assumption for alternate clocks. Default native/FM pitch policy clamps out-of-range
+KC/KF to the nearest endpoint with source-linked loss counts and actual cents
+error; `error` policy defers initialization only before first Key-On and rejects
+played/released out-of-range updates. Do not assume Key-Off is silence. This is
+the KC/KF-only range, not a verdict on all hardware voice configurations.
+DT1, EG/key scaling, LFO, noise and chip timers remain unretimed. Nominal pitch
+rounding is not acoustic equivalence. See `docs/opm_clock_projection.md`.
+
+When nearest-tick rounding collapses a protected positive interval, target-only
+normalization may allocate ordered ticks within the same absolute movement
+budget. Exact integer domains, origin=0, adjacent order and protected start/end
+separation form a DAG. Reject infeasible allocations; independently check final
+errors and interval lengths. Unclosed terminal gates are survivors, not complete
+short notes eligible for omission. Store allocated boundary ticks in the shared
+projection so FM, PCM, validators and pass dumps consume the same timestamps.
+

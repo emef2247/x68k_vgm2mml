@@ -137,7 +137,7 @@ def build_parser():
     advanced.add_argument('--scc-gain', type=float, default=None, help='SCC-to-OPM gain (default: 0.125)')
     fidelity = parser.add_argument_group('Target fidelity policies')
     fidelity.add_argument('--opm-pitch-policy', choices=['clamp', 'error'], default=None,
-                        help='OPM range policy: default fm=clamp, additive=error')
+                        help='OPM pitch range policy: default native/FM=clamp, additive=error')
     fidelity.add_argument('--pcm-policy', choices=['strict', 'best-effort'],
                         help='Native PCM target policy: strict (default) blocks known loss; best-effort reports defined loss')
     diagnostic = parser.add_argument_group('Diagnostic and development options')
@@ -284,7 +284,7 @@ def main():
             raise ValueError('--target opm-additive requires the additive PSG model')
         if route == 'psg-scc-to-opm' and (args.notation == 'legacy' or args.track_layout != 'channels'):
             raise ValueError('PSG/SCC OPM projection supports structured/registers notation and channel tracks')
-        if route == 'native-opm-pcm' and projection_options:
+        if route == 'native-opm-pcm' and any(v is not None for v in (args.psg_model, args.psg_gain, args.scc_gain)):
             raise ValueError('PSG/SCC projection options do not apply to native MDX')
         report['status'] = 'resolved'
         record_report()
@@ -329,12 +329,14 @@ def main():
                                 loops=not args.no_loops, title=args.title,
                                 gd3_language=args.gd3_language, normalize_lengths=args.normalize_lengths,
                                 pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'strict',
+                                pitch_policy=args.opm_pitch_policy or 'clamp',
                                 normalization_ms=args.normalization_ms)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()
             parser.error(str(error))
-        report.update(status='generated', pcm_policy=args.pcm_policy or 'strict')
+        report.update(status='generated', pcm_policy=args.pcm_policy or 'strict',
+                      pitch_policy=args.opm_pitch_policy or 'clamp')
         record_report()
         print(f'MDX MML: {mml}')
         pcm_report = os.path.join(song_dir, base_name + '.pcm.timing.json')

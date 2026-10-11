@@ -163,7 +163,7 @@ class NativeLengthCorrectionTests(unittest.TestCase):
                 text = mml.read_text()
                 for track in 'ABCDEFGH':
                     self.assertEqual(text.count(f'/* Track {track} */'), 1)
-                    self.assertIn(f'/* Track {track} */\n{track} ', text)
+                    self.assertRegex(text, rf'/\* Track {track} \*/\n(?:;[^\n]*\n)*{track} ')
 
     def test_cli_accepts_opt_in_correction_and_rejects_other_notation(self):
         fixture = ROOT / 'tests/fixtures/public/opm/mdx_decompiler/tie_controls/tie_controls.vgm'

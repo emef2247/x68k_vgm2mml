@@ -25,13 +25,15 @@ def _record_pcm_assessment(assessment, outdir, stem, *, requires_pdx, retained=(
     assessment.dump(outdir, stem)
 
 
-def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None, normalization_source_times=None, normalization_ms=8):
+def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None, normalization_source_times=None, normalization_ms=8, pitch_policy='clamp'):
     source, outdir = Path(source), Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     requested_normalization = normalize_lengths
     from conversion_config import normalization_samples
     configured_threshold = normalization_samples(normalization_ms)
     normalize_lengths = normalization_enabled(normalize_lengths, notation=notation)
+    if pitch_policy not in ('clamp', 'error'):
+        raise ValueError('OPM pitch policy must be clamp or error')
     if pcm_policy not in ('strict', 'best-effort'):
         raise ValueError('PCM policy must be strict or best-effort')
     owned_binary = generated_binary_artifacts(outdir, source.stem)
@@ -40,7 +42,8 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                             and path not in owned_binary)
     artifacts = list(owned_binary)
     for suffix in ('.mdx.mml', '.pcm.timing.json', '.pcm.assessment.json', '.pcm.assessment.csv',
-                   '.mdx.normalization.json', '.mdx.normalization.csv', '.mdx.before.normalize.mml'):
+                   '.mdx.normalization.json', '.mdx.normalization.csv', '.mdx.before.normalize.mml',
+                   '.mdx.pitch.csv'):
         artifacts.append(outdir / (source.stem + suffix))
     for artifact in artifacts:
         if artifact.resolve() == source.resolve():
@@ -90,15 +93,17 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
     multiplier = clock['chosen']['multiplier'] if clock else 1
     if analysis.segments:
         projection = project_segments(analysis.segments, end_vgmticks=analysis.source_end_vgmticks,
-                                      sample_multiplier=multiplier)
+                                      sample_multiplier=multiplier, pitch_policy=pitch_policy)
     else:
-        if metadata['write_count'] and (metadata['clock_hz'] != 4000000 or
+        if metadata['write_count'] and (metadata['clock_hz'] <= 0 or
                                     metadata['chip_type'] != 'YM2151' or metadata['dual_chip']):
-            raise ValueError('Initial MDX target requires one 4 MHz YM2151 instance')
+            raise ValueError('MDX target requires one YM2151 instance with a positive source clock')
         end = mdx_tick(analysis.source_end_vgmticks, multiplier)
         projection = MdxProjection((), analysis.source_end_vgmticks, end,
                                   projected_samples(end, multiplier),
-                                  metadata['clock_hz'] if metadata['write_count'] else 4000000, multiplier)
+                                  4000000, multiplier,
+                                  metadata['clock_hz'] if metadata['write_count'] else 4000000,
+                                  pitch_policy=pitch_policy)
     before = projection
     normalization = dict(status='unchanged', reason='target-clock correction disabled',
                          source_segments_unchanged=True, before=before.timing_report())
@@ -128,6 +133,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             def preflight_pcm(selected, *, omitted=()):
                 plan = project(pcm_analysis, stem=source.stem,
                                sample_multiplier=selected.sample_multiplier, policy=pcm_policy,
+                               tick_mapper=selected.mdx_tick,
                                omit_playback_ids=omitted, normalization_ms=normalization_ms)
                 build_music(selected, analysis.segments, title=source.stem, loops=loops,
                             additional_tracks={'P': plan.units} if plan.bindings else {})
@@ -172,6 +178,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         from pcm_assessment import ProjectionError
         try:
             candidate = project(pcm_analysis, stem=source.stem, sample_multiplier=multiplier,
+                                tick_mapper=projection.mdx_tick,
                                 policy=pcm_policy,
                                 omit_playback_ids=normalization.get('omitted_pcm_playback_ids', ()),
                                 normalization_ms=normalization_ms)
@@ -264,7 +271,8 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                            segments_csv=outdir / (source.stem + '.opm.segments.csv'))
             report.update(structure.summary())
         report['source_state_writes'] = len({e.source_event_id for e in analysis.events})
-        report['source_nonchanging_writes_not_in_segments'] = report['source_state_writes'] - len(projection.writes)
+        report['source_nonchanging_writes_not_in_segments'] = report['source_state_writes'] - len({
+            s.source_event_id for s in analysis.segments if s.source_event_id is not None})
         (outdir / (source.stem + '.mdx.timing.json')).write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
     if pcm_plan is not None:
         from pcm_mdx import write_mdx

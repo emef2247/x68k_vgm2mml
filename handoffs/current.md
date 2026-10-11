@@ -2,6 +2,62 @@ Project: x68k_vgm2mml
 Branch: main
 Checkpoint: 2026-10-11
 
+LATEST USER COMMIT CHECKPOINT / SONG LOOP NEXT:
+User confirms all15 GENPEI tracks play and animate in MMDSP. Residuals:
+GENPEI10 animation briefly stalls near intro then recovers; GENPEI07 abruptly
+ends mid-song and keeps sounding. Generated clocks:07=15872us,10=7424us,
+15=11520us (@t211);15's former256us freeze no longer reported.
+GENPEI07 source has valid loop entry937613/end2271552samples and all8 channels
+still keyed at stream end. Current code observes loops but does not emit MML
+song-loop markers. User chose DEFAULT ON for the future declared-song-loop
+transfer. This feature is NOT implemented in the current commit candidate.
+Next: review major loop plan, preserve command-position/same-sample ordering,
+held gates/state carry/redundant first-pass writes and FM/PCM shared boundaries;
+use minimal public multi-iteration tests. Song-loop opt-out must be distinct
+from --no-loops finite-repeat compression. Do not fake source EOF Key-Off.
+User asks to stop at this checkpoint to commit themselves. File edits only;
+no Git mutations. Branch suggestion: codex/opm-clock-projection.
+Commit suggestion: Support alternate OPM clocks and bounded MDX timing.
+See field_notes/2026-10-11_opm_clock_projection.md for complete evidence.
+
+LATEST GENPEI FOLLOW-UP / TARGET POLICY:
+User now reports15/15 GENPEI exports succeed after the fixes, using default
+clamp/8ms and --no-vgm --pcm-policy best-effort. This is file-generation evidence;
+latest native playback/display and GENPEI15 period are not yet reported.
+Earlier user results: GENPEI02/04/14 play and animate; GENPEI15 froze at256us/tick.
+Existing diagnostics:11 failures are KC/KF-only range underflow at3,579,580Hz;
+unretimed EG/LFO/noise are not the rejection cause. User explicitly accepts
+nearest pitch at range endpoints. Native pitch policy now defaults to clamp
+with source-linked loss counts/cents error; --opm-pitch-policy error preserves
+strict rejection. Retuning already changes note/octave, not only KF.
+Normalization now tries bounded ordered tick allocation when nearest rounding
+collapses protected positive intervals, including terminal unclosed gates.
+Source State/Segment/PCM IR remains unchanged. FM/PCM share the allocated map.
+40 focused public/synthetic cases pass in the final run;2 native MXC public exports
+succeed. Terminal3/7/11sample public example uses12544us @t207, maxmove327<=352,
+no gate omission. Agent did not regenerate private GENPEI; user completed that
+batch. Outputs: outputs/opm_clock_followup_2026-10-11 (public) and user results
+outputs/listen/opm/vgmrips.net/GENPEI/results.csv.
+Native listening result and next allowed action are superseded by the checkpoint
+above. Distinguish generated clock selection from measured interrupt load.
+File edits only; no stage/commit/push/branch action. Preserve user's README.x68k.md.
+
+INITIAL ALTERNATE OPM CLOCK TARGET PROJECTION (policy superseded above):
+Added nominal KC/KF retuning from a single YM2151 source clock to 4MHz at
+Segment->MDX projection. All notation routes and PCM FM output share target
+controls/state views; source State/Segment is immutable. Added inspectable
+pitch CSV, source/control provenance and TXT summary. Unknown KC/KF uses
+reported target-only reset-zero assumptions; pre-first-Key-On out-of-range
+setup may defer, but played/released out-of-range pitch rejects, never clamps.
+28 focused public/synthetic tests pass. Native MXC compile/replay for the
+3,579,580Hz synthetic case passes structured/legacy/registers comparison.
+Public PCM rates at 4MHz and 3,579,580Hz produced identical 896-byte PDX.
+Public from_fm/3ch_test default export succeeds, including the readable report.
+GENPEI local_only was not converted; user can rerun their original export
+command. DT1/EG/LFO/noise are not retimed; MMDSP listening remains user's step.
+File edits only; no stage/commit/push/branch action. See clock projection doc
+and field_notes/2026-10-11_opm_clock_projection.md for evidence and limits.
+
 LATEST USER WORKFLOW / RESTORE CHECKPOINT:
 User merged the release-preparation PR, fast-forwarded main to 0547259 and
 applied the attribution stash successfully. The four attribution files are

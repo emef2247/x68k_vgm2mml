@@ -73,7 +73,7 @@ def omit_short_gates(segments, projection, max_samples=352):
     removed = {identity for gate in omitted
                for identity in (gate['source_on_event_id'], gate['source_off_event_id'])}
     after = replace(projection, writes=tuple(w for w in projection.writes
-                                            if w.source_event_id not in removed))
+                                            if w.register != 8 or w.source_event_id not in removed))
     survivors = analyze_gates(segments, after)
     report = dict(status='applied' if omitted else 'unchanged',
         policy='omit_complete_short_key_gates', known_loss=bool(omitted),

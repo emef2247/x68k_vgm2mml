@@ -205,6 +205,24 @@ def write_export_report(source, folder, stem, row):
     lines.extend(['', 'Compiled target', '', census,
                   'OPM pitch reproduction: unmeasured (no independent source/target pitch comparison)'])
     if normalization:
+        pitch = normalization.get('selected', {}).get('pitch_projection', {})
+        if pitch:
+            lines.extend(['', 'OPM clock and pitch projection', '',
+                          f'Source OPM clock: {pitch["source_clock_hz"]} Hz; '
+                          f'target OPM clock: {pitch["target_clock_hz"]} Hz; applied={pitch["applied"]}',
+                          f'Pitch method: {pitch["method"]}; '
+                          f'maximum nominal rounding error {pitch["max_abs_nominal_error_cents"]:.6f} cents',
+                          f'Target reset-zero assumptions: KC events {pitch["assumed_reset_kc_events"]}; '
+                          f'KF events {pitch["assumed_reset_kf_events"]}; '
+                          f'deferred pre-Key-On setup events {pitch["deferred_setup_events"]}',
+                          f'Pitch scope: {pitch["scope"]}'])
+            lines.append(f'Pitch range policy: {pitch.get("policy", "error")}; '
+                         f'clamped events {pitch.get("clamped_events", 0)}; '
+                         f'maximum clamped pitch error {pitch.get("max_abs_clamped_error_cents", 0):.6f} cents; '
+                         f'known pitch loss={pitch.get("known_pitch_loss", False)}')
+            for example in pitch.get('clamped_event_examples', []):
+                lines.append(f'Clamped source event {example["source_event_id"]}, ch{example["ch"]}; '
+                             f'pitch error {example["error_cents"]:.6f} cents')
         lines.extend(['', 'Output normalization', ''])
         lines.append('Note normalization: ' + str(normalization.get('status', 'see normalization JSON')) +
                      '; ' + str(normalization.get('reason', ''))[:180])
@@ -213,6 +231,10 @@ def write_export_report(source, folder, stem, row):
                      'whole-gate omission cutoff before normalization and maximum target boundary movement; '
                      f'enabled={normalization.get("enabled", "unmeasured")}')
         selected = normalization.get('selected', {})
+        if normalization.get('boundary_allocation'):
+            lines.append(f'Boundary allocation: {normalization["boundary_allocation"]}; '
+                         f'adjusted nearest boundaries {normalization.get("adjusted_nearest_boundaries", 0)}; '
+                         'positive protected intervals retained within the configured movement bound')
         pruning = normalization.get('short_note_policy', {})
         if pruning:
             adopted = normalization.get('short_note_omission_adopted', False)

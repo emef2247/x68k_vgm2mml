@@ -28,6 +28,16 @@ VGMの実際のコマンドから使用音源を判定し、OPM／PCM入力ま�
 
 OPMのみのMML生成にRustコンパイラは不要です。PCMを含む通常変換では外部helperのビルドが必要です。
 
+### X68000と異なるOPMクロックの入力
+
+単一のYM2151であれば、3,579,580Hzなど4MHz以外の入力も変換できます。入力クロックはVGMヘッダーから読み、**Segment → Target (MML)** でKC/KFを4MHz向けに補正します。`structured`／`legacy`／`registers`、PCM併用にも共通で適用し、追加オプションは不要です。元のState・Segmentは変更しません。
+
+補正は公称の基本音程を1/64半音単位へ丸める処理です。音色のDT1、エンベロープ、LFO、ノイズの速度までは補正しません。これらの速度を補正しないこと自体では変換を拒否しません。未書き込みKC/KFの初期値は出力側で0と仮定して記録します。
+
+KC/KFだけでは指定できない範囲の音程は、既定の`--opm-pitch-policy clamp`で最も近い端の音程を選びます。Segmentへの独自の許容枠ではなく、KC/KFの指定範囲による制限です。音色の倍率変更などを含めたHW全体での再現不可能を意味しません。音程差と件数をTXT／CSVに記録します。範囲外を拒否したい場合は`--opm-pitch-policy error`を指定してください。
+
+TXTの`OPM clock and pitch projection`で入力／出力クロック、丸め誤差、初期値の仮定を確認できます。`--dump-passes`では`<stem>.mdx.pitch.csv`に元のKC/KFと補正値、`<stem>.mdx.controls.csv`に元の命令と出力命令を記録します。詳細は[OPMクロック補正](docs/opm_clock_projection.md)を参照してください。
+
 ## 生成されるMMLの確からしさ
 
 VGMには音符そのものではなく、音源への書き込みとその時刻が記録されています。したがって、VGMからMMLを作る際には、発音・停止・音程・音量・音色の変化を解釈し、MMLで表せる時間単位に変換する必要があります。
@@ -164,6 +174,7 @@ MDX側の主なオプションは次のとおりです。
 | `Short-note omission` | `adopted=True`は省略処理を採用したことを示します。実際の省略数は`FM gates`／`PCM playbacks`、省略したFM発音時間は`FM duration`です。数が0なら省略された発音はありません。曲の経過時間と元IRは保持します。 |
 | `Coalesced positive control intervals` | 近接する制御境界を同じ出力時刻にまとめた区間数。音符を削除した数ではありません。`maximum output movement`は実際の最大時刻移動量です。 |
 | `Coalesced short rests` | 出力で正の長さを失った短い休符の数と元の合計時間。Key-Off／Onの命令順序は保持します。 |
+| `Boundary allocation` | `bounded_ordered`なら、最寄りtickへの丸めで発音が消える場合に、設定した最大移動量以内で境界を調整したことを示します。未終了の発音も削除せず、正の長さを残します。FMとPCMは同じ境界・クロックを使います。 |
 | `Selected MDX clock` | 採用した1tickの時間とテンポ値。MMLの`@t`がMDXのTimer B値を指定します。4MHz想定では周期は`256 × (256 − tempo byte)`µs。ドライバの実測負荷ではありません。 |
 | `Rejected MDX clock candidates` | より粗い候補などを採用できなかった理由。最大時刻誤差や、残す発音・休符区間の消失が制約になります。候補の却下自体は変換失敗ではありません。 |
 

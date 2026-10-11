@@ -252,6 +252,8 @@ class MusicalMdx:
 
 def build_music(projection, segments, *, title='OPM music', loops=True,
                 additional_tracks=None, additional_headers=()):
+    from opm_pitch_projection import target_segments
+    segments = target_segments(projection, segments)
     by_event = {}
     for s in segments:
         if s.source_event_id is not None:
