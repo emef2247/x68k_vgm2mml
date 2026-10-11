@@ -129,7 +129,7 @@ def boundaries(analysis):
 
 
 def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playback_ids=(), normalization_ms=8,
-            tick_mapper=None):
+            tick_mapper=None, song_loop_start=None):
     """Bind unchanged samples; omit nominated notes within the source-time policy."""
     from conversion_config import normalization_samples
     omission_bound = normalization_samples(normalization_ms)
@@ -176,7 +176,7 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
             assessment.block('Sample length exceeds verified 65535-byte projection scope; no defined fallback')
     if assessment.block_reasons:
         raise ProjectionError('; '.join(assessment.block_reasons), assessment)
-    if analysis.source_loop_vgmticks is not None:
+    if analysis.source_loop_vgmticks is not None and song_loop_start is None:
         assessment.add('loop', 'lossy', 'song_loop_not_emitted',
                        'MDX projection currently emits one finite source pass; the VGM song loop is lost',
                        cause='target_constraint', start_vgmticks=analysis.source_loop_vgmticks,
@@ -202,6 +202,10 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
     omit_ids = set(omit_playback_ids)
     cursor = source_cursor = 0
     previous_source_end = 0
+    loop_tick = target_tick(song_loop_start) if song_loop_start is not None else None
+    loop_emitted = False
+    if loop_tick is not None and not 0 <= loop_tick < target_tick(analysis.source_end_vgmticks):
+        reject('PCM song loop requires a positive shared loop period', code='invalid_song_loop', status='fail')
 
     def emit(kind, value='', ticks='', start_tick=0, playback_id=None, source_event_id=None):
         row = dict(kind=kind, value=value, ticks=ticks, start_tick=start_tick,
@@ -222,6 +226,8 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
             elif kind == 'hold':
                 # MDX F7 precedes its note; readable MML spells the hold after it.
                 held = True
+            elif kind == 'song_loop':
+                tokens.append('L')
             elif kind != 'end':
                 tokens.append({'bank': '@', 'frequency': 'F', 'pan': 'p', 'gate': 'q',
                                'volume': '@v'}[kind] + str(127 if kind == 'volume' else value))
@@ -245,7 +251,31 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
                           tuple(event_ids), (), tuple(trajectory), tuple(playback_ids),
                           target_note=note, unlooped_command=text)
 
+    def song_loop_marker():
+        nonlocal loop_emitted
+        emit('song_loop', start_tick=loop_tick)
+        units.append(unit(loop_tick, loop_tick, 'song_loop', 'L',
+                          song_loop_start, song_loop_start))
+        loop_emitted = True
+
+    def rest_units(start, end, source_start, source_end):
+        if loop_tick is not None and not loop_emitted and start <= loop_tick <= end:
+            if start < loop_tick:
+                units.append(unit(start, loop_tick, 'pcm_rest',
+                                  render(duration_commands('rest', start, loop_tick)),
+                                  source_start, song_loop_start))
+            song_loop_marker()
+            start, source_start = loop_tick, song_loop_start
+        if start < end:
+            units.append(unit(start, end, 'pcm_rest', render(duration_commands('rest', start, end)),
+                              source_start, source_end))
+
     for p in analysis.playbacks:
+        if song_loop_start is not None and (
+                p.start_vgmticks < song_loop_start < p.end_vgmticks
+                or p.end_vgmticks == analysis.source_end_vgmticks and p.termination == 'source_end'):
+            reject('PCM playback continues across the song-loop boundary; independent PDX restart is undefined',
+                   code='song_loop_pcm_continuation', criterion='loop')
         schedule_fallback = (set(p.issues) == {'irregular_byte_supply'}
                              and p.decoder_reset_known and p.pan is not None
                              and p.stream_transfer_end - p.stream_transfer_start == p.supplied_bytes
@@ -312,8 +342,9 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
         if start < cursor:
             reject('Multiple overlapping physical PCM playbacks are unsupported', code='overlap')
         if start > cursor:
-            units.append(unit(cursor, start, 'pcm_rest', render(duration_commands('rest', cursor, start)),
-                              source_cursor, p.start_vgmticks))
+            rest_units(cursor, start, source_cursor, p.start_vgmticks)
+        if loop_tick is not None and not loop_emitted and start == loop_tick:
+            song_loop_marker()
         binding = by_sample[p.sample_id]
         pan = PCM_PAN[p.pan]
         body = [emit(kind, value, start_tick=start, playback_id=p.playback_id,
@@ -346,8 +377,9 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
         source_cursor = p.end_vgmticks
     end = target_tick(analysis.source_end_vgmticks)
     if end > cursor:
-        units.append(unit(cursor, end, 'pcm_rest', render(duration_commands('rest', cursor, end)),
-                          source_cursor, analysis.source_end_vgmticks))
+        rest_units(cursor, end, source_cursor, analysis.source_end_vgmticks)
+    if loop_tick is not None and not loop_emitted:
+        reject('PCM loop marker does not fall on an independent playback/rest boundary', code='song_loop_pcm_boundary')
     clock_rows = tuple(dict(source_event_id=c.source_event_id, source_address=c.address,
                             source_vgmticks=c.vgmticks, register=c.register, data=c.data,
                             mdx_tick=target_tick(c.vgmticks),

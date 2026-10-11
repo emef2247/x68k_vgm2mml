@@ -9,15 +9,23 @@ class CommandTime:
     command: int
     vgmticks: int
     wait_samples: int
+    source_event_id: int = 0
+    loop_iteration: int = 0
+    original_vgmticks: int = 0
 
 
-def command_times(raw):
+def command_times(raw, *, loop_count=1):
     """Decode command boundaries; never interpret payload bytes as waits.
 
     One vgmtick is one 44100 Hz sample. All short waits count, including
     0x77/0x7a. No chip-specific origin or floating-point accumulation is used.
     Unknown/truncated commands are rejected rather than inventing timestamps.
+    loop_count counts total traversals of the declared loop body. Replays keep
+    the wait override state, use original byte addresses, and suppress interim
+    end commands; consumers keep their existing chip state across the jump.
     """
+    if isinstance(loop_count, bool) or not isinstance(loop_count, int) or loop_count < 1:
+        raise ValueError('VGM loop_count must be a positive integer')
     if len(raw) < 0x40 or raw[:4] != b'Vgm ':
         raise ValueError('Invalid or truncated VGM header')
     version = struct.unpack_from('<I', raw, 8)[0]
@@ -27,7 +35,18 @@ def command_times(raw):
     end = min(len(raw), eof + 4) if eof else len(raw)
     if not 0x40 <= pos < end:
         raise ValueError('VGM data offset is outside the file')
+    loop_address = None
+    if loop_count > 1:
+        from vgm_loop import read_loop_metadata
+        metadata = read_loop_metadata(raw)
+        if metadata['status'] != 'no_loop':
+            if metadata['status'] != 'valid' or not metadata['decoded_loop_samples']:
+                raise ValueError('Cannot replay an invalid or zero-duration declared VGM loop')
+            loop_address = metadata['loop_address']
     samples = 0
+    iteration = 0
+    original_commands = {}
+    original_index = 0
     waits = {0x62: 735, 0x63: 882}
     while pos < end:
         cmd = raw[pos]
@@ -71,7 +90,18 @@ def command_times(raw):
             raise ValueError(f'Unsupported VGM command {cmd:#x} at {pos:#x}')
         if pos + size > end:
             raise ValueError(f'Truncated VGM command at {pos:#x}')
-        yield CommandTime(pos, cmd, samples, wait)
+        if iteration == 0:
+            source_id, original_tick = original_index, samples
+            if loop_address is not None and pos >= loop_address:
+                original_commands[pos] = (source_id, original_tick)
+            original_index += 1
+        else:
+            source_id, original_tick = original_commands[pos]
+        if cmd == 0x66 and loop_address is not None and iteration + 1 < loop_count:
+            pos = loop_address
+            iteration += 1
+            continue
+        yield CommandTime(pos, cmd, samples, wait, source_id, iteration, original_tick)
         if cmd == 0x66:
             return
         samples += wait

@@ -28,7 +28,7 @@ def compact(text, track, *, durations=True):
     state = {}
     retained = []
     for index, token in enumerate(source):
-        if token == '[':
+        if token in ('[', 'L'):
             # The first pass and every back edge must execute the body's first
             # setter. An incoming value alone cannot justify deleting it.
             state = {}

@@ -223,6 +223,14 @@ def write_export_report(source, folder, stem, row):
             for example in pitch.get('clamped_event_examples', []):
                 lines.append(f'Clamped source event {example["source_event_id"]}, ch{example["ch"]}; '
                              f'pitch error {example["error_cents"]:.6f} cents')
+        song_loop = normalization.get('song_loop', {})
+        if song_loop:
+            lines.extend(['', 'Declared VGM song loop', '',
+                f'Song loop: enabled={song_loop.get("enabled")}; emitted={song_loop.get("emitted")}; '
+                + song_loop.get('strategy', ''),
+                f'Loop playback boundary: {song_loop.get("playback_start_samples")} source samples; '
+                f'expanded end {song_loop.get("playback_end_samples")} samples; '
+                'original command addresses and replay occurrences retained with --dump-passes'])
         lines.extend(['', 'Output normalization', ''])
         lines.append('Note normalization: ' + str(normalization.get('status', 'see normalization JSON')) +
                      '; ' + str(normalization.get('reason', ''))[:180])

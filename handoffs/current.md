@@ -1,3 +1,18 @@
+# Current checkpoint: declared VGM song loops (2026-10-12)
+
+User approved reader-level loop expansion, reusing existing Segment structure.
+Implemented default two traversals for native OPM and musical PSG/SCC MDX.
+First traversal warms up state; second traversal has MML L and repeats.
+--no-song-loop exports a finite source pass; --no-loops remains finite compression.
+Raw/state/Segment provenance preserves original addresses/times and occurrences.
+PCM shares replay cursor; independently playable notes loop, decoder continuation
+across repeat boundaries is explicitly rejected. Legacy/held-register compatibility
+requires finite opt-out for now; MGSDRV unchanged.
+Public/synthetic validation only; native listening is next, performed by user.
+No Git stage, commit, push, branch switch or private fixture checks authorized.
+Keep private fixture names and paths out of field_notes.
+See docs/vgm_loop.md and field_notes/2026-10-12_declared_song_loop_replay.md.
+
 # Field-note privacy cleanup (2026-10-12)
 
 Private fixture names, identifying paths and private binary hashes have been

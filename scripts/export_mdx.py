@@ -70,7 +70,7 @@ def inspect_export_commands(generator, mdx, census, timeout):
 def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
               max_ticks=None, psg_model=None, psg_gain=None, scc_gain=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mxc', mxc=None, run68=None,
-              normalize_lengths=None, normalization_ms=8, no_vgm=False, listening_layout=False, _title=None,
+              normalize_lengths=None, normalization_ms=8, no_vgm=False, song_loop=True, listening_layout=False, _title=None,
               _report_source=None, _display_name=None):
     if listening_layout:
         from export_listening import run_listening_batch
@@ -78,7 +78,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
             target=target, generator=generator, timeout=timeout, max_ticks=max_ticks,
             psg_model=psg_model, psg_gain=psg_gain, scc_gain=scc_gain,
             opm_pitch_policy=opm_pitch_policy, pcm_policy=pcm_policy, compiler=compiler,
-            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, no_vgm=no_vgm))
+            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, no_vgm=no_vgm, song_loop=song_loop))
     source, output = Path(source).resolve(), Path(output).resolve()
     from conversion_config import normalization_samples
     normalization_samples(normalization_ms)
@@ -156,6 +156,8 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
                 artifact.unlink(missing_ok=True)
             command = [sys.executable, str(ROOT / 'vgm2mml.py'), str(path),
                        '--target', target, '--outdir', str(folder), *options]
+            if not song_loop:
+                command.append('--no-song-loop')
             if target == 'mdx':
                 command.extend(['--pcm-generator', str(generator),
                                 '--pcm-policy', pcm_policy or 'strict'])
@@ -291,6 +293,7 @@ def main():
                         help='Rust replay helper and explicit mmlx/typed PCM compiler')
     parser.add_argument('--timeout', type=positive, default=180, help='Seconds per stage per input')
     parser.add_argument('--max-ticks', type=positive, help='Playback limit; default derived from source waits')
+    parser.add_argument('--no-song-loop', action='store_true', help='Export one finite source pass, without the declared VGM song loop')
     parser.add_argument('--no-vgm', action='store_true',
                         help='Export MML, MDX and optional PDX without replay VGM generation')
     parser.add_argument('--psg-model', choices=('fm', 'additive'))
@@ -307,7 +310,7 @@ def main():
                          psg_gain=args.psg_gain, scc_gain=args.scc_gain,
                           opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy,
                           normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, no_vgm=args.no_vgm,
-                          listening_layout=True)
+                          listening_layout=True, song_loop=not args.no_song_loop)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     success = sum(row['status'] == 'success' for row in rows)

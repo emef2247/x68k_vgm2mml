@@ -155,6 +155,11 @@ class PcmAnalysis:
     stream_supplies: StreamSupplyLog = StreamSupplyLog()
     stream_controls: tuple[PcmStreamControl, ...] = ()
     observations: tuple[PcmIssue, ...] = ()
+    loop_count: int = 1
+
+    @property
+    def command_provenance(self):
+        return command_times(self.source_raw, loop_count=self.loop_count)
 
     @property
     def segments(self):
@@ -168,6 +173,9 @@ class PcmAnalysis:
                 writer = csv.DictWriter(stream, fieldnames=fields)
                 writer.writeheader()
                 writer.writerows(rows)
+        rows_csv('timing', (dict(event_id=i, **asdict(row)) for i, row in enumerate(self.command_provenance)),
+                 ('event_id', 'address', 'command', 'vgmticks', 'wait_samples',
+                  'source_event_id', 'loop_iteration', 'original_vgmticks'))
         rows_csv('raw', (asdict(row) for row in self.transfers), tuple(PcmTransfer.__dataclass_fields__))
         rows_csv('commands', ({**asdict(row), 'operands': row.operands.hex()} for row in self.raw_commands),
                  tuple(PcmRawCommand.__dataclass_fields__))
@@ -205,7 +213,7 @@ class PcmAnalysis:
         (out / f'{stem}.pcm_source.json').write_text(json.dumps(dict(
             source_end_vgmticks=self.source_end_vgmticks, clock_hz=self.clock_hz,
             options=self.options, initialization=self.initialization,
-            source_loop_vgmticks=self.source_loop_vgmticks,
+            source_loop_vgmticks=self.source_loop_vgmticks, loop_count=self.loop_count,
             consumption_origin='unknown_not_emulated', cadence_tolerance_vgmticks=1,
             stream_scheduling_model=SCHEDULING_MODEL,
             stream_reference_revision=REFERENCE_REVISION,
@@ -217,7 +225,7 @@ class PcmAnalysis:
             indent=2) + '\n', encoding='utf-8')
 
 
-def analyze(raw, *, initialization='reset'):
+def analyze(raw, *, initialization='reset', loop_count=1):
     """Read actual command boundaries, preserving unsupported PCM evidence.
 
     ``explicit`` leaves initial play/pan state unknown; ``reset`` assumes a
@@ -410,18 +418,23 @@ def analyze(raw, *, initialization='reset'):
             chip_write(supply.source_event_id, supply.address, supply.vgmticks,
                        supply.chip_instance, supply.register, supply.data, derived=True)
 
-    for event_id, event in enumerate(command_times(raw)):
+    for event_id, event in enumerate(command_times(raw, loop_count=loop_count)):
         supply_until(event.vgmticks)
         end = event.vgmticks + event.wait_samples
-        if event.address == loop_address:
+        if event.address == loop_address and event.loop_iteration == 0:
             loop_tick = event.vgmticks
         cmd, pos, tick = event.command, event.address, event.vgmticks
-        decoder.process(event_id, event)
+        # Data banks are loaded once; crossing the loop does not append them
+        # again or change the stream block numbering.
+        if not (cmd == 0x67 and event.loop_iteration):
+            decoder.process(event_id, event)
         if cmd == 0x67:
             kind = raw[pos + 2]
             if kind in (4, 0x44):
                 size = int.from_bytes(raw[pos + 3:pos + 7], 'little') & 0x7fffffff
                 commands.append(PcmRawCommand(event_id, pos, tick, cmd, raw[pos + 1:pos + 7]))
+                if event.loop_iteration:
+                    continue
                 blocks.append(PcmDataBlock(len(blocks), kind, bank_length if kind == 4 else None,
                               event_id, pos, tick, raw[pos + 7:pos + 7 + size]))
                 if kind == 4:
@@ -460,4 +473,4 @@ def analyze(raw, *, initialization='reset'):
                        TransferLog(bytes(transfers)), tuple(commands), raw, original_clock,
                        options, initialization, loop_tick, tuple(blocks),
                        StreamSupplyLog(bytes(stream_supplies)), tuple(decoder.controls),
-                       tuple(observations))
+                       tuple(observations), loop_count)

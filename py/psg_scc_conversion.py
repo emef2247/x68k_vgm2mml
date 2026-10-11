@@ -192,7 +192,7 @@ def _mark_projected_evidence(folder, source, target, performance, projection, no
 
 
 def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model='fm', pitch_policy=None,
-             notation='structured', loops=True, normalize_lengths=None, projection_mode='musical', normalization_ms=8):
+             notation='structured', loops=True, normalize_lengths=None, projection_mode='musical', normalization_ms=8, song_loop=True):
     if notation not in ('structured', 'registers'):
         raise ValueError('PSG/SCC OPM notation must be structured or registers')
     source, out = Path(source), Path(out)
@@ -200,7 +200,10 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
     out.mkdir(parents=True, exist_ok=True)
     source_loop = {}
     paths = parse_vgm(str(source), str(out), include_vgmticks=True, dump_loop=True,
-                      loop_metadata=source_loop)
+                      loop_metadata=source_loop, loop_count=2 if song_loop else 1)
+    loop_start = (source_loop.get('replay_start_samples')
+                  if song_loop and source_loop.get('status') == 'valid' else None)
+    facts['end_vgmticks'] = source_loop.get('playback_end_samples', facts['end_vgmticks'])
     psg = build_psg(paths[2], str(out), stem=source.stem, dump_passes=True)
     scc = build_scc(paths[3], str(out), stem=source.stem, dump_passes=True)
     plan = project(psg, scc, psg_clock=facts['psg_clock'], scc_clock=facts['scc_clock'],
@@ -216,14 +219,15 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
         from opm_performance import build_performance
         from opm_target_vgm import write_target_vgm
         from opm_conversion import convert as convert_opm
-        performance = build_performance(plan)
+        performance = build_performance(plan, terminate=loop_start is None)
         performance.dump(out, source.stem)
         folder = out / 'projected_opm'
         folder.mkdir(exist_ok=True)
         target = write_target_vgm(performance, folder / (source.stem + '.vgm'),
-                                  mapping_csv=folder / (source.stem + '.source_map.csv'))
+                                  mapping_csv=folder / (source.stem + '.source_map.csv'), song_loop_start=loop_start)
         _, source_map = _read_generated_csv(folder / (source.stem + '.source_map.csv'))
         native_mml, analysis, projection = convert_opm(target, folder, dump_passes=True, title=title, loops=loops,
+            song_loop=song_loop, replayed_song_loop=True,
             normalize_lengths=normalize_lengths, normalization_ms=normalization_ms,
             normalization_source_times={int(r['target_source_event_id']): int(r['vgmticks'])
                                         for r in source_map},
@@ -238,6 +242,8 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
         text = '; PSG/SCC OPM target; PSG model=' + psg_model + '.\n; Musical onsets inferred from audibility; oscillator phase differs from the held baseline.\n' + text
         mml.write_text(text, encoding='utf-8')
     else:
+        if loop_start is not None:
+            raise ValueError('Declared song loops require musical PSG/SCC projection; use --no-song-loop for held-register compatibility')
         mml.write_text(plan.render(title), encoding='utf-8')
         report = dict(requested=normalize_lengths, enabled=False, adopted=False, status='unchanged',
                       reason='Target-clock correction is not applicable to held registers compatibility',
@@ -249,7 +255,7 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
 
 
 def convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model='fm', pitch_policy=None,
-            dump_passes=True, notation='structured', loops=True, normalize_lengths=None, projection_mode=None, normalization_ms=8):
+            dump_passes=True, notation='structured', loops=True, normalize_lengths=None, projection_mode=None, normalization_ms=8, song_loop=True):
     """Keep native evidence on request; default standalone audit keeps all passes."""
     from conversion_config import normalization_enabled
     normalization_enabled(normalize_lengths, notation=notation)
@@ -268,11 +274,11 @@ def convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model=
     if dump_passes:
         return _convert(source, out, psg_gain=psg_gain, scc_gain=scc_gain, title=title,
                         psg_model=psg_model, pitch_policy=pitch_policy, notation=notation, loops=loops,
-                        normalize_lengths=normalize_lengths, projection_mode=projection_mode, normalization_ms=normalization_ms)
+                        normalize_lengths=normalize_lengths, projection_mode=projection_mode, normalization_ms=normalization_ms, song_loop=song_loop)
     with tempfile.TemporaryDirectory(prefix='psg-scc-opm-') as temp:
         mml, plan = _convert(source, temp, psg_gain=psg_gain, scc_gain=scc_gain, title=title,
                         psg_model=psg_model, pitch_policy=pitch_policy, notation=notation, loops=loops,
-                        normalize_lengths=normalize_lengths, projection_mode=projection_mode, normalization_ms=normalization_ms)
+                        normalize_lengths=normalize_lengths, projection_mode=projection_mode, normalization_ms=normalization_ms, song_loop=song_loop)
         result = out / mml.name
         shutil.copyfile(mml, result)
         normalization = mml.with_name(Path(source).stem + '.mdx.normalization.json')
