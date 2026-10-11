@@ -4,7 +4,7 @@ The immediate objective is evaluating VGM-extracted OPM Segments and neutral
 PCM IR. This change prepares independent expectations and listening assets;
 it does not change production conversion or demonstrate extraction completeness.
 
-## FF4SIREN independent expectation
+## private-case-054 independent expectation
 
 The existing native MXC reference-compilation trial established exact MDX
 reproduction. Its PDX was copied in that trial, so it did not establish an
@@ -14,7 +14,7 @@ exact sample bytes and sample identities. It imports no production converter,
 source PCM decoder or soundlog player.
 
 Private evidence remains in ignored
-`outputs/reference_validation_2026-10-10/FF4SIREN/expected/`: JSON and CSV,
+`<private-output>/`: JSON and CSV,
 `pcm_ir.expected.json`, and encoded sample files. Nine tracks decode completely
 within the declared supported-command domain. The bounded first song traversal
 has 3,648 ticks on eight tracks and 3,660 on G, preserving its 12-tick initial
@@ -35,7 +35,7 @@ command times rather than claiming an observed physical key-on trajectory.
 ## Public authored assets
 
 `tests/fixtures/public/mdx_reference/` contains original MML, encoded triangle
-samples, PCM expectation JSON, native MXC MDX and shared PUBPCM.PDX. No FF4SIREN
+samples, PCM expectation JSON, native MXC MDX and shared PUBPCM.PDX. No private-case-054
 melody, voice or PCM data was reused. These files are project-authored MIT assets.
 
 | Case | Main observation | Nominal duration |
@@ -75,7 +75,7 @@ is `not_run`. See `listening_results.json` and the private-phrase field note.
 `mdxinfo -u -H` independently reports Success for all four MDX files, nine tracks,
 the authored title, PUBPCM.PDX name and correct resolved PDX path. Its output
 is retained under ignored `outputs/reference_validation_2026-10-10/`.
-These patterns intentionally differ from FF4SIREN, so metadata equality is only
+These patterns intentionally differ from private-case-054, so metadata equality is only
 expected against their own authored intent, not against the private song.
 
 ## Verification and next step
@@ -94,7 +94,7 @@ The user's successful listening confirmation may establish a native baseline.
 It cannot by itself establish VGM extraction completeness.
 
 Next, obtain and independently check PCM-preserving source VGM evidence against
-FF4SIREN/direct expectations, then compare actual vgm2mml pass outputs. Do not
+private-case-054/direct expectations, then compare actual vgm2mml pass outputs. Do not
 certify a capture through a known-faulty soundlog PCM replay or repair unrelated
 players as a prerequisite. Keep source/capture, source IR, target projection,
 compiler/adapter and PDX packing findings separate. Production edits remain

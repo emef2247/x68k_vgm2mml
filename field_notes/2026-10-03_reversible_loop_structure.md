@@ -19,19 +19,19 @@ This remains an explicit experimental OPLL rendering strategy. The normal conver
 | Fixture | Current MML characters | Structural MML characters | MGSC compilation | Buffer error | Expanded timed commands |
 | --- | ---: | ---: | --- | --- | --- |
 | sample | 6333 | 6333 | both successful | none | identical |
-| sx01v | 17428 | 17187 | both successful | none | identical |
+| private-case-192 | 17428 | 17187 | both successful | none | identical |
 
-Character counts include comments. Code character counts are 4420/4420 for sample and 16497/16259 for sx01v. The structural result saves 241 total characters for sx01v. These outputs match the previous retained strategy in size; removing search bounds provides no additional savings on these two fixtures.
+Character counts include comments. Code character counts are 4420/4420 for sample and 16497/16259 for private-case-192. The structural result saves 241 total characters for private-case-192. These outputs match the previous retained strategy in size; removing search bounds provides no additional savings on these two fixtures.
 
-sample has 287 candidate families representing 419 repeat-count alternatives, 23 selected markers and depth 3. sx01v has 1331 families, 1966 alternatives, 101 selected markers and depth 3. Marker counts refer to stored tree nodes, not expanded occurrences. Long phrases, deeper nesting, overlapping alternatives, source reversibility and target repeat splitting are covered by synthetic tests.
+sample has 287 candidate families representing 419 repeat-count alternatives, 23 selected markers and depth 3. private-case-192 has 1331 families, 1966 alternatives, 101 selected markers and depth 3. Marker counts refer to stored tree nodes, not expanded occurrences. Long phrases, deeper nesting, overlapping alternatives, source reversibility and target repeat splitting are covered by synthetic tests.
 
-Compiler: local mgsc-js 2.0.0, MGSC 1.11. Private artifacts and compile logs: Codex `outputs/opll-loop-structure/{sample,sx01v}`. This check establishes command preservation and compilation for these fixtures; it does not establish recovery of every authored reference loop or audio equivalence.
+Compiler: local mgsc-js 2.0.0, MGSC 1.11. Private artifacts and compile logs: Codex `outputs/opll-loop-structure/{sample,private-case-192}`. This check establishes command preservation and compilation for these fixtures; it does not establish recovery of every authored reference loop or audio equivalence.
 
 ## Next step
 
 Use the retained candidate graph and reversible markers to compare final macro alternatives, including selective inner-loop expansion. Rank complete equivalent MML by characters with compilation as the acceptance gate. Exact note signatures still exclude repetitions affected by timing or state differences; tolerant matching is a separate decision.
 
-## Final sx01v MML structure inventory
+## Final private-case-192 MML structure inventory
 
 Count physical bracket loops in the final MML, without multiplying by repeat counts or macro call counts. Parse track and macro definitions separately.
 
@@ -55,8 +55,8 @@ The existing text compressor greedily chooses exact repeated command sequences, 
 3. Initially require exact command-token expansion equality, respecting ties, rhythm grammar and synchronization boundaries. Context-dependent setter omission and macro nesting are separate later optimizations.
 4. Select a portfolio of non-overlapping replacements under the available definition budget. Re-evaluate competing candidates after selection and try replacement of earlier selections, rather than permanently accepting the first greedy choice. Include definition text, call text, separators and final wrapping in whole-MML character cost.
 5. Emit candidate/selection CSVs with macro IDs, source-unit intervals, loop marker IDs, occurrence counts, definition/call cost and measured whole-output saving. Keep the baseline as a candidate.
-6. Validate expanded timed commands and compile complete sample/sx01v MML. Rank by final characters among equivalent successfully compiled outputs without buffer errors. Macro substitution alone normally reduces source text rather than compiled track usage; loop retention/expansion can affect compiled usage, so compiler validation remains necessary.
+6. Validate expanded timed commands and compile complete sample/private-case-192 MML. Rank by final characters among equivalent successfully compiled outputs without buffer errors. Macro substitution alone normally reduces source text rather than compiled track usage; loop retention/expansion can affect compiled usage, so compiler validation remains necessary.
 
 First compare improved search with loop spelling fixed, then add selective loop expansion. This isolates whether gains come from better macro allocation or representation changes. No structure-aware macro implementation was made as part of this planning update.
 
-Inventory correction during the five-fixture follow-up: the earlier parser did not descend into macro definition text. sx01v has four bracket loops in definitions in both variants. The 73/91 counts refer to track bodies; full physical counts are 77/95. The structural increase remains 18 loops.
+Inventory correction during the five-fixture follow-up: the earlier parser did not descend into macro definition text. private-case-192 has four bracket loops in definitions in both variants. The 73/91 counts refer to track bodies; full physical counts are 77/95. The structural increase remains 18 loops.

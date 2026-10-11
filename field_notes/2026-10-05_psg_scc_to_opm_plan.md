@@ -5,12 +5,12 @@ no cross-chip converter or converted listening set has been implemented here.
 
 ## Scope and inspected evidence
 
-- Actual inputs are 17 files named `GRA2_01.vgm` through `GRA2_17.vgm` under
-  `tests/fixtures/local_only/psg_scc/vgmrips.net/NEMESIS2/` (not `GRA_*.vgm`).
+- Actual inputs are 17 files named `private-case-107.vgm` through `private-case-128.vgm` under
+  `<private-input>/` (use the actual fixture inventory rather than an assumed filename pattern).
 - Ran the existing reader with integer source timestamps and existing PSG/SCC
   Segment builders for all 17. Did not run target compression or change them.
-- Inspected all 18 compiled tone banks in `local_only/opm/MDX/MSXGRA2S/` using
-  the existing external generator's `--inspect-mdx`. Read MSXGRA2S.DOC and
+- Inspected all 18 compiled tone banks in `<private-input>/` using
+  the existing external generator's `--inspect-mdx`. Read private-collection-020.DOC and
   the MDX titles. This is an independently arranged reference, not an oracle
   for exact register/state correspondence or a production patch lookup table.
 - Read chapter 7 of the user-provided MS.X development PDF, especially printed
@@ -41,10 +41,10 @@ periods, DC waveforms and sub-tick register transitions need separate treatment.
   are not automatically 22 authored instruments.
 - PSG noise enabled in 15 songs, tone+noise enabled in 14, hardware envelope
   enabled in 12. Each song's observed noise use belongs to one source channel:
-  ch0 in GRA2_02/GRA2_16, ch1 in the other noise-using songs.
-- GRA2_17: 3 SCC waveform IDs, no observed enabled PSG noise/hardware envelope.
-- GRA2_05: 5 waveform IDs, noise/mixed mode, no enabled hardware envelope.
-- GRA2_03: 5 waveform IDs, noise/mixed mode and enabled hardware envelope.
+  ch0 in private-case-113/private-case-127, ch1 in the other noise-using songs.
+- private-case-128: 3 SCC waveform IDs, no observed enabled PSG noise/hardware envelope.
+- private-case-116: 5 waveform IDs, noise/mixed mode, no enabled hardware envelope.
+- private-case-114: 5 waveform IDs, noise/mixed mode and enabled hardware envelope.
 - Enabled hardware-envelope rows include periods 0, 11, 66, 184 and 768,
   and shapes 0, 9 and 10. Do not treat all such rows as a slow loudness fade.
 
@@ -99,7 +99,7 @@ preserve the held-state behavior, followed by reversible loops/compaction.
    selected/omitted components and quantization. Arbitrary source phase cannot
    simply be specified by MUL/TL; use spectral similarity as one limited test.
    Compare this baseline with independently designed FM/feedback candidates
-   where omitted harmonics matter. Manual MSXGRA2S tones are listening examples,
+   where omitted harmonics matter. Manual private-collection-020 tones are listening examples,
    not parameters to hard-code into a generic converter.
 3. **Continuity:** keep a sustaining FM configuration keyed on and change
    pitch/TL as PSG/SCC state changes. Mute output explicitly for source silence.
@@ -144,13 +144,13 @@ settings or a new KeyOn for every envelope step.
 ## Implementation and validation sequence
 
 1. Synthetic public square/sine/multi-harmonic and volume-continuity cases,
-   plus GRA2_17 as the first private listening conversion. Keep MML, MDX, VGM
+   plus private-case-128 as the first private listening conversion. Keep MML, MDX, VGM
    and target-to-source mappings. No noise/envelope omission is required there.
-2. GRA2_05 adds noise and tone/noise approximation; GRA2_03 adds hardware
+2. private-case-116 adds noise and tone/noise approximation; private-case-114 adds hardware
    envelope handling. Do not call either complete until those behaviors have
    an explicit implementation and report.
-3. Compare corresponding passages of MSXGRA2S by title/melody, not numeric
-   filenames. E.g. its boss track is M_G2_13S, not M_G2_05S; the latter is the
+3. Compare corresponding passages of private-collection-020 by title/melody, not numeric
+   filenames. E.g. its boss track is private-case-154, not private-case-146; the latter is the
    plant stage. The banks contain 18 pieces versus 17 source fixtures.
 4. Target plan -> MDX -> OPM VGM -> native OPM Segment comparison checks
    generated controls, pitch, volume, timing and unwanted Key edges against

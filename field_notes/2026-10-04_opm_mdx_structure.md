@@ -32,7 +32,7 @@ played it to VGM, and the native reader rebuilt OPM state/Segments.
 | Set | Cases passed | Channel attacks source/returned | Operator KeyOns source/returned | Operator KeyOffs source/returned |
 |---|---:|---:|---:|---:|
 | Public |38/38|357/357|1377/1377|1208/1208|
-| Short local MSXGRA2S |2/2|125/125|440/440|424/424|
+| Short local private-collection-020 |2/2|125/125|440/440|424/424|
 
 All missing/extra counts and source-known state mismatches were zero. Per-channel
 ordered operator edge masks/times and projected end positions matched exactly.
@@ -50,8 +50,8 @@ order. The strict register-replay comparator remains available unchanged with
 | Example | Hybrid flat MML chars | With loops | Reduction |
 |---|---:|---:|---:|
 | Public nested_phrase_loops |1560|842|46.0%|
-| Local M_G2_17S |10745|10426|3.0%|
-| Local M_G2_18S |19956|11156|44.1%|
+| Local private-case-158 |10745|10426|3.0%|
+| Local private-case-159 |19956|11156|44.1%|
 
 Size comparisons use identical hybrid notation and wrapping before/after loops.
 The public authored `[[c d e g]2 r8]3` yields two physically emitted nested

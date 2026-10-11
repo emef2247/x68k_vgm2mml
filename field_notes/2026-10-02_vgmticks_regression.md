@@ -29,7 +29,7 @@ This review read the existing outputs; it did not rerun or alter conversions.
 | Total | 669 | 399 | 269 | 1 |
 
 All 269 compilation failures explicitly report `Track buffer full`. The one
-conversion failure is `temp/export_from_msxplay.com/YsSMS01.vgm`: its log says
+conversion failure is `<private-output>/private-case-210.vgm`: its log says
 the input was not found. The user confirmed deliberately deleting this file.
 Exclude it from converter failure/adoption assessment while preserving the
 reported raw totals. There are 668 present inputs: 399 MGS successes, 269 buffer
@@ -60,12 +60,12 @@ Representative OPLL results:
 
 | Input | Source | Exported | Missing | Extra |
 | --- | ---: | ---: | ---: | ---: |
-| www.smspower.org/YSSMS/YsSMS01.vgm | 559 | 558 | 1 | 0 |
-| msxplay.com/grider/grider.vgm | 2596 | 2559 | 37 | 0 |
-| msxplay.com/sx01v/sx01v.vgm | 1615 | 1604 | 11 | 0 |
-| vgmrips.net/PRIMK/PRIMK09.vgm | 1416 | 1022 | 394 | 0 |
-| vgmrips.net/PRIMK/PRIMK13.vgm | 767 | 466 | 301 | 0 |
-| vgmrips.net/FMPAC/FMPAC03.vgm | 307 | 167 | 140 | 0 |
+| www.smspower.org/<private-reference>/private-case-210.vgm | 559 | 558 | 1 | 0 |
+| <private-reference>/private-case-130.vgm | 2596 | 2559 | 37 | 0 |
+| <private-reference>/private-case-192.vgm | 1615 | 1604 | 11 | 0 |
+| <private-reference>/private-case-170.vgm | 1416 | 1022 | 394 | 0 |
+| <private-reference>/private-case-171.vgm | 767 | 466 | 301 | 0 |
+| <private-reference>/private-case-060.vgm | 307 | 167 | 140 | 0 |
 
 Large count differences remain investigation candidates. This review does not
 attribute them to the timing change; no before/after catalog baseline was

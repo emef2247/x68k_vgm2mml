@@ -1,10 +1,10 @@
-# GRA2_17 additive OPM prototype — 2026-10-05
+# private-case-128 additive OPM prototype — 2026-10-05
 
-User selected NEMESIS2/GRA2_17 (The War is Over / Game Over). M_G2_17S is a
+User selected <private-reference>/private-case-128 (The War is Over / Game Over). private-case-158 is a
 manual arrangement reference, not the sound target. Its patches were not copied.
 
-Input: tests/fixtures/local_only/psg_scc/vgmrips.net/NEMESIS2/GRA2_17.vgm.
-Output: outputs/opm/psg_scc_prototype/GRA2_17/.
+Input: <private-input>/private-case-128.vgm.
+Output: <private-output>/.
 
 - 665 native source Segment rows mapped; PSG3 + SCC4 active parts retained.
 - Four target voices: ideal PSG square and three SCC spectra. No channel merging.
@@ -23,5 +23,5 @@ The roundtrip passes, but listening approval and source/target gain calibration
 remain open. DC/phase and unselected harmonics differ; PSG attenuation is approximate.
 No claim of audio equality. No copyrighted wave/patch data is copied into this note.
 
-Next: listen to GRA2_17, then investigate noise for GRA2_05 and hardware EG for
-GRA2_03. Composite-timbre and rhythm-pattern detection remain future analyses.
+Next: listen to private-case-128, then investigate noise for private-case-116 and hardware EG for
+private-case-114. Composite-timbre and rhythm-pattern detection remain future analyses.

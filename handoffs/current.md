@@ -1,3 +1,14 @@
+# Field-note privacy cleanup (2026-10-12)
+
+Private fixture names, identifying paths and private binary hashes have been
+removed from field_notes. Technical findings remain under anonymous case labels;
+eight note filenames were generalized and their documentation links updated.
+The label/placeholder convention is in field_notes/000_how_to_write_notes.md.
+This was a documentation-only change; no conversion or playback was rerun.
+Continue the previously agreed loop work only when requested. Keep private
+identifiers in ignored local evidence and do not stage, commit or push changes
+without an explicit user request.
+
 Project: x68k_vgm2mml
 Branch: main
 Checkpoint: 2026-10-11
@@ -263,7 +274,7 @@ projection, with fixedPDX; a separate mmlx default16 RATES also preserved
 requested events/used voice, retaining one unused extra voice. Neither new
 chain has yet passed user listening. Limited pre-note ordering probes passed;
 do not expand them now. Relevant23 tests passed. Details/reproduction:
-field_notes/2026-10-10_rayforce_extended_structure.md.
+field_notes/2026-10-10_pcm_reference_extended_structure.md.
 
 Do not rerun historical tail generators/recording helpers on the updated root
 package: they may overwrite16-mode data or mislabel new bytes with old failures.
@@ -370,9 +381,9 @@ FM, while the validated reference builds use native MXC. No integration change
 was authorized by this validation trial.
 
 Read:
-- field_notes/2026-10-10_ff4siren_private_phrases.md (latest results and scope)
+- field_notes/2026-10-10_private_pcm_reference_phrases.md (latest results and scope)
 - field_notes/2026-10-10_reference_expectations_public_patterns.md
-- field_notes/2026-10-10_ff4siren_converter_validation.md
+- field_notes/2026-10-10_pcm_reference_converter_validation.md
 - field_notes/2026-10-09_reference_compiler_validation.md (original native
   FF4SIREN MML reproduces working reference MDX exactly; PDX initially copied)
 - field_notes/2026-10-09_pcm_stream_support.md

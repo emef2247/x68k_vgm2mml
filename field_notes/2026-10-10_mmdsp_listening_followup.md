@@ -9,14 +9,14 @@ the transferred files were not independently hashed.
 
 | Input group | Native observation |
 | --- | --- |
-| BOSCON04, BOSCON06, BOSCON08 | Play and stop correctly; GUI animation remains absent |
-| Other successful BOSCON exports: 03, 07, 09, 12 | Track buffer insufficient; cannot load |
-| BOSCON01, 02, 05, 10, 11 | Export blocked; not native playback failures |
+| private-case-025, private-case-027, private-case-029 | Play and stop correctly; GUI animation remains absent |
+| Other successful private-collection-003 exports: private-case-024, private-case-028, private-case-030, private-case-033 | Track buffer insufficient; cannot load |
+| private-case-022, private-case-023, private-case-026, private-case-031, private-case-032 | Export blocked; not native playback failures |
 | Public stream94_supply_stop, stream_stopped_supply_restart, stream_supply_only | User reports load error and clicks |
 | Other public opm_oki6258 exports | Click-like sounds; possibly brief meter activity, not established animation pass |
-| F_A01 | Export blocked in both strict and best-effort |
-| ARMBS1 | Plays and animates; sound remains after ending |
-| NEMESIS GRA1_01 through GRA1_14 | All play and stop; no animation; MMDSP does not accept controls during playback |
+| private-case-050 | Export blocked in both strict and best-effort |
+| private-case-012 | Plays and animates; sound remains after ending |
+| private-collection-021 private-case-085 through private-case-098 | All play and stop; no animation; MMDSP does not accept controls during playback |
 
 An attached screenshot also shows a PCM-load error for stream_delayed_chip_stop.
 Keep this image observation distinct from the explicit three-file list above.
@@ -50,18 +50,18 @@ next public probe is an unchanged source under a short ASCII basename,
 regenerated so its MDX reference and PDX filename agree. Renaming only the PDX
 after compilation is not equivalent.
 
-F_A01 is blocked by ADPCM3 versus the currently required ADPCM4 codec and a
+private-case-050 is blocked by ADPCM3 versus the currently required ADPCM4 codec and a
 262888-byte sample beyond the verified 65535-byte projection scope. The latter
 is an implementation verification boundary, not a claim that extended MDX
-cannot represent larger samples. BOSCON01/02 diagnostics include MDX offset
+cannot represent larger samples. private-case-022 and private-case-023 diagnostics include MDX offset
 capacity failure. Historical `_errors` logs can be stale; current results.csv
 and assessment must determine current status.
 
-ARMBS1 has no PCM. Its compiled tracks have finite ends, so its residual sound
+private-case-012 has no PCM. Its compiled tracks have finite ends, so its residual sound
 needs FM ending/source-boundary investigation; PCM packing cannot explain it.
-Read-only command analysis finds timed NOTE commands in BOSCON06 and GRA1_01,
+Read-only command analysis finds timed NOTE commands in private-case-027 and private-case-085,
 including many hold chunks. Their timer is 256 microseconds per tick, while
-animated ARMBS1 uses 8192 microseconds. Interrupt load is a hypothesis for
+animated private-case-012 uses 8192 microseconds. Interrupt load is a hypothesis for
 display/responsiveness, not established causation. Do not coarsen timing or
 discard boundaries without inspecting source, Segment and target timing.
 
@@ -88,7 +88,7 @@ listening-folder cleanup while retaining MML and TXT, after validation finishes.
 
 1. Test short-name public source copies to isolate PCM filename resolution.
 2. Provide longer authored listening fixtures separately from tiny decoder cases.
-3. Inspect ARMBS1 source/target final gate state before changing finite FM endings.
+3. Inspect private-case-012 source/target final gate state before changing finite FM endings.
 4. Test shared-clock interrupt/load hypotheses with safe timing projections.
 
 Neither compiler switching nor MML control-order changes follow from these
@@ -96,8 +96,8 @@ observations alone. No conversion semantics changed in this follow-up.
 
 ## Additional user comparison after usage reset
 
-ARMBS1 replay confirms animation/playback and residual sound after completion.
-The user supplied vgm-conv OPM versions of all 14 NEMESIS inputs and exported
+private-case-012 replay confirms animation/playback and residual sound after completion.
+The user supplied vgm-conv OPM versions of all 14 private-collection-021 inputs and exported
 them through the native OPM route successfully. Multi-dot native filenames
 caused MMDSP file-read errors; manually reducing names to one extension fixed
 loading in the user's environment. Animation nevertheless remains fixed.
@@ -107,19 +107,19 @@ The user suggests inspecting update granularity and asks for longer-update VGM
 comparisons. Inspect the common OPM-to-MDX timer selection as well as projected
 event density; do not conflate a dense event timeline with timer frequency.
 
-Read-only GRA1_01 comparison:
+Read-only private-case-085 comparison:
 
 | Path | Source writes | MDX size | Nominal tick |
 | --- | --- | --- | --- |
 | Native PSG projection | 2595 PSG writes | 13583 bytes | 256 us |
 | vgm-conv OPM | 2912 OPM writes | 11741 bytes | 256 us |
-| ARMBS1 native OPM | 2391 OPM writes | 1731 bytes | 8192 us |
+| private-case-012 native OPM | 2391 OPM writes | 1731 bytes | 8192 us |
 
 The diagnostic score reader interprets 2778 note events in the native PSG
 projection, including 2769 continuations and nine non-continuation attacks.
 The vgm-conv source has four register-08 Key-On requests, all at time zero,
 and no falling operator edges. Its MDX has no musical NOTE events; held raw
-register playback is represented with rests between controls. ARMBS1 has 514
+register playback is represented with rests between controls. private-case-012 has 514
 interpreted notes without split holds. These score-reader counts can include
 finite repeat expansion; they are not identical to the report's encoded census.
 

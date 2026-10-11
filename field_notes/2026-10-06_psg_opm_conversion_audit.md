@@ -30,10 +30,10 @@ conversion stops at the first failure. Saved source CSVs from 272 inputs were
 also examined to expose later noise/EG states, independently of that first error.
 The other inputs lack the saved source CSVs needed for this audit.
 
-NEMESIS2 has 17 GRA2 songs: only GRA2_07 and GRA2_17 currently verify. Twelve
-first fail at noise/EG; GRA2_01, GRA2_09 and GRA2_13 first fail at pitch range.
+private-collection-022 has 17 private-collection-016 songs: only private-case-118 and private-case-128 currently verify. Twelve
+first fail at noise/EG; private-case-107, private-case-120 and private-case-124 first fail at pitch range.
 Source PSG inspection nevertheless finds noise in 15 songs, mixed tone/noise
-in 14, and hardware EG in 12. GRA2_07/17 have tonal PSG only. Range handling
+in 14, and hardware EG in 12. private-case-118 and private-case-128 have tonal PSG only. Range handling
 alone therefore will not complete all the remaining songs.
 
 Examples, preserving source channel-time durations (summing channels, not a
@@ -41,16 +41,16 @@ unique elapsed interval):
 
 | Source | Tone rows | Noise-only rows | Mixed rows | EG rows |
 | --- | ---: | ---: | ---: | ---: |
-| GRA2_02 | 441 | 22 | 9 | 0 |
-| GRA2_03 | 2,316 | 716 | 20 | 604 |
-| GRA2_09 | 2,537 | 819 | 36 | 867 |
+| private-case-113 | 441 | 22 | 9 | 0 |
+| private-case-114 | 2,316 | 716 | 20 | 604 |
+| private-case-120 | 2,537 | 819 | 36 | 867 |
 
-GRA2_02 noise-only spans total 38,209 samples; mixed spans total 5,879 samples.
+private-case-113 noise-only spans total 38,209 samples; mixed spans total 5,879 samples.
 These are positive-duration behavior, not merely chip initialization writes.
-GRA2_03 EG spans total 327,283 channel-samples. Their omission would remove
+private-case-114 EG spans total 327,283 channel-samples. Their omission would remove
 source behavior rather than just make compilation more permissive.
 
-## A concrete pitch rejection: GRA1_03
+## A concrete pitch rejection: private-case-087
 
 PSG ch0 changes period 256 -> 0 -> 228 twice. Each period-zero intermediate
 state lasts two native samples, about 45.35 microseconds, with nonzero volume.
@@ -105,7 +105,7 @@ into a new envelope attack. AY/YM variants need their own rate/level profile.
 
 ## Same-renderer WAV measurements
 
-Inputs: native `GRA1_05` and `DSLY4_04`, the existing additive returned VGM,
+Inputs: native `private-case-089` and `private-case-038`, the existing additive returned VGM,
 and each matching `*.vgm-conv.vgm`. Used the externally built VGMPlay renderer
 at 44,100 Hz, stereo, integer 16-bit PCM, one stored traversal, no fade or
 normalization. Renderer and external GPL sources remain outside this repository.
@@ -117,12 +117,12 @@ The source has substantial DC; AC RMS is reported separately from raw RMS.
 
 | Song / version | AC RMS dBFS | Spectral centroid Hz | 95% rolloff Hz | Energy at/above 4 kHz |
 | --- | ---: | ---: | ---: | ---: |
-| GRA1_05 source | -20.24 | 563.0 | 1,970.3 | 2.021% |
-| GRA1_05 additive | -28.54 | 551.6 | 1,755.0 | 0.411% |
-| GRA1_05 vgm-conv | -18.77 | 780.4 | 2,960.8 | 3.474% |
-| DSLY4_04 source | -25.69 | 738.5 | 2,271.8 | 2.666% |
-| DSLY4_04 additive | -32.47 | 523.6 | 1,862.6 | 0.452% |
-| DSLY4_04 vgm-conv | -22.71 | 749.6 | 2,971.6 | 3.332% |
+| private-case-089 source | -20.24 | 563.0 | 1,970.3 | 2.021% |
+| private-case-089 additive | -28.54 | 551.6 | 1,755.0 | 0.411% |
+| private-case-089 vgm-conv | -18.77 | 780.4 | 2,960.8 | 3.474% |
+| private-case-038 source | -25.69 | 738.5 | 2,271.8 | 2.666% |
+| private-case-038 additive | -32.47 | 523.6 | 1,862.6 | 0.452% |
+| private-case-038 vgm-conv | -22.71 | 749.6 | 2,971.6 | 3.332% |
 
 Both additive outputs have markedly less high-frequency energy. The measured
 levels are also lower under the current gain; this is not evidence of missing
@@ -131,7 +131,7 @@ the source high-frequency energy in both measured intervals. These numerical
 observations are compatible with the user's less-bright/additive and brighter/FM
 listening reports; they do not rank overall reproduction quality.
 
-Entire rendered durations match for GRA1_05 (20.845283 s). DSLY4_04 source and
+Entire rendered durations match for private-case-089 (20.845283 s). private-case-038 source and
 vgm-conv are 38.683492 s; additive is 38.683356 s (six rendered samples shorter).
 These two cases show no large tempo difference. This does not resolve earlier
 public-fixture timing reports or certify every track's timing.
@@ -155,13 +155,13 @@ python scripts/analyze_wav.py \
 ## Countermeasures and next bounded experiments
 
 1. **Separate range failures into transient and sustained cases.** Start with
-   GRA1_03's two-sample writes and retain a source-to-target mapping. Validate
+   private-case-087's two-sample writes and retain a source-to-target mapping. Validate
    boundaries independently of absolute tick phase. Do not globally widen a
    tolerance or clamp musical pitch to obtain a success count.
 2. **Noise-only PSG first.** Preserve all three source-channel identities and
    the shared noise period, and add an explicit hardware-OPM-noise target plan.
    PSG-only inputs have spare OPM channels, allowing a clean first experiment
-   such as XANADU01. Use measured noise-rate/spectral behavior to choose the
+   such as private-case-206. Use measured noise-rate/spectral behavior to choose the
    mapping; vgm-conv's reversed period and maximum-volume rule are comparison
    points, not a specification to copy.
 3. **Mixed tone/noise separately.** Logical AY mixing is not faithfully modeled
@@ -171,8 +171,8 @@ python scripts/analyze_wav.py \
    eight OPM channels. Adding a dedicated noise channel without an explicit
    operator/channel-sharing plan loses a part. Investigate sharing ch7 C2 noise
    with three remaining sine carriers, or a measured allocation across available
-   parts; label any reduction from four to three harmonics. GRA2_02 is a short
-   noise/mixed fixture without EG, useful before GRA2_03.
+   parts; label any reduction from four to three harmonics. private-case-113 is a short
+   noise/mixed fixture without EG, useful before private-case-114.
 5. **Hardware EG.** Reconstruct shared envelope phase, period changes, repeated
    shape-write restarts, hold/alternate/attack and variant rate from preserved
    source events. Project that amplitude trajectory to OPM TL updates. Keep this

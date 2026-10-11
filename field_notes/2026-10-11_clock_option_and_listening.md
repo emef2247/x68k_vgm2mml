@@ -3,7 +3,7 @@
 User observations in XM6TypeG/MMDSP:
 - from_fm_8ms plays as before; frozen controls resolved and counters advance.
   Volume bars still do not animate.
-- BOSCON now animates but remains somewhat sluggish. User export generated
+- private-collection-003 now animates but remains somewhat sluggish. User export generated
   9/12: 01/02/03/04/06/07/08/09/12 succeed; 05/10/11 remain PCM blocked.
   These are user observations, not automated native validation. No new
   local_only conversions were performed by the agent.
@@ -42,8 +42,8 @@ therefore do not guarantee a slower clock for every song.
 ```sh
 python scripts/export_mdx.py tests/fixtures/public/opm/from_fm \
   --outdir outputs/listen/opm/from_fm_16ms --no-vgm --normalization-ms 16
-python scripts/export_mdx.py tests/fixtures/local_only/opm_oki6258/vgmrips.net/BOSCON \
-  --outdir outputs/listen/BOSCON_16ms --no-vgm --pcm-policy best-effort \
+python scripts/export_mdx.py <private-input>/private-collection-003 \
+  --outdir <private-output>/private-collection-003_16ms --no-vgm --pcm-policy best-effort \
   --normalization-ms 16
 ```
 

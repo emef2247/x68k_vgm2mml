@@ -1,6 +1,6 @@
 # Compiler dependencies removed with outputs
 
-The user exported NEMESIS successfully, deleted `outputs/`, then observed
+The user exported private-collection-021 successfully, deleted `outputs/`, then observed
 `compilation_failed`. Their saved error log states `Missing --mxc tool`.
 MML generation succeeded. Default MXC and run68 discovery had depended on
 `outputs/research/`; deleting generated data therefore removed dependencies.

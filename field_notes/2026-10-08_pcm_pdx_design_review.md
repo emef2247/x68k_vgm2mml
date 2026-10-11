@@ -55,7 +55,7 @@ stream_idは転送制御の識別子で、音楽的声部や独立したPCMチ�
 本文・音声・ADPCM bytesを出力せず、命令数とヘッダーの数値だけを調べた限定調査。
 
 - 公開 `opm/from_mdx` の9件は、0x67・0x90〜0x95・0xB7がすべて0件。PCM受入テストには使えない。
-- ローカルOPMの代表5件中、KMSM009は0xB7が3,434,358件、OKIM6258 clock=8,000,000、options=2、宣言VGM loopなし。ほかの4件はPCM命令・clockなし。
+- ローカルOPMの代表5件中、private-case-140は0xB7が3,434,358件、OKIM6258 clock=8,000,000、options=2、宣言VGM loopなし。ほかの4件はPCM命令・clockなし。
 - この例では0x93/0x95経路の証拠は得ていない。全コレクションの傾向とは断定しない。
 
 したがって、実装開始時には直接0xB7のcontrol/data内訳、play/stop/resetの有無と順序を先に調べる。ストリーム型だけ対応して完了とはしない。数百万件の転送をすべて重複したstate objectに展開する設計も避け、生bytes・時刻の列と状態遷移／checkpointを分けてストリーミング処理する。dump可能なsource event ID、命令位置、転送履歴は残す。

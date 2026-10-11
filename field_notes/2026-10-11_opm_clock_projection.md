@@ -1,6 +1,6 @@
 # Alternate OPM clock -> 4MHz MDX
 
-GENPEI's existing conversion diagnostic declares 3,579,580Hz and was blocked
+private-collection-014's existing conversion diagnostic declares 3,579,580Hz and was blocked
 by the former requirement for a 4MHz source. No private source conversion or
 game-derived contents were used in this change's validation.
 
@@ -46,14 +46,14 @@ existing artifacts explicitly.
 
 ## Next allowed action
 
-User reruns the original GENPEI export command and listens in MMDSP. Preserve
+User reruns the original private-collection-014 export command and listens in MMDSP. Preserve
 the source IR and report any target pitch loss. No Git mutations without a new
 explicit user instruction. The following follow-up supersedes the initial
 range-error-only policy.
 
-## GENPEI listening follow-up and target-policy correction
+## private-collection-014 listening follow-up and target-policy correction
 
-User reports 4/15 exports: GENPEI02,04,14 play and animate correctly; GENPEI15
+User reports 4/15 exports: private-case-070, private-case-072 and private-case-082 play and animate correctly; private-case-083
 sounds but freezes MMDSP without animation. Existing diagnostics show periods
 15872,7168,15872,256 microseconds respectively. Failed tracks reject corrected
 KC/KF below the target register range at 3,579,580Hz. Inspection of source
@@ -72,7 +72,7 @@ cannot reproduce the pitch. Regular retuning already changes note and octave;
 the source State/Segment remains unchanged. EG/LFO/noise not being retimed is
 reported as a limitation and does not itself reject conversion.
 
-GENPEI15's old normalization rejects every nearest-tick candidate because
+private-case-083's old normalization rejects every nearest-tick candidate because
 unclosed terminal gates are only 3,7,11 source samples. They are conservative
 survivors, not complete Key-On/Off notes eligible for short-gate omission.
 New normalization falls back to ordered allocation within the existing sample
@@ -100,39 +100,39 @@ cannot reverse their order by falling back to independent nearest rounding.
 Their regressions pass, including projected-state replay comparison. Final
 MML after these fixes is byte-identical to the two compiled examples.
 This is public authored evidence,
-not a new GENPEI conversion or native MMDSP test.
+not a new private-collection-014 conversion or native MMDSP test.
 
-Next: user regenerates GENPEI into a fresh outdir and checks the reported
-periods plus native display/playback. The fixed period of GENPEI15 is not yet
+Next: user regenerates private-collection-014 into a fresh outdir and checks the reported
+periods plus native display/playback. The fixed period of private-case-083 is not yet
 measured; the public12544us example is not a claim about that private track.
 
 ## User batch result after the fixes
 
-On 2026-10-11 the user reran `scripts/export_mdx.py` against local_only GENPEI
+On 2026-10-11 the user reran `scripts/export_mdx.py` against local_only private-collection-014
 with `--no-vgm --pcm-policy best-effort`, using the default clamp and8ms policies.
-GENPEI01 through GENPEI15 all report success:15/15 exported. The user's results
-are at `outputs/listen/opm/vgmrips.net/GENPEI/results.csv`.
+private-case-069 through private-case-083 all report success:15/15 exported. The user's results
+are at `<private-output>/results.csv`.
 This confirms file generation for all previously failing tracks. The latest
-message does not report native playback/display or the new GENPEI15 period;
+message does not report native playback/display or the new private-case-083 period;
 those remain the next listening checks. No additional conversion/test or Git
 mutation was performed by the agent for this result-recording update.
 
 ## Native listening result and next checkpoint
 
 The user subsequently reports all15 tracks play and animate in MMDSP, with
-two residual observations: GENPEI10 briefly stops animating near the beginning
-and later recovers; GENPEI07 reaches a sudden mid-song end and keeps sounding.
-The new generated reports specify GENPEI07=15872us (@t194), GENPEI10=7424us
-(@t227), GENPEI15=11520us (@t211). These are encoded clock selections, not
-measurements of interrupt load. The previous GENPEI15 freeze is no longer
-reported. GENPEI10 is not simply a remaining256us clock case; its temporary
+two residual observations: private-case-078 briefly stops animating near the beginning
+and later recovers; private-case-075 reaches a sudden mid-song end and keeps sounding.
+The new generated reports specify private-case-075=15872us (@t194), private-case-078=7424us
+(@t227), private-case-083=11520us (@t211). These are encoded clock selections, not
+measurements of interrupt load. The previous private-case-083 freeze is no longer
+reported. private-case-078 is not simply a remaining256us clock case; its temporary
 display issue needs separate investigation.
 
-Read-only source metadata confirms GENPEI07 has a valid declared VGM loop:
+Read-only source metadata confirms private-case-075 has a valid declared VGM loop:
 entry937613samples (21.261066s), end2271552samples (51.509116s), loop length
 1333939samples. All8 channels' last key masks are15 at stream end. Thus the
 stream end is a loop seam rather than evidence of a natural Key-Off ending.
-GENPEI10 and15 also declare valid loops. No0x12/0x14 timer control writes were
+private-case-078 and private-case-083 also declare valid loops. No0x12/0x14 timer control writes were
 observed in these three source streams. No new private conversion was run.
 
 Current code records the declared VGM loop and protects its timing boundary,

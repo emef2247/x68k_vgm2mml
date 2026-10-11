@@ -16,7 +16,7 @@ Relevant existing behavior was checked in code:
   retriggers across pitch changes. Repeated setters are emitted only on change.
 - `opll_inner_loops.OpllLoopPlan` discovers child repeats inside continuous
   notes as well as outer note/phrase repeats. Expanded target commands are
-  checked exactly. This was important to the FFMSX01 recovery.
+  checked exactly. This was important to the private-case-056 recovery.
 - `pre_envelope_loops.LoopFirstEnvelopeBank` builds source plans and selects
   representative curves before allocating PSG/SCC software envelopes.
   `mml_envelopes.extract_notes` retains pitch-write/reset and volume-rise
@@ -89,8 +89,8 @@ External compiler/replayer: existing Windows MDX helper using mmlx/soundlog.
   replay was compared with native Segments rebuilt from their saved source
   traces. This isolates the new target pass without rerunning expensive source
   loop discovery for every song. Unsupported 3.57958-MHz inputs were excluded.
-- Fresh full-pipeline runs additionally covered M_G2_08S (success) and WARNOP
-  (still capacity-limited). Native M_G2_08S evidence and uncompacted target
+- Fresh full-pipeline runs additionally covered private-case-149 (success) and private-case-194
+  (still capacity-limited). Native private-case-149 evidence and uncompacted target
   were byte/text compared with the previous regression.
 
 | Local result | Before | After |
@@ -117,12 +117,12 @@ is not a musical or binary optimization. The benchmark saves the actual text
 measured, its compiler output and comparisons. Its command-byte saving estimates
 equal actual MDX file-size differences for all 35 originally successful cases.
 
-One case, M_G2_18S, grows by 14 text characters while its MDX shrinks by 102
+One case, private-case-159, grows by 14 text characters while its MDX shrinks by 102
 bytes. Rest-loop syntax can be longer text yet substantially cheaper binary.
 Text and binary benefits are recorded separately instead of claiming monotonic
 improvement in both metrics.
 
-### Newly successful M_G2_08S
+### Newly successful private-case-149
 
 Fresh normal conversion:
 
@@ -139,8 +139,8 @@ See `m08_native_preservation.json`, `local_m08/`, and
 
 ## Remaining limits
 
-The other 16 failed cases still exceed MDX address capacity, including WARNOP
-and the large WBIIIAC control streams. Their text is smaller, but that does not
+The other 16 failed cases still exceed MDX address capacity, including private-case-194
+and the large private-collection-028 control streams. Their text is smaller, but that does not
 guarantee compilation. The saved-target diagnostic labels these as
 `mdx_capacity_error`; the regular verifier's status vocabulary was not changed.
 

@@ -8,7 +8,7 @@ pairs as native OPM fixtures. The earlier `.MDL` spelling was corrected to
 `tests/fixtures/local_only/opm/` or ignored `outputs/`; they are not
 redistributed. This changes fixture preparation, not the converter engine.
 
-Source: `H:/_env/X68K/emu/x68000/images/MDX`.
+Source: `<private-input-directory>`.
 Preserve the source title-directory hierarchy; do not flatten vendor/game
 folders. A same-stem MDX in the MML's immediate parent directory is accepted
 when the source stores MML in a separate `MML/` subdirectory. Use the MDX's
@@ -49,7 +49,7 @@ replacement input. All 20 MML-derived and MDX-derived VGMs have matching
 operator KeyOn counts and end sample positions. Seventeen have identical
 ordered OPM writes including sample positions. The other three each differ
 in one final register 0x28 (KC) write at the exact source-end sample:
-HYDS_03, HYDS_05, HYDS_07. Keep this evidence; do not claim byte-for-byte or
+private-case-133, private-case-135, private-case-137. Keep this evidence; do not claim byte-for-byte or
 acoustic equivalence. Both routes use the same external MDX playback engine,
 so this does not independently validate that engine against real hardware.
 

@@ -58,20 +58,20 @@ note renderer intentionally rejects non-AL7 plans.
   as part of this tonal change; this unrelated expectation remains to reconcile.
 - Public PSG directory: 11/13 inputs verified for each model. legato_patch_mix
   and patch_change_midnote retain explicit noise/EG rejection.
-- Local FM: GRA1_03, GRA1_05, DSLY4_04 and PSG/SCC GRA2_17 all verified against
+- Local FM: private-case-087, private-case-089, private-case-038 and PSG/SCC private-case-128 all verified against
   exact generated target writes, Key commands and end time. Additive verifies
-  the latter three; GRA1_03 still rejects out-of-range under its old policy.
+  the latter three; private-case-087 still rejects out-of-range under its old policy.
 - Source PSG/SCC Segment CSVs agree byte-for-byte in all 34 comparisons across
   these 17 inputs. Blank/unused-chip evidence is included in that count.
-- GRA1_03 exposes three clamped rows and completes 2,450 exact target controls.
+- private-case-087 exposes three clamped rows and completes 2,450 exact target controls.
   The two-source-sample period-zero states are retained rather than deleted.
 
 | Local song | FM MML characters | Additive MML characters | FM MDX bytes | Additive MDX bytes |
 | --- | ---: | ---: | ---: | ---: |
-| GRA1_03 | 38,328 | range-rejected | 9,876 | - |
-| GRA1_05 | 32,794 | 79,911 | 8,713 | 22,795 |
-| DSLY4_04 | 64,456 | 97,122 | 18,303 | 28,137 |
-| GRA2_17 | 25,940 | 27,893 | 8,098 | 8,689 |
+| private-case-087 | 38,328 | range-rejected | 9,876 | - |
+| private-case-089 | 32,794 | 79,911 | 8,713 | 22,795 |
+| private-case-038 | 64,456 | 97,122 | 18,303 | 28,137 |
+| private-case-128 | 25,940 | 27,893 | 8,098 | 8,689 |
 
 These are register-control MMLs, not the previously generated tied-note MMLs.
 Reduced command count is a consequence of controlling fewer tonal operators;
@@ -93,14 +93,14 @@ found in these intervals.
 
 | Song / version | AC RMS dBFS | Centroid Hz | 95% rolloff Hz | Energy >=4 kHz |
 | --- | ---: | ---: | ---: | ---: |
-| GRA1_05 source | -20.24 | 563.0 | 1970.3 | 2.021% |
-| GRA1_05 new FM | -18.80 | 786.1 | 3046.9 | 3.523% |
-| GRA1_05 additive | -28.54 | 551.6 | 1755.0 | 0.411% |
-| GRA1_05 external vgm-conv | -18.77 | 780.4 | 2960.8 | 3.474% |
-| DSLY4_04 source | -25.69 | 738.5 | 2271.8 | 2.666% |
-| DSLY4_04 new FM | -22.73 | 751.0 | 2928.5 | 3.289% |
-| DSLY4_04 additive | -32.47 | 523.6 | 1862.6 | 0.452% |
-| DSLY4_04 external vgm-conv | -22.71 | 749.6 | 2971.6 | 3.332% |
+| private-case-089 source | -20.24 | 563.0 | 1970.3 | 2.021% |
+| private-case-089 new FM | -18.80 | 786.1 | 3046.9 | 3.523% |
+| private-case-089 additive | -28.54 | 551.6 | 1755.0 | 0.411% |
+| private-case-089 external vgm-conv | -18.77 | 780.4 | 2960.8 | 3.474% |
+| private-case-038 source | -25.69 | 738.5 | 2271.8 | 2.666% |
+| private-case-038 new FM | -22.73 | 751.0 | 2928.5 | 3.289% |
+| private-case-038 additive | -32.47 | 523.6 | 1862.6 | 0.452% |
+| private-case-038 external vgm-conv | -22.71 | 749.6 | 2971.6 | 3.332% |
 
 The new FM target is close to the external converter in these descriptive level
 and spectral measurements. Both FM results have more high-frequency energy than

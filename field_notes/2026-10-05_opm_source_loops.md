@@ -73,8 +73,8 @@ This is not sample-exact source timing, waveform or physical envelope proof.
 | from_fm/chords_mix/chords_mix.vgm | 2474 | 2474 | 0 | 0 |
 | from_mdx/nested_phrase_loops/nested_phrase_loops.vgm | 1560 | 993 | 3 | 2 |
 | from_psg/chords_mix/chords_mix.vgm | 2880 | 2818 | 1 | 1 |
-| M_G2_17S.vgm | 10745 | 10745 | 0 | 0 |
-| M_G2_18S.vgm | 19956 | 19487 | 1 | 1 |
+| private-case-158.vgm | 10745 | 10745 | 0 | 0 |
+| private-case-159.vgm | 19956 | 19487 | 1 | 1 |
 
 The authored nested reference has `[[c d e g]2 r8]3`. Its source VGM combines the
 last phrase delay with the song tail. Native final released duration consequently
@@ -84,7 +84,7 @@ of a pause+inner-repeat region. It does not infer a source tail split to force
 the reference's exact spelling. 1560 -> 993 chars is a 36.3% reduction from flat.
 
 This exact source baseline is stricter than the preliminary MDX-command loop
-experiment: local M_G2_17S has no exact source repetition, and M_G2_18S compresses
+experiment: local private-case-158 has no exact source repetition, and private-case-159 compresses
 less. Earlier 10426/11156-char figures must not be presented as this version's
 results. Further musical/tolerant equivalence requires an explicit rule and
 native evidence; it is not authorized by final roundtrip agreement alone.

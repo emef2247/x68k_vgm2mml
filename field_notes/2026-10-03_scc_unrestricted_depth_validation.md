@@ -1,9 +1,9 @@
-# gra2_005: Segment validation after removing loop-depth caps
+# private-case-103: Segment validation after removing loop-depth caps
 
 ## Scope
 
 Input: optional local fixture
-`tests/fixtures/local_only/psg_scc/msxplay.com/gra2_msx/gra2_005/gra2_005.vgm`.
+`<private-input>/private-case-103.vgm`.
 Compared legacy performed compression with explicit depth2, explicit depth6,
 and unrestricted depth, plus the current default structural conversion.
 All use enhanced macros, `--dump-passes --vgmticks`, and no normalization.
@@ -35,7 +35,7 @@ source-loop-first envelope bank, so its smaller size is not a depth-removal gain
 - The three legacy final MML files are byte-identical. Each invokes the
   performed compressor six times, so the changed code path was actually tested.
   This input produces no applied legacy nesting beyond two levels.
-- Default structural final MML is byte-identical to the earlier gra2_005
+- Default structural final MML is byte-identical to the earlier private-case-103
   structural benchmark. It never calls the legacy performed compressor.
 - All four outputs compile using MGSC1.11 via mgsc-js without buffer errors.
 
@@ -47,7 +47,7 @@ the separate seven-level synthetic regressions.
 
 ## Local artifacts
 
-Codex workspace `outputs/gra2-unrestricted-depth/comparison.json` records the
+Codex workspace `<private-output>/comparison.json` records the
 four runs. Each variant directory retains conversion/compiler logs, traces,
 pass/Segment CSVs, projection dumps, final MML and MGS. The local runner is
-`check_gra2_unrestricted_depth.py`. No fixture input was modified.
+the ignored private validation helper (original filename omitted). No fixture input was modified.

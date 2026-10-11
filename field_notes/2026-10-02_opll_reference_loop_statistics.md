@@ -4,7 +4,7 @@ The user requested a small structural survey before further loop reconstruction,
 including phrase lengths and a reusable method for later PSG/SCC comparison.
 Only `tests/fixtures/local_only/opll` was surveyed; no conversion/catalog playback
 was run and no reference fixture was modified. There are currently two MML files
-in this tree: grider and sx01v. This is a two-score sample, not a catalog-wide
+in this tree: private-case-130 and private-case-192. This is a two-score sample, not a catalog-wide
 distribution of OPLL music. Private MML contents are not copied here.
 
 ## Definitions and method
@@ -42,12 +42,12 @@ Do not claim that every future PSG/SCC score is already supported.
 
 | Score | Source loop definitions | Channel-expanded definitions | Finite | Infinite | With last-pass exit | Containing children | Maximum depth |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| grider | 15 | 21 | 14 | 1 | 12 | 1 | 2 |
-| sx01v | 40 | 48 | 35 | 5 | 11 | 5 | 2 |
+| private-case-130 | 15 | 21 | 14 | 1 | 12 | 1 | 2 |
+| private-case-192 | 40 | 48 | 35 | 5 | 11 | 5 | 2 |
 | Total | 55 | 69 | 49 | 6 | 23 | 6 | 2 |
 
 All 23 exit-bearing definitions are finite. These make up about 47% of finite
-definitions. Grider's nested count includes the whole-song loop enclosing the
+definitions. private-case-130's nested count includes the whole-song loop enclosing the
 rhythm's short loops; it is not evidence of deeply nested melodic phrases.
 
 Repeat-count distribution (source definitions): 2 times=25, 3=1, 4=4, 5=1,
@@ -66,15 +66,15 @@ combining grouped tracks when they agree:
 | 1,536 | 8 | 10 |
 | 7,872 | 41 | 1 |
 
-The longest entry is grider's entire infinite song-loop body, not a short phrase.
+The longest entry is private-case-130's entire infinite song-loop body, not a short phrase.
 All grouped tracks' ordinary body lengths agree in these scores. Channel-expanded
 length observations differ in frequency (69 rather than 55) and are separately
 retained in summary JSON; do not mix the two denominators when comparing catalogs.
 
-Grider's fourteen finite definitions are rhythm loops of one whole note each;
+private-case-130's fourteen finite definitions are rhythm loops of one whole note each;
 twelve use `|` and have final passes of 96 or 144 steps instead of 192.
 Its melodic tracks use the enclosing 41-whole-note song loop rather than locally
-written melodic loops. For sx01v, the musical structure includes 2/4/8-whole-note
+written melodic loops. For private-case-192, the musical structure includes 2/4/8-whole-note
 phrases alongside one-note and short multi-note repeats, and several finite
 phrase loops have different final-pass lengths. This supports examining phrase
 hierarchy and last-pass exits rather than increasing depth alone.

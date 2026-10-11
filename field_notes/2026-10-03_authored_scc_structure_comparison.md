@@ -2,21 +2,21 @@
 
 ## Question and scope
 
-The previous p52_arbl comparison was incomplete because expensive searches
+The previous private-case-166 comparison was incomplete because expensive searches
 were interrupted, not because its source bytes were unparseable. Its VGM is
 about1.25MB, but the relevant cost is the expanded note/command sequence and
 repeat/macro candidate search, not file size alone. An unused legacy Segment
 repeat search was removed from source-plan rendering in the preceding change.
-The remaining full enhanced-macro paired comparison on p52_arbl has not been
+The remaining full enhanced-macro paired comparison on private-case-166 has not been
 completed. Its successful legacy-macro diagnostic must not be substituted for
 that missing measurement.
 
-For a bounded follow-up, use only msxplay.com/gra2_msx inputs: gra2_002,
-gra2_005 and the six available gra2_001_with_sync_mark VGMs. According to the
+For a bounded follow-up, use only <private-reference>/private-collection-017 inputs: private-case-100,
+private-case-103 and the six available private-case-099_with_sync_mark VGMs. According to the
 user, these were exported from authored MGSDRV MML reconstructed by an SCC
-analysis program. Do not pool these with vgmrips.net/NEMESIS2 game captures.
-This is eight paired inputs, not a regression of all17 original gra2 songs.
-The long unsplit gra2_001 is not converted in this comparison.
+analysis program. Do not pool these with <private-reference>/private-collection-022 game captures.
+This is eight paired inputs, not a regression of all17 original private-collection-016 songs.
+The long unsplit private-case-099 is not converted in this comparison.
 
 Both variants use enhanced macros, ordinary60Hz target ticks, default sync
 policy and automatic allocations. --normalize-lengths is absent. The only
@@ -38,14 +38,14 @@ via mgsc-js2.0.0, without Track buffer full or allocation overrides.
 
 | Input | Envelope-first | Loop-first | Saved |
 | --- | ---: | ---: | ---: |
-| gra2_002 | 4117 | 4117 | 0.00% |
-| gra2_005 | 8749 | 8313 | 4.98% |
-| gra2_001 split VGM01 | 4189 | 4187 | 0.05% |
-| gra2_001 split VGM02 | 6345 | 6315 | 0.47% |
-| gra2_001 split VGM03 | 7220 | 7261 | -0.57% |
-| gra2_001 split VGM04 | 8443 | 8297 | 1.73% |
-| gra2_001 split VGM05 | 13789 | 13789 | 0.00% |
-| gra2_001 split VGM06 | 9149 | 9053 | 1.05% |
+| private-case-100 | 4117 | 4117 | 0.00% |
+| private-case-103 | 8749 | 8313 | 4.98% |
+| private-case-099 split VGM01 | 4189 | 4187 | 0.05% |
+| private-case-099 split VGM02 | 6345 | 6315 | 0.47% |
+| private-case-099 split VGM03 | 7220 | 7261 | -0.57% |
+| private-case-099 split VGM04 | 8443 | 8297 | 1.73% |
+| private-case-099 split VGM05 | 13789 | 13789 | 0.00% |
+| private-case-099 split VGM06 | 9149 | 9053 | 1.05% |
 | Total | 62001 | 61332 | 1.08% |
 
 The six split VGMs alone total49135->48902 characters, a0.47% reduction.
@@ -53,7 +53,7 @@ Five inputs shrink, two are unchanged, and one grows41 characters while still
 compiling. Conversion subprocess times span4.08..52.13 seconds; none reaches
 the240-second per-run bound. Their summed subprocess conversion time is328s.
 
-gra2_005 has24->18 sync comments. Excluding comment-only/blank lines and
+private-case-103 has24->18 sync comments. Excluding comment-only/blank lines and
 trailing comments, its code text is7578->7424 characters, a2.03% reduction.
 Both have20 envelope definitions occupying671 characters and32 macros.
 Thus the4.98% total saving includes fewer sync comments and is not all musical
@@ -89,8 +89,8 @@ lines, excludes metadata/comments, and does not multiply definitions by calls.
 
 | Input | Source markers (new) | Source depth (new) | Final physical loops old->new | Final depth old->new |
 | --- | ---: | ---: | ---: | ---: |
-| gra2_002 | 16 | 1 | 5->5 | 1->1 |
-| gra2_005 | 106 | 2 | 53->52 | 2->2 |
+| private-case-100 | 16 | 1 | 5->5 | 1->1 |
+| private-case-103 | 106 | 2 | 53->52 | 2->2 |
 | split VGM01 | 7 | 1 | 4->3 | 1->1 |
 | split VGM02 | 86 | 2 | 15->17 | 2->1 |
 | split VGM03 | 56 | 2 | 14->15 | 1->1 |
@@ -101,7 +101,7 @@ lines, excludes metadata/comments, and does not multiply definitions by calls.
 The old bank has no equivalent source-marker CSV, so its zero report count
 must not be described as zero loop detection. It already emits target loops.
 
-For gra2_005, stored volume-curve representative occurrences fall from the
+For private-case-103, stored volume-curve representative occurrences fall from the
 1295 expanded occurrences to632 before envelope selection. For split VGM04
 they are404->187 and VGM06 is474->268. These are counts of observed curve
 occurrences, not discarded notes or a corresponding MML saving percentage.
@@ -121,15 +121,15 @@ LF-normalized original reference syntax:
 
 | Reference | Characters | Physical loops | Maximum lexical depth | Macro definitions |
 | --- | ---: | ---: | ---: | ---: |
-| gra2_001.mml | 21094 | 63 | 2 | 17 |
-| gra2_002.mml | 3201 | 13 | 1 | 0 |
-| gra2_005.mml | 3889 | 52 | 3 | 5 |
+| private-case-099.mml | 21094 | 63 | 2 | 17 |
+| private-case-100.mml | 3201 | 13 | 1 | 0 |
+| private-case-103.mml | 3889 | 52 | 3 | 5 |
 
 These are authored-source syntax counts, not interchangeable with expanded VGM
-duration or generated-source size. In particular, gra2_005 includes indefinite
-loops; the capture is finite. The score auditor fully parses gra2_002 and
+duration or generated-source size. In particular, private-case-103 includes indefinite
+loops; the capture is finite. The score auditor fully parses private-case-100 and
 finds13 loops: eleven repeated twice and two repeated15 times. It cannot fully
-audit gra2_001's multi-argument hardware-vibrato syntax or gra2_005's macro
+audit private-case-099's multi-argument hardware-vibrato syntax or private-case-103's macro
 call durations. Physical syntax inspection is reported instead of silently
 dropping those constructs. Exact reference loop-window recovery is not claimed.
 
@@ -142,7 +142,7 @@ were not the reference MMLs used to export the six available VGMs. Retract
 the earlier suggestion that these six VGM captures lack corresponding loop
 blocks: the discrepancy came from the mixed reference-file generations.
 
-After the user regenerated gra2_001 with the first script, the directory has
+After the user regenerated private-case-099 with the first script, the directory has
 six numbered MMLs and six matching VGMs, without extra numbered files. The
 recomputed marks are0,886,2166,3126,5046,6966,8526, exactly matching all six MML
 block comments. Nominal block lengths are886,1280,960,1920,1920,1560 score steps
@@ -157,16 +157,16 @@ two or more loop-boundary blocks have matching MML/VGM files for every block:
 
 | Song | MML/VGM block pairs |
 | --- | ---: |
-| gra2_001 | 6 |
-| gra2_003 | 2 |
-| gra2_004 | 3 |
-| gra2_007 | 3 |
-| gra2_009 | 2 |
-| gra2_010 | 2 |
-| gra2_011 | 3 |
-| gra2_014 | 7 |
-| gra2_015 | 4 |
-| gra2_016 | 3 |
+| private-case-099 | 6 |
+| private-case-101 | 2 |
+| private-case-102 | 3 |
+| private-case-104 | 3 |
+| private-case-106 | 2 |
+| private-case-108 | 2 |
+| private-case-109 | 3 |
+| private-case-110 | 7 |
+| private-case-111 | 4 |
+| private-case-112 | 3 |
 | Total | 35 |
 
 All35 numbered MML interval comments agree with independently recomputed
@@ -174,10 +174,10 @@ loop-boundary marks, and all35 VGM headers are valid. Header durations differ
 from nominal score-derived durations by+2.49..4.92 ordinary ticks; no coarse
 duration outlier was found. For the15 folders with their own splitter script,
 its analysis functions were used without invoking main or writing fixtures.
-gra2_007/011 lack the shell wrapper and local splitter copy at inspection time;
-the gra2_001 splitter's analysis agrees with their existing block intervals.
+private-case-104 and private-case-110 lack the shell wrapper and local splitter copy at inspection time;
+the private-case-099 splitter's analysis agrees with their existing block intervals.
 Eight multi-block songs have wrappers; including those two additional paired
-datasets gives the ten-song/35-block total. Single-block gra2_002 has no split
+datasets gives the ten-song/35-block total. Single-block private-case-100 has no split
 VGM, outside the user's two-or-more-block criterion. Its original VGM exists.
 
 This inventory supplies explicit filename/score-window pairs for subsequent
@@ -187,14 +187,14 @@ note linked below. Prefer these loop-boundary MMLs over v2 fine-grained splits
 when evaluating authored loop recovery.
 
 The references still show room for higher-level reconstruction: generated
-gra2_005 has depth2 versus authored depth3, and full reference001 uses reusable
+private-case-103 has depth2 versus authored depth3, and full reference001 uses reusable
 drum-control recipes. This experiment confirms a small full-pipeline benefit
 from the ordering change; it does not demonstrate reconstruction of all authored
-loops/macros, nor that unsplit gra2_001 now fits its track buffers.
+loops/macros, nor that unsplit private-case-099 now fits its track buffers.
 
 ## Artifacts and next bounds
 
-Private output directory on the Codex host: co/outputs/gra2-source-structure.
+Private output directory on the Codex host: <private-output>/private-collection-016-source-structure.
 comparison.csv and comparison.json retain all final metrics; each input has
 legacy/structural MML, MGS, conversion/compile logs and full --dump-passes CSVs.
 references.json retains separate authored-source syntax statistics and audit
@@ -204,8 +204,8 @@ sync-pairs.csv/json record the corrected17-song inventory, source marks,
 per-block MML intervals, file existence and VGM-header duration checks.
 
 Subsequent user-requested follow-up completed the35 paired loop-block conversion
-benchmark and reference-window audit. See2026-10-03_gra2_loop_block_benchmark.md
+benchmark and reference-window audit. See2026-10-03_scc_loop_block_benchmark.md
 for those results; the earlier inventory-only limitation is superseded for the
-35 blocks. No full17-song unsplit catalog, long unsplit gra2_001, enhanced-macro
-p52_arbl pair or audio comparison has been run. Do not infer those results from
+35 blocks. No full17-song unsplit catalog, long unsplit private-case-099, enhanced-macro
+private-case-166 pair or audio comparison has been run. Do not infer those results from
 the eight cases or35 blocks.

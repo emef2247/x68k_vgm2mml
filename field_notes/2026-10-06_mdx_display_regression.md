@@ -24,9 +24,9 @@ register-control renderer's `results.csv`:
 | `outputs/opm/local_only/psg_scc` | 23 | 15 | 8 |
 | Total | 68 | 57 | 11 |
 
-PSG offset failures: DSLY4_02, DSLY4_11 and XANADU14 (track 7).
-PSG/SCC offset failures: gra2_008 and gra2_008_with_sync_mark01 (track 7),
-MG2_04 and MG2_05 (track 3), MG2_18 (track 5), and MG2_25, MG2_30 and MG2_36
+PSG offset failures: private-case-036, private-case-043 and private-case-207 (track 7).
+PSG/SCC offset failures: private-case-105 and private-case-105_with_sync_mark01 (track 7),
+private-case-160 and private-case-161 (track 3), private-case-162 (track 5), and private-case-163, private-case-164 and private-case-165
 (track 4). These are the compiler's track indices as printed, not a claim
 that any ADPCM note was generated.
 
@@ -40,11 +40,11 @@ All the following files still produce music according to the user.
 
 | Files | Observed MMDSP behavior |
 | --- | --- |
-| GRA1_01 | Volume meter does not move |
-| GRA1_02; DSLY4_04, DSLY4_07, DSLY4_13, DSLY4_18 | Player reports insufficient track buffer |
-| GRA1_05 and other GRA1 files in the report | Meter moves initially, then only peak line; keyboard continues moving |
-| DSLY4_01, DSLY4_03, DSLY4_06, DSLY4_09, DSLY4_19, DSLY4_20 | Keyboard highlight only, reported static |
-| DSLY4_08 | No moving display |
+| private-case-085 | Volume meter does not move |
+| private-case-086; private-case-038, private-case-040, private-case-044, private-case-045 | Player reports insufficient track buffer |
+| private-case-089 and other cases in the same private collection | Meter moves initially, then only peak line; keyboard continues moving |
+| private-case-035, private-case-037, private-case-039, private-case-042, private-case-046, private-case-047 | Keyboard highlight only, reported static |
+| private-case-041 | No moving display |
 
 Do not reinterpret these reports as loss of audio, or infer a player-buffer
 limit from the external compiler's separate 16-bit offset limit.
@@ -59,12 +59,12 @@ Long intervals are split into chunks of at most 256 MDX ticks and tied.
 
 | File | MML characters | Note chunks | Ties | Rests | Volume range by used track | MDX bytes | Largest FM track bytes |
 | --- | ---: | ---: | ---: | ---: | --- | ---: | ---: |
-| DSLY4_01 | 34,183 | 1,318 | 1,315 | 0 | F/G/H: 0..106 | 16,000 | 5,415 |
-| DSLY4_04 | 93,843 | 4,271 | 4,268 | 0 | F: 0..94; G/H: 0..90 | 43,183 | 20,865 |
-| DSLY4_08 | 60,926 | 3,171 | 3,168 | 0 | F/G/H: 0..106 | 27,526 | 16,710 |
-| GRA1_01 | 68,017 | 2,970 | 2,967 | 0 | F/H: 0..102; G: 0..106 | 31,071 | 12,882 |
-| GRA1_02 | 79,232 | 3,484 | 3,481 | 0 | F/G: 0..102; H: 0..94 | 36,195 | 19,677 |
-| GRA1_05 | 44,985 | 1,899 | 1,897 | 0 | F/G: 0..106 | 21,089 | 10,545 |
+| private-case-035 | 34,183 | 1,318 | 1,315 | 0 | F/G/H: 0..106 | 16,000 | 5,415 |
+| private-case-038 | 93,843 | 4,271 | 4,268 | 0 | F: 0..94; G/H: 0..90 | 43,183 | 20,865 |
+| private-case-041 | 60,926 | 3,171 | 3,168 | 0 | F/G/H: 0..106 | 27,526 | 16,710 |
+| private-case-085 | 68,017 | 2,970 | 2,967 | 0 | F/H: 0..102; G: 0..106 | 31,071 | 12,882 |
+| private-case-086 | 79,232 | 3,484 | 3,481 | 0 | F/G: 0..102; H: 0..94 | 36,195 | 19,677 |
+| private-case-089 | 44,985 | 1,899 | 1,897 | 0 | F/G: 0..106 | 21,089 | 10,545 |
 
 These six files each use two defined voices. Volume-setter counts equal
 snapshot counts: 1,318 / 3,354 / 1,981 / 2,442 / 2,840 / 1,690 respectively.

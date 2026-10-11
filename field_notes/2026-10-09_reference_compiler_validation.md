@@ -14,16 +14,16 @@ not edited. Native MXC v1.01 ran via the existing run68 helper.
 
 | Reference | Compilation | Comparison with original MDX |
 | --- | --- | --- |
-| FF4SIREN | pass | Entire MDX identical, including all nine tracks, tone bank and header |
-| RAY2C | compiler rejected input | unverified; no compiled candidate exists |
+| private-case-054 | pass | Entire MDX identical, including all nine tracks, tone bank and header |
+| private-case-180 | compiler rejected input | unverified; no compiled candidate exists |
 
-FF4SIREN native and published MDX SHA256:
-`e34545e9358f19e5a97f10a7db1b70f32e8878f0d9eb15e0983f55bccbf97391`.
+The native and reference MDX hashes match; the private hash is retained only
+in ignored local evidence.
 No title repair was applied in this case. This establishes that the current
 native tool/invocation reproduces this working reference exactly. It does not
 establish correctness of every generated MML or the separate typed PCM route.
 
-RAY2C's opening comment identifies the source as intended for `note.x v0.07.0`.
+private-case-180's opening comment identifies the source as intended for `note.x v0.07.0`.
 This identifies an intended tool, not proof of the original MDX's build history.
 Installed MXC v1.01 reports parameter errors in voice definitions and undefined
 performance commands; an appropriate note.x tool has not been verified locally.
@@ -50,7 +50,7 @@ counts. Keep `File`, `Date` and resolved `PDX file` paths outside literal conten
 equality; check PDX resolution and resolved bytes independently. The PCM marker
 and command counts are static inspection results, not execution traces.
 
-For FF4SIREN all 27 content columns matched and both parse results were Success.
+For private-case-054 all 27 content columns matched and both parse results were Success.
 The original PDX was copied unchanged beside the candidate MDX. Both paths
 resolved a PDX and those PDX bytes were identical. This is reference PDX reuse,
 not validation of newly generated PDX or PCM IR.
@@ -59,7 +59,7 @@ A diagnostic title-only mutation changed Title, Title hex and file MD5 while
 leaving Data MD5 unchanged. The comparison detected it. Keep this diagnostic
 copy and private metadata output ignored; it is not a playback candidate.
 
-RAY2C's original MDX/PDX could be inspected/resolved, but metadata equality is
+private-case-180's original MDX/PDX could be inspected/resolved, but metadata equality is
 unverified because native compilation failed. Do not call this a mismatch of
 two MDX files or a failure of vgm2mml's generated MML.
 
@@ -71,19 +71,19 @@ attaches the typed PCM plan with the existing MDX builder. The native MXC
 baseline does not validate that separate route.
 
 Passing the two unmodified UTF-8 reference MML copies to the current helper's
-`--compile-only` entry point failed during mmlx parsing for both. FF4SIREN was
-tested with the existing `--pcm-mode standard`; RAY2C used the default layout.
+`--compile-only` entry point failed during mmlx parsing for both. private-case-054 was
+tested with the existing `--pcm-mode standard`; private-case-180 used the default layout.
 Failures were preserved without adapting either reference. This bounds the
 direct reference-MML test; it does not establish a defect in the generated
 canonical MML or in the typed PCM serialization. No helper MDX was produced.
 
 The concrete first parser failures are different:
 
-- FF4SIREN line4 is a bare voice-name annotation, without an explicit comment
+- private-case-054 line4 is a bare voice-name annotation, without an explicit comment
   marker. Native MXC accepts the original file and reproduces its MDX exactly.
   The mmlx0.2.0 line grammar permits directives, voices, tracks, explicit
   `;`/`/* ... */` comments and blank lines, but no bare annotation line.
-- RAY2C line4 is `#tps-all`. Its source also has `#detune`, `#noreturn`, `#wave`,
+- private-case-180 line4 is `#tps-all`. Its source also has `#detune`, `#noreturn`, `#wave`,
   `#remove`, `#beep`, `#reste` and `#coder`. The mmlx0.2.0 grammar defines only
   `#title` and `#pcmfile` as file-level directives. Parsing stopped at the first
   unsupported directive; subsequent musical syntax has not been validated by
@@ -118,7 +118,7 @@ python3 outputs/pcm_stream_2026-10-09/audit_reference_mdxinfo.py
 The user resumed reference/tool investigation after restarting the app. Further
 read-only investigation of applicable reference syntax, MML/PCM IR handoff and
 generated MDX/PDX is allowed. Production implementation remains paused while
-the user considers the approach. BOSCON06 stopping and generated MMDSP display
+the user considers the approach. private-case-027 stopping and generated MMDSP display
 failures are unresolved. No MDX-to-VGM replay or external player repair was used
 in this audit. Do not treat metadata equality as proof of native display/stop
 behavior, or use PCM1/PCM8 classification as a prerequisite to the user's task.

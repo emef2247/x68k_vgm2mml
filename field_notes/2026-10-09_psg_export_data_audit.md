@@ -35,7 +35,7 @@ python scripts/export_mdx.py tests/fixtures/local_only/psg/vgmrips.net \
 ```
 
 Results: **57/82 generated**, 24 noise/hardware-EG conversion failures, and one
-compiler failure (`XANADU14`, track 8 offset exceeds `0xfffe`). The last case
+compiler failure (`private-case-207`, track 8 offset exceeds `0xfffe`). The last case
 retains MML; this is the observed serializer/track-offset constraint, not proof
 of a universal 64 KiB MDX file limit. No CSV field-limit failures remain.
 
@@ -121,8 +121,8 @@ normal MDX notes and volume commands. This does not demonstrate MMDSP display
 updates. Logs/metadata are ignored under
 `outputs/psg_data_2026-10-09/mdx_audit/`.
 
-The formerly failing `DSLY4_01` passes actual structured target state/Key/end
-verification. An additional representative `GRA1_01` fails the strict Key-point
+The formerly failing `private-case-035` passes actual structured target state/Key/end
+verification. An additional representative `private-case-085` fails the strict Key-point
 check: all positive-duration states, Key command times/values and end agree,
 but one Key-Off has six raw/decoded pitch-field mismatches. Inspection shows
 the target updates KF immediately before Key-Off, while MDX replay updates it
@@ -131,7 +131,7 @@ places terminal zero-duration controls after the note's automatic release.
 This is recorded as a genuine strict comparison failure, not waved away because
 the interval state recovers. Do not change source IR or weaken Key-point checks
 to obtain a pass. Evidence is in
-`outputs/psg_data_2026-10-09/verified/{DSLY4_01,GRA1_01}/` and the latter's
+`<private-output>/{private-case-035,private-case-085}/` and the latter's
 `keypoint_audit/`.
 
 The batch's `success` means artifacts generated; it does not mean all 57 files

@@ -10,27 +10,27 @@ recover structure from original MML/MDX.
 
 | Group | MDX files | Original MML found | Static layout |
 |---|---:|---|---|
-| `FinalFantasy/FF4/MACHAN/FF4SIREN` | 1 | Yes | 9 tracks, standard PCM1 candidate |
-| `Namco/System_FA/SFA02`, `SFA02_`, `SFA11` | 3 | None beside the MDX | 16 tracks, PCM8 enabled |
-| `Taito/RayForce/RAY2C` | 1 | Yes | 16 tracks, PCM8 enabled |
-| `Taito/RayForce/RAYFOR0`, `RAYFOR1` | 2 | None beside the MDX | 16 tracks, shared `RAYFOR.PDX` |
-| `Taito/RayForce/RF2` | 1 | None beside the MDX | 16 tracks, PCM8 enabled |
-| `Taito/RayForce/CHAMA/RAY01C` through `RAY07C` | 7 | No original MML; PDL present | 16 tracks, shared `RAY01C.PDX` |
+| `<private-reference>/private-case-054` | 1 | Yes | 9 tracks, standard PCM1 candidate |
+| `<private-reference>/private-case-185`, `private-case-186`, `private-case-187` | 3 | None beside the MDX | 16 tracks, PCM8 enabled |
+| `<private-reference>/private-case-180` | 1 | Yes | 16 tracks, PCM8 enabled |
+| `<private-reference>/private-case-182`, `private-case-183` | 2 | None beside the MDX | 16 tracks, shared `private-case-181.PDX` |
+| `<private-reference>/private-case-184` | 1 | None beside the MDX | 16 tracks, PCM8 enabled |
+| `<private-reference>/private-case-173` through `private-case-179` | 7 | No original MML; PDL present | 16 tracks, shared `private-case-173.PDX` |
 
 All 15 original MDX headers resolve their declared PDX filename locally,
 including case differences and shared-bank filenames. The user's description
 of complete MML sets is broader than the original MML files currently present:
-only FF4SIREN and RAY2C have same-stem `.MML` files in this selected tree.
+only private-case-054 and private-case-180 have same-stem `.MML` files in this selected tree.
 PDL is sample-container construction material, not music-track MML.
 
-Use FF4SIREN first for standard PCM1 static C0 evidence. The other 14 are useful
+Use private-case-054 first for standard PCM1 static C0 evidence. The other 14 are useful
 extension references, but do not certify standard PCM1 semantics. PCM8 and
 multi-bank references need their own execution profile; a bank-0-only sample
 audit must not call a note invalid merely because its slot is in another bank.
 
 ## Static evidence obtained
 
-The original FF4SIREN MDX is 1835 bytes and declares a 2221-byte PDX. Bank 0 has
+The original private-case-054 MDX is 1835 bytes and declares a 2221-byte PDX. Bank 0 has
 one populated slot, number 1, with 1453 encoded bytes. Its P track is 45 bytes
 and contains 23 encoded commands, including F4 and 15 encoded sample-note
 commands with durations 6, 12 or 24 MDX ticks. Each static sample reference
@@ -63,9 +63,9 @@ Ignored evidence:
 - `outputs/pcm_stream_2026-10-09/reference/encoded_commands.c`: local read-only
   inspector; upstream source is outside tracked production code.
 
-The earlier `reference_mdx_audit.json` and `reference_mdx_bosconian/` inventory
-predate the user's cleanup and are historical only. The former Bosconian set
-was not proven to match the X68000 BOSCON VGM performance; one matching sample
+The earlier `reference_mdx_audit.json` and `reference_mdx_<private-reference>/` inventory
+predate the user's cleanup and are historical only. The former private-collection-004 set
+was not proven to match the X68000 private-collection-003 VGM performance; one matching sample
 alone was insufficient pairing evidence. Do not reuse it as a current oracle.
 
 ## How this helps the current implementation
@@ -77,9 +77,9 @@ an independent reference. Do not use PCM8 references to infer standard PCM1
 hold, pan, reset or rate behavior.
 
 No selected MDX has yet been certified as the original performance behind
-BOSCON01. Its generated MDX capacity issue therefore remains separate; matching
+private-case-022. Its generated MDX capacity issue therefore remains separate; matching
 the size/structure of a different reference is not a conversion criterion.
 Full C/A/B playback comparison and native runtime validation remain unimplemented.
-The later BOSCON06 end-noise report resumed static reference/stop-path research;
+The later private-case-027 end-noise report resumed static reference/stop-path research;
 see field_notes/2026-10-09_pcm_pdx_end_review.md. MMDSP display work remains paused,
 and no native cessation or runtime equivalence is certified.

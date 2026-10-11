@@ -1,8 +1,8 @@
-# RayForce structure and controlled extended-mode tail trials
+# private-collection-024 structure and controlled extended-mode tail trials
 
 ## Scope and current outcome
 
-The user confirms both copied RAY01C and RAYFOR0 originals play and end normally,
+The user confirms both copied private-case-173 and private-case-182 originals play and end normally,
 whereas all six original files in finite_end_tail leave continuing noise. The
 user asks for a toolchain that produces normal MDX/PDX from generated MML and
 neutral PCM IR; MXC is not a requirement. No production conversion or source IR
@@ -14,24 +14,24 @@ natural ending and MMDSP animation remain unverified until the user tests them.
 
 ## Verified structural differences
 
-| Item | RAY01C | RAYFOR0 | Original finite_end_tail |
+| Item | private-case-173 | private-case-182 | Original finite_end_tail |
 | --- | --- | --- | --- |
 | MDX tracks |16, A-H/P-W |16, A-H/P-W |9, A-H/P |
 | Initial PCM-mode declaration |E8 |E8 |absent |
 | PDX tables |3 x96 entries |1 x96 entries |1 x96 entries |
-| Populated slots by bank |64/66/26 |28 |PUBPCM2; FF4SIREN1 |
+| Populated slots by bank |64/66/26 |28 |PUBPCM: 2; private-case-054: 1 |
 | MDX banks used |0,1 |0 |0 |
 | End command |F1 00 |F1 00 |F1 00 |
 | Native finite ending |user pass |user pass |user fail |
 
-RAY01C has three consecutive768-byte tables and payload starts at2304. This is
+private-case-173 has three consecutive768-byte tables and payload starts at2304. This is
 not concluded solely from that offset: all288 entries have been checked against
 the full table boundary and file size; the MDX selects banks0/1; all360 interpreted
 PCM requests resolve to populated samples. Bank2 has26 populated slots but is not
-used by this particular MDX. RAYFOR has96 entries; all446 interpreted PCM requests
+used by this particular MDX. private-case-181 has96 entries; all446 interpreted PCM requests
 resolve. Unknown unwritten rate/pan/volume remain unknown rather than being
 invented as source evidence. Full private CSV/JSON is under
-outputs/reference_validation_2026-10-10/rayforce_structure/.
+<private-output>/.
 
 All original endings are inside the track boundary, with no bytes after the
 executed F1 00 before the next region. PDX contains offsets, lengths and payloads;
@@ -55,8 +55,8 @@ Both regenerated PDX files are fully byte-identical to the supplied originals:
 
 | File | Banks | Bytes | Table offsets/payloads/full file |
 | --- | --- | --- | --- |
-| RAY01C.PDX |3 |840134 |identical |
-| RAYFOR.PDX |1 |187296 |identical |
+| private-case-173.PDX |3 |840134 |identical |
+| private-case-181.PDX |1 |187296 |identical |
 
 This establishes that this existing packer can reproduce these PDX structures
 from exact encoded samples. It does not establish that vgm2mml extracted the
@@ -66,10 +66,10 @@ that limit was not changed. Private regenerated samples remain ignored.
 
 ## Compiler and ordering evidence
 
-Native MXC v1.01 reproduces original FF4SIREN MDX byte-for-byte. RAY2C's supplied
+Native MXC v1.01 reproduces original private-case-054 MDX byte-for-byte. private-case-180's supplied
 MML targets NOTE v0.07.0 and is rejected by the installed MXC; this dialect result
-does not imply the binary RayForce format cannot be produced by another chain.
-No original RAY01C/RAYFOR0 MML compilation has been claimed.
+does not imply the binary private-collection-024 format cannot be produced by another chain.
+No original private-case-173/private-case-182 MML compilation has been claimed.
 
 The normal renderer puts @voice, @v, p, q, D, o before the note. Pitch and duration
 are carried together in the compiled timed NOTE; o/l are compiler state rather
@@ -81,7 +81,7 @@ result, not proof all controls commute or that MMDSP animation is unaffected.
 The optional probes/results are preserved in outputs/listen/mode_order_trials/.
 No further ordering probes should be run before the requested listening test.
 
-The older DSLY4_03 generated MDX contains646/672/701 timed NOTE events on F/G/H,
+The older private-case-037 generated MDX contains646/672/701 timed NOTE events on F/G/H,
 plus57/56/46 direct register commands, none targeting Key-On register08. It is
 not wholly raw-register key sequencing. The existence of NOTE commands does not
 prove display correctness; runtime animation still needs its own evidence.
@@ -120,7 +120,7 @@ describe the native9 stage; expected_extended/, validation_extended.json and
 mdxinfo_extended.tsv describe the current16 stage. No source IR fields were changed.
 
 Next allowed action: user MMDSP listening of all six current MDX with fixed
-PUBPCM.PDX/FF4SIREN.PDX. Only then decide whether this is a usable toolchain or
+PUBPCM.PDX/private-case-054.PDX. Only then decide whether this is a usable toolchain or
 whether further differences require investigation. No success claim, production
 mode default change, or automatic adoption of extended PCM follows from static
 inspection. No additional ordering work is authorized before that checkpoint.

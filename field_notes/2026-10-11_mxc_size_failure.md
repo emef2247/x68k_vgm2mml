@@ -1,8 +1,8 @@
-# POWERE: size-dependent native MXC failure
+# private-case-167: size-dependent native MXC failure
 
 ## Observed failure
 
-The user's existing POWERE export completed native OPM-to-MML conversion,
+The user's existing private-case-167 export completed native OPM-to-MML conversion,
 then failed compilation with `Compiler exited with -11`. The generated report
 selected 7424 us/tick (`@t227`), with a 4 MHz source and target and no PCM
 projection. This is not an alternate-clock pitch rejection.
@@ -43,26 +43,26 @@ only the exit code.
 
 ## Existing compiler workaround
 
-The same generated POWERE MML compiled with the existing helper's
+The same generated private-case-167 MML compiled with the existing helper's
 `--compile-only` mmlx path, producing a 54,667-byte MDX. The helper's
 `--inspect-commands` parsed it successfully. These are compilation and
 structural inspection results, not native playback/ending/display validation.
 The diagnostic artifact is in ignored
-`outputs/powere_compiler_check_2026-10-11/POWERE.mdx`.
+`<private-output>/private-case-167.mdx`.
 
 The user can regenerate a separate listening package with the documented
 `scripts/export_mdx.py --compiler mmlx --no-vgm` path. No implicit compiler
 fallback was added, and no song-loop implementation was started.
 
-## WBIIIA02: additional target-offset capacity failure
+## private-case-195: additional target-offset capacity failure
 
-The user's WBIIIAC batch has successes for 01 and 03; 02 failed with the same
+The user's private-collection-028 batch has successes for 01 and 03; 02 failed with the same
 native process exit -11. Existing prepared MML is 190,332 bytes, maximum line
 112 bytes, with balanced repeat brackets and maximum depth 2. Its clock is
 10240 us/tick (`@t216`), source and target are both 4 MHz, and no PCM projection
 is present. Unbuffered native stdout falsely reports an unclosed repeat on F.
 
-Unlike POWERE, compiling the existing full MML with mmlx also fails, explicitly:
+Unlike private-case-167, compiling the existing full MML with mmlx also fails, explicitly:
 `data inconsistency: MDX track 6 offset exceeds the maximum 0xfffe`.
 Compiling existing channel F separately succeeds with a 50,327-byte MDX;
 C alone produces 14,384 bytes, with A/B/D/E contributing additional data.

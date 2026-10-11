@@ -87,7 +87,7 @@ combined-size limit are `mdx_capacity_exceeded`, with MDX blocked. Generated
 MML/PDX and target dumps survive; runtime remains not_run/unverified and no
 unexpected playback mismatch is invented. No truncation/splitting is defined.
 
-## BOSCON01 inspection
+## private-case-022 inspection
 
 The private fixture is unchanged. Only metadata is recorded here:
 
@@ -100,14 +100,14 @@ The private fixture is unchanged. Only metadata is recorded here:
   Playback 47, ticks 393530..424986, has a 257.1904-sample nominal unsupplied
   tail after 5527 supplied bytes. This is not a claim about audible hold.
 - Default strict blocks delivery/stopped-supply/song-loop loss. Explicit
-  best-effort produces `BOSCON01.mdx.mml` (152658 bytes) and `BOSCON01.pdx`
+  best-effort produces `private-case-022.mdx.mml` (152658 bytes) and `private-case-022.pdx`
   (54571 bytes); all 51 allocated PDX payloads equal source-derived bytes.
 - The full MDX still cannot be built: track 8 offset exceeds `0xfffe`.
   `assessment_status=lossy`, `artifact_status=blocked`, runtime unverified/not_run.
   MML/PDX are partial outputs, not a completed MDX/PDX pair.
 
 Ignored evidence: `outputs/pcm_stream_2026-10-09/{before,expanded,strict,best-effort}/`
-and `boscon_audit.json`. Pass dumps include detailed structured target units,
+and `private-collection-003_audit.json`. Pass dumps include detailed structured target units,
 controls and timing even when MDX construction fails. Private bytes and
 generated binaries are not staged.
 
@@ -138,13 +138,13 @@ loops and setter/duration compaction are already active. No safe capacity
 workaround has been established; no clock change, note removal, compiler
 switch, track reordering or truncation was introduced.
 
-Ignored evidence: `boscon_track_sizes.tsv` and `reference/track_sizes.rs` under
+Ignored evidence: `private-collection-003_track_sizes.tsv` and `reference/track_sizes.rs` under
 `outputs/pcm_stream_2026-10-09/`. The compact timing report now scopes byte
 preservation to encoded playback samples stored in PDX, distinguishes direct
 and profile-derived supply, and explicitly leaves decoder consumption unknown.
 It does not claim that omitted stopped supplies were preserved in the target.
 
-The user accepted this capacity limitation for BOSCON01. The relevant size is
+The user accepted this capacity limitation for private-case-022. The relevant size is
 compiled FM command data, not MML character count. Keep its MDX generation
 blocked with partial MML/PDX evidence; do not treat it as a remaining PCM source
 decoder defect or require a capacity workaround to accept this source-support
@@ -159,39 +159,39 @@ conservative policy. Neither limit establishes an independent 64-KiB allowance
 per FM track or a universal MDX file-length rule. Driver allocation limits are
 separate from these offset/packing checks.
 
-### BOSCON04 trial
+### private-case-025 trial
 
 The user's normal converter command succeeded with baseline structured timing.
 Normalization declined because the nominated clock would collapse a positive
 source interval; this is the intended fallback, not conversion failure.
 Although the header declares an 8-MHz OKIM6258, actual command inventory contains
 only OPM and waits/end: no B7, bank or stream commands, and no PCM sample data.
-Thus BOSCON04 does not exercise PCM/PDX generation and needs no PDX.
+Thus private-case-025 does not exercise PCM/PDX generation and needs no PDX.
 
 `scripts/export_mdx.py` subsequently compiled its canonical MML with the default
 MXC and exported all three FM artifacts successfully. MDX is 11756 bytes and
 has an empty PDX name; the compiler's structure-validation step passed. The
 replayed VGM is 118454 bytes. No semantic roundtrip or native playback was run.
-Artifacts, compiler inputs/metadata and `BOSCON04.audit.json` are ignored under
-`outputs/opm_6258/vgmrips.net/BOSCON/`; the three export products are in
-`tracks/BOSCON04.vgm/`. The root and exported canonical MML bytes are identical.
+Artifacts, compiler inputs/metadata and `private-case-025.audit.json` are ignored under
+`<private-output>/`; the three export products are in
+`tracks/private-case-025.vgm/`. The root and exported canonical MML bytes are identical.
 
-### BOSCON06 / BOSCON07 trial
+### private-case-027 / private-case-028 trial
 
 Both inputs use bank-4 streams and PCM. Default strict conversion blocks known
 loss before target generation: song-loop omission, stopped-supply omission and
 byte-delivery schedule differences. Source analysis has no blocking issues.
-Strict reports remain in `outputs/opm_6258/vgmrips.net/BOSCON/`.
+Strict reports remain in `<private-output>/`.
 
 Explicit `--pcm-policy best-effort` with `--dump-passes` succeeded for both:
 
 | Input | MDX bytes | PDX bytes | Distinct samples | Playbacks | Delivery-loss spans |
 |---|---:|---:|---:|---:|---:|
-| BOSCON06 | 32349 | 71941 | 55 | 140 | 74 |
-| BOSCON07 | 33724 | 52859 | 24 | 158 | 67 |
+| private-case-027 | 32349 | 71941 | 55 | 140 | 74 |
+| private-case-028 | 33724 | 52859 | 24 | 158 | 67 |
 
 Products and complete pass/assessment dumps are in
-`outputs/opm_6258/vgmrips.net/BOSCON/best-effort/`. Each MDX names its adjacent
+`<private-output>/`. Each MDX names its adjacent
 same-stem PDX and has the standard nine-track layout. All allocated PDX sample
 bytes equal source-analysis bytes; all unused slots are empty. A read-only
 inspector using pinned mdxtools command boundaries decoded each MDX, and every
@@ -203,7 +203,7 @@ These are generated lossy artifacts, not strict roundtrip passes. Decoder
 consumption, IOCS reset, native buffered-data behavior and runtime playback
 remain unverified/not_run. Static command/payload checks do not establish
 waveform or MMDSP playback equivalence. Detailed ignored evidence is
-`outputs/opm_6258/vgmrips.net/BOSCON/BOSCON06_07.audit.json` and per-file
+`<private-output>/private-case-027_07.audit.json` and per-file
 `*.encoded_commands.csv`. No production code was changed for these trials.
 
 ## Verification and next action

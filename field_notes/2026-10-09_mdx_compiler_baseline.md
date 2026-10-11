@@ -105,7 +105,7 @@ used.
   MML, including the highest note 93. Evidence:
   `outputs/mxc_export_2026-10-09/block_boundary_fixed/note_fidelity.json`.
 - A private listening representative was generated with MXC under
-  `outputs/mxc_export_2026-10-09/listen_dslayer4/`; private music stays ignored.
+  `<private-output>/`; private music stays ignored.
 
 These are generation and bounded replay checks, not a native GUI or strict
 semantic roundtrip certification. The completion review found no blocking

@@ -29,7 +29,7 @@ Recorded: 2026-10-04. The user identifies the completed test-checkout run as PR5
 | current | psg_opll | 26 | 15 | 8 | 3 | 0 | 0 |
 | current | psg_scc | 98 | 78 | 19 | 1 | 0 | 0 |
 
-Current total: 689 inputs, 417 successes, 208 buffer errors, 63 conversion timeouts, one other compiler failure. All 63 raw convert_error rows have retained logs reporting a 300-second timeout. They were previously buffer errors, so their disappearance from the buffer_error count is not a recovery. The old missing YsSMS01 temporary export was deliberately deleted and is not a converter regression.
+Current total: 689 inputs, 417 successes, 208 buffer errors, 63 conversion timeouts, one other compiler failure. All 63 raw convert_error rows have retained logs reporting a 300-second timeout. They were previously buffer errors, so their disappearance from the buffer_error count is not a recovery. The old missing private-case-210 temporary export was deliberately deleted and is not a converter regression.
 
 ## Matched compile outcomes
 
@@ -44,11 +44,11 @@ Current total: 689 inputs, 417 successes, 208 buffer errors, 63 conversion timeo
 | normalized | psg_scc | 98 | 0 | 0 |
 | previous | psg_scc | 97 | 0 | 0 |
 
-Old/current OPLL: 306 to 302 successes among 543 shared paths. The raw increase from 306 to 324 includes 22 added, successful F1SPRT3D paths (including aliases); two temporary-export paths were removed. Old/current psg_opll has one recovery and one lost success; psg_scc has no changed success membership.
+Old/current OPLL: 306 to 302 successes among 543 shared paths. The raw increase from 306 to 324 includes 22 added, successful private-collection-009 paths (including aliases); two temporary-export paths were removed. Old/current psg_opll has one recovery and one lost success; psg_scc has no changed success membership.
 
-Previous/current OPLL: 92 to 96 successes among the 126 recorded paths. Recovered ALESTE09, ALESTE17, Alest216, FFMSX01 and FFMSX11; lost FFMSX14 to buffer_error. This confirms the intended FFMSX01 recovery in the catalog run, but does not establish a whole-catalog comparison with that partial baseline.
+Previous/current OPLL: 92 to 96 successes among the 126 recorded paths. Recovered private-case-009, private-case-010, private-case-008, private-case-056 and private-case-057; lost private-case-058 to buffer_error. This confirms the intended private-case-056 recovery in the catalog run, but does not establish a whole-catalog comparison with that partial baseline.
 
-Compared with the oldest baseline, lost successes are Alest213, FFMSX14, TOGZL15, XAK_II12, GF2SMS02 and the psg_opll FinalFantasy/14_GurguVolcano input. PRIMK15 changed from buffer_error to the compiler diagnostic "Can't defined Macro in 121" (macro *31); it was not a previous success.
+Compared with the oldest baseline, lost successes are private-case-007, private-case-058, private-case-193, private-case-205, private-case-084 and the psg_opll <private-reference>/private-case-003 input. private-case-172 changed from buffer_error to the compiler diagnostic "Can't defined Macro in 121" (macro *31); it was not a previous success.
 
 Normalized/current OPLL: 331 to 324 successes among 565 paths, three recoveries and ten lost successes. Do not describe the current structure as uniformly better than normalization.
 
@@ -59,7 +59,7 @@ Only OPLL melodic rising edges are counted. This does not measure PSG/SCC notes 
 - Current opll: 324 comparisons; source 220,684, regenerated 219,181, missing 1,535, extra 32.
 - Current psg_opll: 15 comparisons; source 5,103, regenerated 5,048, missing 55, extra 0.
 - Current psg_scc: 78 comparisons; source 24,100, regenerated 23,658, missing 442, extra 0.
-- Old/current shared OPLL comparisons (301): source 196,078 in both; missing 1,975 to 1,089, extra 32 unchanged. Missing edges decreased by 886 across FMPAC03 and PRIMK01/09/13. This cannot be attributed solely to loop compression across historical runs.
+- Old/current shared OPLL comparisons (301): source 196,078 in both; missing 1,975 to 1,089, extra 32 unchanged. Missing edges decreased by 886 across private-case-060 and private-case-169, private-case-170 and private-case-171. This cannot be attributed solely to loop compression across historical runs.
 - Previous/current shared OPLL comparisons (91): all counts unchanged (missing 702, extra 0).
 - Normalized OPLL 24 and psg_opll two successful compiles lacked completed KeyOn export comparisons due to the playback-duration limit. These are not compiler failures.
 

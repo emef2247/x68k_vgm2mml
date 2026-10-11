@@ -1,13 +1,13 @@
 # Release preparation and user native listening
 
-The user reran PSG-source NEMESIS with the default `export_mdx.py` command after
+The user reran PSG-source private-collection-021 with the default `export_mdx.py` command after
 compiler dependency recovery and reports 14/14 exports succeeded. In XM6
-TypeG / MMDSP they confirm animation now works. The attached GRA1_01 screenshot
+TypeG / MMDSP they confirm animation now works. The attached private-case-085 screenshot
 shows highlighted keyboards and meter activity. This is a user native display
 observation; do not infer strict waveform fidelity or all-song ending behavior.
 The agent did not reconvert private fixtures.
 
-The current GRA1_01 TXT from that user run reports 16128 us/tick and @t193,
+The current private-case-085 TXT from that user run reports 16128 us/tick and @t193,
 with maximum output boundary movement 350 source samples. Earlier pasted
 `Missing --mxc tool` diagnostics belong to a failed export; the current success
 TXT has no such diagnostic. Saved output versions must be distinguished.

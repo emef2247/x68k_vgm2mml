@@ -39,8 +39,8 @@ The supported-clock cohort has 52 cases, of which 35 passed and 17 hit capacity.
 The 134 unsupported cases are not evidence of a faulty VGM-to-Segment parser or
 a failed fidelity comparison; they did not enter the target roundtrip.
 
-Successful cases: Konami 11, MDX 13, T&E_Soft 7, vgmrips.net 4.
-Failed cases: MDX 5, Other 1, Square 1, vgmrips.net 10.
+Successful cases: private-source-002 11, MDX 13, private-source-006 7, vgmrips.net 4.
+Failed cases: MDX 5, other group 1, private publisher group 1, capture catalog 10.
 All unsupported cases are under vgmrips.net. There are no `comparison_failed`
 or `compile_timeout` rows in this run.
 
@@ -56,7 +56,7 @@ All 35 have matching per-channel Key-edge sequences and zero known-state
 mismatches. Projected event times and projected end times match exactly.
 Source-to-projected timing error is at most 6 VGM samples, reflecting the
 MDX tick projection; this is not exact source-time preservation.
-Four WBIIIAC cases have returned end times 1–5 samples earlier than the source,
+Four private-collection-028 cases have returned end times 1–5 samples earlier than the source,
 and exactly equal to the projected end times (01: -3, 03: -5, 05: -1, 14: -3).
 
 The comparison is `hybrid_effective_state`, not byte-for-byte VGM equality.
@@ -111,23 +111,23 @@ overflowing track index for all 17 failed cases.
 
 | Input | Error index | Estimated track bytes | Flat → structured characters | Emitted loops / max depth |
 | --- | ---: | ---: | ---: | ---: |
-| `MDX/MSXGRA2S/M_G2_01S.vgm` | 8 | 118,408 | 319,672 → 296,266 | 111 / 1 |
-| `MDX/MSXGRA2S/M_G2_05S.vgm` | 8 | 88,078 | 238,098 → 235,474 | 59 / 1 |
-| `MDX/MSXGRA2S/M_G2_08S.vgm` | 8 | 67,508 | 186,845 → 166,872 | 84 / 2 |
-| `MDX/MSXGRA2S/M_G2_14S.vgm` | 8 | 131,189 | 342,568 → 319,890 | 173 / 3 |
-| `MDX/MSXGRA2S/M_G2_16S.vgm` | 8 | 113,215 | 303,886 → 283,873 | 150 / 2 |
-| `Other/Warning/WARNOP/WARNOP.vgm` | 6 | 106,376 | 280,858 → 250,154 | 514 / 2 |
-| `Square/FinalFantasy/FF4/MACHAN/FF4WM1/FF4WM1.vgm` | 4 | 152,541 | 442,778 → 439,345 | 7 / 1 |
-| `vgmrips.net/WBIIIAC/WBIIIA02.vgm` | 6 | 143,453 | 389,374 → 389,125 | 5 / 1 |
-| `vgmrips.net/WBIIIAC/WBIIIA04.vgm` | 5 | 147,281 | 409,404 → 409,404 | 0 / 0 |
-| `vgmrips.net/WBIIIAC/WBIIIA06.vgm` | 4 | 180,605 | 493,956 → 493,956 | 0 / 0 |
-| `vgmrips.net/WBIIIAC/WBIIIA07.vgm` | 6 | 83,339 | 220,899 → 220,899 | 0 / 0 |
-| `vgmrips.net/WBIIIAC/WBIIIA08.vgm` | 5 | 156,180 | 427,176 → 427,176 | 0 / 0 |
-| `vgmrips.net/WBIIIAC/WBIIIA09.vgm` | 4 | 264,659 | 720,281 → 720,281 | 0 / 0 |
-| `vgmrips.net/WBIIIAC/WBIIIA10.vgm` | 5 | 190,733 | 501,273 → 501,193 | 1 / 1 |
-| `vgmrips.net/WBIIIAC/WBIIIA11.vgm` | 3 | 231,555 | 624,225 → 624,225 | 0 / 0 |
-| `vgmrips.net/WBIIIAC/WBIIIA12.vgm` | 3 | 564,208 | 1,542,531 → 1,542,531 | 0 / 0 |
-| `vgmrips.net/WBIIIAC/WBIIIA13.vgm` | 6 | 179,235 | 489,989 → 489,989 | 0 / 0 |
+| `<private-reference>/private-case-142.vgm` | 8 | 118,408 | 319,672 → 296,266 | 111 / 1 |
+| `<private-reference>/private-case-146.vgm` | 8 | 88,078 | 238,098 → 235,474 | 59 / 1 |
+| `<private-reference>/private-case-149.vgm` | 8 | 67,508 | 186,845 → 166,872 | 84 / 2 |
+| `<private-reference>/private-case-155.vgm` | 8 | 131,189 | 342,568 → 319,890 | 173 / 3 |
+| `<private-reference>/private-case-157.vgm` | 8 | 113,215 | 303,886 → 283,873 | 150 / 2 |
+| `<private-reference>/private-case-194.vgm` | 6 | 106,376 | 280,858 → 250,154 | 514 / 2 |
+| `<private-reference>/private-case-055.vgm` | 4 | 152,541 | 442,778 → 439,345 | 7 / 1 |
+| `<private-reference>/private-case-195.vgm` | 6 | 143,453 | 389,374 → 389,125 | 5 / 1 |
+| `<private-reference>/private-case-196.vgm` | 5 | 147,281 | 409,404 → 409,404 | 0 / 0 |
+| `<private-reference>/private-case-197.vgm` | 4 | 180,605 | 493,956 → 493,956 | 0 / 0 |
+| `<private-reference>/private-case-198.vgm` | 6 | 83,339 | 220,899 → 220,899 | 0 / 0 |
+| `<private-reference>/private-case-199.vgm` | 5 | 156,180 | 427,176 → 427,176 | 0 / 0 |
+| `<private-reference>/private-case-200.vgm` | 4 | 264,659 | 720,281 → 720,281 | 0 / 0 |
+| `<private-reference>/private-case-201.vgm` | 5 | 190,733 | 501,273 → 501,193 | 1 / 1 |
+| `<private-reference>/private-case-202.vgm` | 3 | 231,555 | 624,225 → 624,225 | 0 / 0 |
+| `<private-reference>/private-case-203.vgm` | 3 | 564,208 | 1,542,531 → 1,542,531 | 0 / 0 |
+| `<private-reference>/private-case-204.vgm` | 6 | 179,235 | 489,989 → 489,989 | 0 / 0 |
 
 ## Why track data becomes large
 
@@ -147,16 +147,16 @@ Confirmed from the emitted MML and the locally installed external compiler code:
 
 Examples from the current physical-command model:
 
-- `M_G2_08S`: 67,508 track bytes; H alone is 43,969. Raw writes account for
+- `private-case-149`: 67,508 track bytes; H alone is 43,969. Raw writes account for
   43,566 bytes across the output. This is a useful near-limit optimization case.
-- `M_G2_14S`: H alone is 84,895 bytes. Channel-7/noise/tone controls dominate
+- `private-case-155`: H alone is 84,895 bytes. Channel-7/noise/tone controls dominate
   its native raw-unit stream; extending conservative note lowering is relevant.
-- `WARNOP`: repeated setters consume 36,907 bytes of 106,376 track bytes.
+- `private-case-194`: repeated setters consume 36,907 bytes of 106,376 track bytes.
   F/G are large; this is a useful state-aware setter-reuse case.
-- `WBIIIA12`: 564,208 track bytes, of which raw writes account for 440,895.
+- `private-case-203`: 564,208 track bytes, of which raw writes account for 440,895.
   E alone is 292,984 bytes. KC/KF/channel controls, operator TL/voice changes
   need more compact target expression; shortening rest text alone is insufficient.
-- Seven of the ten failed WBIIIAC inputs have no emitted exact source loops.
+- Seven of the ten failed private-collection-028 inputs have no emitted exact source loops.
   The source-derived exact plans do not make frequent held controls disappear.
 
 These are target capacity observations. They do not justify dropping operator
@@ -170,7 +170,7 @@ Segments just to fit MDX.
    conversion errors and replay/Segment mismatches. Include the overflowing track
    index, cumulative offset and dominant command categories. Increasing the
    timeout would address a different problem.
-2. **Reduce target-state setter repetition.** Start with WARNOP and a small
+2. **Reduce target-state setter repetition.** Start with private-case-194 and a small
    synthetic case. Reuse voice/volume/pan/gate/detune state only when safe;
    intervening raw writes can invalidate cached state. Preserve expanded target
    meaning, native membership and inspectable decisions.
@@ -179,8 +179,8 @@ Segments just to fit MDX.
    KeyOn/KeyOff edges: compiler tie/lookahead semantics need dedicated checks,
    followed by native-state/Key comparison. A shorter MML length spelling by
    itself does not change the compiler's duration splitting.
-4. **Extend conservative held-note/noise lowering.** Use M_G2_08S/H first, then
-   M_G2_14S, FF4WM1 and WBIIIAC. Keep native partial-key, KC/KF, per-operator TL,
+4. **Extend conservative held-note/noise lowering.** Use private-case-149/H first, then
+   private-case-155, private-case-055 and private-collection-028. Keep native partial-key, KC/KF, per-operator TL,
    patch and noise behavior; represent controls inside a held note where MDX can
    express them. Do not replace arbitrary operator-TL trajectories with a single
    inferred channel volume. MDX noise commands are not interchangeable with all

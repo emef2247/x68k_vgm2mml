@@ -3,7 +3,7 @@
 ## Subsequent listening: tail extension fails
 
 The user explicitly confirmed every MDX in finite_end_tail leaves continuing
-noise: RATES, RATESF, RATESP, FS432, FS432F and FS432P. This includes both
+noise: RATES, RATESF, RATESP, private-case-064, private-case-065 and private-case-066. This includes both
 unchanged original controls, not only the four tail variants.
 Extending only FM A or only PCM P therefore did not solve the
 reported problem. Noise onset relative to the old/new ending and F7 during the
@@ -15,28 +15,28 @@ noise, while the GUI remains stopped with no corresponding display activity.
 FM is the user's tentative identification, not independently established. This
 does not prove a memory overrun, sample/address defect or sequencer execution.
 
-The final explicit clarification confirms both RAY01C and RAYFOR0 in
+The final explicit clarification confirms both private-case-173 and private-case-182 in
 finite_end_references end normally. This supersedes the intervening ambiguous
 noise report/question reply. Both are user-confirmed finite-ending references;
 their copied-file hashes have not independently been measured on the emulator.
-RAY2C continues looping, consistent with the encoded audit; it is not finite.
+private-case-180 continues looping, consistent with the encoded audit; it is not finite.
 
-Focused structural inspection of RAY01C, RAYFOR0, HOLDEND, RATES and FS432 finds
+Focused structural inspection of private-case-173, private-case-182, HOLDEND, RATES and private-case-064 finds
 F1 00 at the exact end of every track, valid track/tone offsets and valid ranges
 for the first 96 PDX slots. No trailing bytes remain in these track regions.
 These checks do not prove the loader's in-memory addresses or physical stop.
 The finite originals use a 16-track header and one E8 command; HOLDEND/RATES/
-FS432 use 9 tracks without E8. HOLDEND's successful stopping prevents treating
+private-case-064 use 9 tracks without E8. HOLDEND's successful stopping prevents treating
 the layout difference alone as a sufficient cause. Full private inspection is
 in outputs/reference_validation_2026-10-10/ending_structure/; no production
 conversion or source IR change was made.
 
 ## New user observations
 
-Original FF4SIREN keeps playing, consistent with its encoded song loops; manual
+Original private-case-054 keeps playing, consistent with its encoded song loops; manual
 MMDSP F7 during playback stops it. RATES leaves noise after finite completion;
-F7 during playback works, but F7 after the noise starts does not. Private FS432,
-FS768 and FSONE play normally and animate, then leave the same noise after
+F7 during playback works, but F7 after the noise starts does not. Private private-case-064,
+private-case-067 and private-case-068 play normally and animate, then leave the same noise after
 completion. Replaying and pressing F7 during playback stops the sound. F7 after
 completion was specifically tested/reported for RATES, not separately for each
 private case. Buffer overrun is a user hypothesis, not established evidence.
@@ -51,9 +51,9 @@ they do not identify a vgm2mml Segment/PCM source-decoder defect by themselves.
 
 RATES already has 72-tick rests on both A and P after their last notes. Last
 notes end at168, sequence ends240; at @t240 the silence intent is294.912ms.
-HOLDEND has64-tick rests, and the user reports successful cessation. FS432 and
-FS768 P notes end exactly at the finite P end; FSONE P ends3648, G ends3660.
-The original FF4SIREN loops and cannot certify natural finite-ending cleanup.
+HOLDEND has64-tick rests, and the user reports successful cessation. private-case-064 and
+private-case-067 P notes end exactly at the finite P end; private-case-068 P ends3648, G ends3660.
+The original private-case-054 loops and cannot certify natural finite-ending cleanup.
 
 MXDRV2.06+17 reference disassembly distinguishes explicit StopPlayback
 (lines739-785, PausePlayback at795-823) from finite EndPlayCommand
@@ -76,8 +76,8 @@ that exact runtime. Additional environment questions are not prerequisites.
 | --- | --- | --- | --- |
 | RATESF | A (FM) |1024ticks /4.194304s |5.177344s |
 | RATESP | P (PCM) |1024ticks /4.194304s |5.177344s |
-| FS432F | A (FM) |384ticks /5.210112s |11.071488s |
-| FS432P | P (PCM) |384ticks /5.210112s |11.071488s |
+| private-case-065 | A (FM) |384ticks /5.210112s |11.071488s |
+| private-case-066 | P (PCM) |384ticks /5.210112s |11.071488s |
 
 Every original note/control/state/voice before the original ending is checked
 unchanged. Only the selected track's ending is delayed by explicit rests; PCM
@@ -107,12 +107,12 @@ bounded domain and have their declared PDX. Thirteen loop, two end finitely:
 
 | Original pair | Last FM note/release request | Last PCM note/release request | Observation |
 | --- | --- | --- | --- |
-| CHAMA/RAY01C.MDX + RAY01C.PDX |3864tick |4080tick | U/V/W unheld q8 PCM notes immediately precede finite end |
-| RAYFOR0.MDX + RAYFOR.PDX |3122tick |3192tick | U/V encoded volume0; Q/S/T final notes held, so acoustic end uncertain |
+| <private-reference>/private-case-173.MDX + private-case-173.PDX |3864tick |4080tick | U/V/W unheld q8 PCM notes immediately precede finite end |
+| private-case-182.MDX + private-case-181.PDX |3122tick |3192tick | U/V encoded volume0; Q/S/T final notes held, so acoustic end uncertain |
 
-RAY01C is the clear requested-timeline PCM-last example. All16 tracks terminate
+private-case-173 is the clear requested-timeline PCM-last example. All16 tracks terminate
 at4080; FM has216 ticks of final rest after its last note, while U/V/W have no
-trailing rest. RAYFOR0's FM sequence ends3122 and PCM ends3192, but do not claim
+trailing rest. private-case-182's FM sequence ends3122 and PCM ends3192, but do not claim
 audible PCM-last from encoded volume0 or derive physical release of held notes.
 PCM sample exhaustion, playback modes and physical stopping are not proved by
 NOTE/gate timing. PDX inspection covers the standard first96 slots only, not
@@ -123,6 +123,6 @@ Full audit plus compact overview.csv: ignored
 Byte-exact original candidate copies: `outputs/listen/finite_end_references/`.
 No copied private melody, tone or sample payload is put in committed notes/tests.
 Seventeen reader/public/audit tests plus five selector/tail tests pass. Next,
-listen to tail variants and the finite original RAY01C pair, retaining the failing
+listen to tail variants and the finite original private-case-173 pair, retaining the failing
 originals. Do not infer a production fix, buffer-overrun cause or source-IR
 completeness from this preparatory static success.

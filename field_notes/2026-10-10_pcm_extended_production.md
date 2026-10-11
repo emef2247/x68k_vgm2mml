@@ -13,9 +13,9 @@ six in this confirmation. No PCM roundtrip success is claimed.
 | RATES | b4bd0b64e163b4ba7c97e38f5bfffaea0d8b72a05e360abf9f14ced0ee2f4f44 | pass / pass |
 | RATESF | 2f50c3924c245673546b53f022167acdba4d4ea2aa5f89e9710a6094f810220a | pass / pass |
 | RATESP | a4411707c69f95660413ff218b9c57429bfe0ab64b518cbe6dd0bf36ba83cc91 | pass / pass |
-| FS432 | d80c442c1f4a8c46296d3a161691da000d0d4e9e1e60e875df68ea14a0ef722a | pass / pass |
-| FS432F | e863fca1fb4308665af0b69ecc99866aed85b6bfb11299d714d9131da61ba9c0 | pass / pass |
-| FS432P | a375aa735b53e2174539b1f5a47c232fd0086261cb5032748df62f224fe12e3e | pass / pass |
+| private-case-064 | retained in ignored evidence | pass / pass |
+| private-case-065 | retained in ignored evidence | pass / pass |
+| private-case-066 | retained in ignored evidence | pass / pass |
 
 `listening_results.json`, `listening_observations.csv` and both validation JSONs
 in that package now record the new results. The public RATES variants also have
@@ -83,8 +83,8 @@ will run those cases. Further ordering research remains paused.
 cargo build --release --locked --manifest-path scripts/mdx_fixture_generator/Cargo.toml
 python scripts/export_mdx.py tests/fixtures/public/opm_oki6258 \
   --outdir outputs/listen/opm_oki6258 --no-vgm --pcm-policy best-effort
-python scripts/export_mdx.py tests/fixtures/local_only/opm_oki6258/vgmrips.net/BOSCON \
-  --outdir outputs/listen/BOSCON --no-vgm --pcm-policy best-effort
+python scripts/export_mdx.py <private-input>/private-collection-003 \
+  --outdir <private-output>/private-collection-003 --no-vgm --pcm-policy best-effort
 ```
 
 The second input is for the user's local run. `best-effort` explicitly permits

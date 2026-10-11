@@ -20,7 +20,7 @@ Historical measurements below are carried forward with their original scope.
 | Relative melody notation | Same document: emitted-state basis, rest deferral and one-step relative setters are useful implementation constraints. |
 | Continuous OPLL target gate spelling | Same document: preserves the `&` plus `q0`/`q8` compiler observation; links existing key/envelope evidence rather than duplicating its investigation. |
 | Long-envelope preference and shared selection | [Software envelopes](../docs/software_envelopes.md): shared bank, priority, exact observed-prefix reuse, inline fallback and report paths. Existing pattern docs already cover Segment assignment IDs. |
-| Grider export-tail observation | Retained below as a scoped playback observation, not a converter rule. |
+| private-case-130 export-tail observation | Retained below as a scoped playback observation, not a converter rule. |
 
 Current code was read only to distinguish implemented behavior from old proposals.
 For example, the envelope policy is duration-first, not an implemented optimal
@@ -38,11 +38,11 @@ reports. The new documents label those limits explicitly.
 | Driver-frame measurement versus 60 Hz assumptions | [MGSDRV/libkss timing](2026-09-28_mgsdrv_libkss_timing.md) |
 | Melody/performed patterns and integrated pattern/envelope IDs | [Melody patterns](../docs/melody_patterns.md) |
 | PSG/SCC actual periods, tuning and signed detune | [Register-period review](2026-09-29_psg_scc_periods.md); [pitch roundtrip](../docs/pitch_roundtrip.md) |
-| Key edges versus inferred onset; maximum attenuation and rejected coalescing | [OPLL key/envelope review](2026-10-01_opll_key_and_envelope.md); [Alest202 evaluation and withdrawal](2026-10-01_alest202_retrigger_check.md) |
+| Key edges versus inferred onset; maximum attenuation and rejected coalescing | [OPLL key/envelope review](2026-10-01_opll_key_and_envelope.md); an earlier private retrigger evaluation and withdrawal (note not retained here) |
 | Key-On totals and count-comparison limits | [Key-On counts](../docs/opll_keyon_counts.md) |
 | Declared VGM loops, gzip signature, offsets and shared wait clock | [VGM loop metadata](../docs/vgm_loop.md); [loop observations](2026-10-01_vgm_loop_metadata.md); [VGM timing](../docs/vgm_timing.md) |
 | Source-inferred duration normalization and reference repetition audits | [Note normalization](../docs/note_normalization.md); [sample timing audit](2026-10-02_sample_vgmticks.md); [normalization benchmark](2026-10-02_note_normalization_benchmark.md) |
-| Reversible source structure, overlapping alternatives and unrestricted detection depth | [Melody patterns](../docs/melody_patterns.md); [reversible structure](2026-10-03_reversible_loop_structure.md); [depth validation](2026-10-03_gra2_005_unrestricted_depth_validation.md) |
+| Reversible source structure, overlapping alternatives and unrestricted detection depth | [Melody patterns](../docs/melody_patterns.md); [reversible structure](2026-10-03_reversible_loop_structure.md); [depth validation](2026-10-03_scc_unrestricted_depth_validation.md) |
 | Default/legacy compression, static OPLL layouts and stale UTF-8 titles | [Compression/mode/title findings](2026-10-03_default_compression_opll_mode_titles.md); [structured macros](../docs/structured_macros.md); [batch usage](../docs/batch_mgs.md) |
 | PSG/SCC loop-first selection and continuous OPLL inner loops | [Melody patterns](../docs/melody_patterns.md); [pre-envelope experiment](2026-10-03_psg_scc_pre_envelope_structure.md); [OPLL inner-loop validation](2026-10-03_opll_inner_loop_validation.md) |
 | Native OPM input and first MDX control projection | [OPM Segments](../docs/opm_segments.md); [MDX projection](../docs/opm_mdx.md); [native input findings](2026-10-04_opm_native_segments.md); [initial roundtrip](2026-10-04_opm_mdx_roundtrip.md) |
@@ -54,7 +54,7 @@ not transferred as current guidance.
 
 ## Historical playback-tail observation
 
-The earlier grider reference ended in an infinite repeat without an explicit
+The earlier private-case-130 reference ended in an infinite repeat without an explicit
 fade. Its inspected VGM had no declared loop and ended at 121.948390 seconds,
 19 samples after the last chip write. A user screenshot suggested a fade or
 release tail in an exported WAV, but did not establish its source.

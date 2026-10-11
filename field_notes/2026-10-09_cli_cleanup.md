@@ -76,18 +76,18 @@ generated output cleanup, PCM overwrite refusal, and source-file preservation.
   cumulative error is 67 samples within the existing candidate bound (741).
   An authored positive-interval collapse case declines correction and has
   byte-identical structured MML to explicit OFF.
-- Local BOSCON01 remains blocked/unverified with existing
+- Local private-case-022 remains blocked/unverified with existing
   `unsupported_pcm_data_bank`/`unsupported_stream_control` diagnostics, retained
   source evidence and runtime `not_run`; no source decoder was changed.
-- DSLY4_02 listening artifacts regenerate successfully. MXC title adaptation
+- private-case-036 listening artifacts regenerate successfully. MXC title adaptation
   restores 103 CP932 bytes from an empty native header; the entire data suffix
   is byte-identical. See `2026-10-09_mxc_title_boundary.md` for the independently
   authored 64/65-byte compiler/runner tests. Native GUI behavior is unverified.
 
 Ignored evidence lives in `outputs/cli_cleanup_2026-10-09/`: `focused_tests.log`,
-`opm_roundtrip/results.csv`, `psg_export/results.csv`, `boscon01/`,
+`opm_roundtrip/results.csv`, `psg_export/results.csv`, `private-case-022/`,
 `normalization_evidence/inspection.json` and corresponding before/after CSV/MML,
-and `listen_dslayer02/`. Private/generated music and tool binaries stay ignored.
+and `listen_<private-reference>/`. Private/generated music and tool binaries stay ignored.
 
 ## Next time
 

@@ -41,7 +41,7 @@ source VGM -> native Segments -> channel MDX MML -> MDX -> returned VGM
            -> native Segments -> control/state/key/timing comparison
 ```
 
-| Measurement | Public OPM set | Two short local MSXGRA2S inputs |
+| Measurement | Public OPM set | Two short local private-collection-020 inputs |
 |---|---:|---:|
 | Cases passed | 38/38 | 2/2 |
 | Retained controls, source = returned | 8,572 | 2,625 |
@@ -54,7 +54,7 @@ source VGM -> native Segments -> channel MDX MML -> MDX -> returned VGM
 | Maximum projected timing/end delta (samples) | 0 | 0 |
 | Cases whose cross-channel source write order changed | 10 | 2 |
 
-Private smoke inputs were M_G2_17S and M_G2_18S. This is not a repeat of the
+Private smoke inputs were private-case-158 and private-case-159. This is not a repeat of the
 full private catalog; earlier clock/MDX capacity limits are still unresolved.
 
 MDX processes A..H sequentially within one tick. The source CSV/projection is
@@ -84,7 +84,7 @@ roundtrip negative tests still check wrong pitch/state/Keys/timing.
 `outputs/opm/channel_tracks_20261004/` retains:
 
 - `public_all/results.csv` and `results.json`: all 38 public inputs.
-- `local/M_G2_17S/` and `local/M_G2_18S/`: private two-case evidence.
+- `local/private-case-158/` and `local/private-case-159/`: private two-case evidence.
 - `summary.json`: aggregate measurements above.
 - Per case: MML, compiled MDX, returned VGM, raw/state/Segment CSVs,
   control projection, timing report, compiler log and comparison JSON.

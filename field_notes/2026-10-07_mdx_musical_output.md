@@ -10,7 +10,7 @@ compaction and external validation remain separate stages. No reference score
 is read to choose notes, voices, tempo, title or phrases during conversion.
 
 All 32 reference MML/MDX pairs match the original X68K collection byte-for-byte.
-The original collection is `H:/_env/X68K/emu/x68000/images/MDX`. Arumana MMLs
+The original collection is `<private-input-directory>`. Private reference MMLs
 are in its MML subdirectory; their MDX siblings are in the parent collection.
 These are imported references, not vgm2mml-generated expectations.
 
@@ -19,10 +19,10 @@ external soundlog driver and original PDX search paths. They are stored beside
 their `reference/` directory under `tests/fixtures/local_only/opm`. Original
 MML/MDX files are unchanged. Generated/private data remain outside git.
 
-Missing inputs created: KMSM004, KMSM009, F_A01, FILC, POWERE, POWEROPEN,
-FF4BAT1, FF4GORU, FF4LYDIA, FF4SIREN, RAY2C and ARMST5.
-Five used named PDX files from the original collection: KMSM009, F_A01,
-FF4BAT1, FF4SIREN and RAY2C. PCM exists in some source VGMs but is outside this
+Missing inputs created: private-case-139, private-case-140, private-case-050, private-case-059, private-case-167, private-case-168,
+private-case-051, private-case-052, private-case-053, private-case-054, private-case-180 and private-case-020.
+Five used named PDX files from the original collection: private-case-140, private-case-050,
+private-case-051, private-case-054 and private-case-180. PCM exists in some source VGMs but is outside this
 native OPM projection; the verifier now reports that scope explicitly.
 
 ## Implementation
@@ -71,48 +71,48 @@ native OPM projection; the verifier now reports that scope explicitly.
 
 | Input stem | Old MML chars | New MML chars | New MDX bytes | Result |
 |---|---:|---:|---:|---|
-| ARMBS1 | 11054 | 4249 | 1866 | success |
-| ARMBS2 | 54877 | 16262 | 7679 | success |
-| ARMBSEN | 5049 | 2026 | 924 | success |
-| ARMEND | 15269 | 3459 | 1488 | success |
-| ARMOPN | 9839 | 3019 | 1473 | success |
-| ARMOVER | 13662 | 6934 | 3270 | success |
-| ARMST1 | 59743 | 20815 | 9343 | success |
-| ARMST2 | 77227 | 27529 | 12605 | success |
-| ARMST5 | — | 17901 | 8411 | success |
-| ARMSTCR | 4484 | 2031 | 912 | success |
-| ARM_7DCC | 3528 | 849 | 383 | success |
-| FF4BAT1 | — | 103904 | 53796 | success |
-| FF4GORU | — | 26979 | 13699 | success |
-| FF4LYDIA | — | 31588 | 17123 | success |
-| FF4SIREN | — | 27377 | 14567 | success |
-| FF4WM1 | — | 151492 | — | compile_or_replay_failed |
-| FILC | — | 93180 | 45630 | success |
-| F_A01 | — | 4220 | 2107 | success |
-| HYDS_01 | 10769 | 1352 | 619 | success |
-| HYDS_02 | 5873 | 1177 | 585 | success |
-| HYDS_03 | 5931 | 984 | 444 | success |
-| HYDS_04 | 1144 | 485 | 207 | success |
-| HYDS_05 | 13463 | 2126 | 831 | success |
-| HYDS_06 | 6383 | 1499 | 812 | success |
-| HYDS_07 | 6414 | 956 | 449 | success |
-| KMSM004 | — | 83305 | 37948 | success |
-| KMSM009 | — | 268659 | — | compile_or_replay_failed |
-| POWERE | — | 103191 | 54607 | success |
-| POWEROPEN | — | 15123 | 7558 | success |
-| RAY2C | — | 132498 | 55474 | success |
+| private-case-012 | 11054 | 4249 | 1866 | success |
+| private-case-013 | 54877 | 16262 | 7679 | success |
+| private-case-014 | 5049 | 2026 | 924 | success |
+| private-case-015 | 15269 | 3459 | 1488 | success |
+| private-case-016 | 9839 | 3019 | 1473 | success |
+| private-case-017 | 13662 | 6934 | 3270 | success |
+| private-case-018 | 59743 | 20815 | 9343 | success |
+| private-case-019 | 77227 | 27529 | 12605 | success |
+| private-case-020 | — | 17901 | 8411 | success |
+| private-case-021 | 4484 | 2031 | 912 | success |
+| private-case-011 | 3528 | 849 | 383 | success |
+| private-case-051 | — | 103904 | 53796 | success |
+| private-case-052 | — | 26979 | 13699 | success |
+| private-case-053 | — | 31588 | 17123 | success |
+| private-case-054 | — | 27377 | 14567 | success |
+| private-case-055 | — | 151492 | — | compile_or_replay_failed |
+| private-case-059 | — | 93180 | 45630 | success |
+| private-case-050 | — | 4220 | 2107 | success |
+| private-case-131 | 10769 | 1352 | 619 | success |
+| private-case-132 | 5873 | 1177 | 585 | success |
+| private-case-133 | 5931 | 984 | 444 | success |
+| private-case-134 | 1144 | 485 | 207 | success |
+| private-case-135 | 13463 | 2126 | 831 | success |
+| private-case-136 | 6383 | 1499 | 812 | success |
+| private-case-137 | 6414 | 956 | 449 | success |
+| private-case-139 | — | 83305 | 37948 | success |
+| private-case-140 | — | 268659 | — | compile_or_replay_failed |
+| private-case-167 | — | 103191 | 54607 | success |
+| private-case-168 | — | 15123 | 7558 | success |
+| private-case-180 | — | 132498 | 55474 | success |
 | ST1 | 59740 | 20812 | 9340 | success |
-| WARNOP | 250154 | 22919 | 10393 | success |
+| private-case-194 | 250154 | 22919 | 10393 | success |
 
-POWERE and FF4BAT1 exceeded the offset limit in the initial musical renderer.
+private-case-167 and private-case-051 exceeded the offset limit in the initial musical renderer.
 Internal trajectory loops reduced them sufficiently to compile (54,607 and
 53,796 bytes respectively), with unchanged projected Keys and known states.
-FF4WM1 still fails at track 5 and KMSM009 at track 4 offset, maximum 0xfffe.
+private-case-055 still fails at track 5 and private-case-140 at track 4 offset, maximum 0xfffe.
 Their MML/trace/timing/compile diagnostics are retained; no events are removed
 to force compilation. Further software LFO recovery/MDX representation work
 is needed. Macros have not been added.
 
-KMSM009 has 11,925 musical note units and long released control trajectories
+private-case-140 has 11,925 musical note units and long released control trajectories
 (one released unit contains 9,796 retained controls). Its unrestricted source
 search was expensive. Completed comparisons were reused after strictly
 equivalent plan optimizations; no timing comparison between these runs is made.

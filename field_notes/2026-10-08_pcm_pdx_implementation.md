@@ -81,7 +81,7 @@ FMのみの再生は維持した。原bytes保存と再生波形同等は別の�
 
 1. 不規則なdirect supply／stream schedulerに対する独立した時刻・FIFO・decoderの検証を用意する。
    0x04/0x44と0x90〜0x95は現在raw保存のみで、未対応を明示する。
-2. KMSM009はbytesを抽出できるが12番目の供給でstrict lattice検査から外れる。
+2. private-case-140はbytesを抽出できるが12番目の供給でstrict lattice検査から外れる。
    expected=約62.0928、actual=61 VGM samples。許容誤差を広げて成功にしない。
    この例は一曲連続のsoftware生成波形で、元の個別PDX voiceを復元したわけではない。
 3. trusted PCM player／修正済み外部再生と独立基準を用意してから音声比較を進める。

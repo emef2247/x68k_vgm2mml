@@ -45,5 +45,5 @@ than rendering and measuring a mixed WAV. A possible independent Target stage:
 
 This would be a generic SCC/PSG -> OPM timbre experiment. It is not implemented
 here, and no native Segment values were replaced by estimated target values.
-The private MSXGRA2S investigation provides comparison examples rather than
+The private private-collection-020 investigation provides comparison examples rather than
 training truth or mandatory patch choices.

@@ -35,9 +35,9 @@ repeated for this experiment: current clock inference requires OPLL anchors.
 
 There are no current conversion failures. The previous OPLL result set had
 306 successes, 238 buffer errors and one missing-input conversion failure.
-The current OPLL catalog adds 22 F1SPRT3D paths, all successful, and removes
-`temp/export_from_msxplay.com/Alest202.vgm` and
-`temp/export_from_msxplay.com/YsSMS01.vgm`. These catalog changes are not evidence
+The current OPLL catalog adds 22 private-collection-009 paths, all successful, and removes
+`<private-output>/private-case-004.vgm` and
+`<private-output>/private-case-210.vgm`. These catalog changes are not evidence
 of normalization benefit. Reference KEYON totals agree on both sides for every
 paired input with completed comparisons.
 
@@ -58,11 +58,11 @@ inputs were not catalog-wide measured here; they are not included in the five.
 
 ### Five buffer errors resolved
 
-- `vgmrips.net/ALESTE2/Alest208.vgm`
-- `vgmrips.net/ALESTE2/Alest211.vgm`
-- `vgmrips.net/FRAY/FRAY06.vgm`
-- `vgmrips.net/FRAY/FRAY11.vgm`
-- `vgmrips.net/ILCITY/ILCITY23.vgm`
+- `<private-reference>/private-case-005.vgm`
+- `<private-reference>/private-case-006.vgm`
+- `<private-reference>/private-case-062.vgm`
+- `<private-reference>/private-case-063.vgm`
+- `<private-reference>/private-case-138.vgm`
 
 All five have correction applied and compile successfully. All five also reach
 the MGS export duration limit, so reproduction/KEYON comparison is not complete.
@@ -70,7 +70,7 @@ Do not describe them as validated musical reproduction merely because they fit.
 
 ### Two new compiler failures
 
-`vgmrips.net/XEVIFS/XEVIFS07.vgm` and `XEVIFS08.vgm` were previously successful.
+`<private-reference>/private-case-208.vgm` and `private-case-209.vgm` were previously successful.
 Both have correction applied, inferred tempo 149, and now report `Invalid length`.
 The rejected lines contain an initial `r%1`. Current minimum-length handling
 allowed that spelling; it is not valid for these MGSC outputs. Record this as an
@@ -104,7 +104,7 @@ theoretical safety guarantee. That redesign has not been implemented here.
 | OPLL | 331 | 307 | 24 |
 
 All 26 duration-limit cases have correction applied. The PSG + OPLL cases are
-`msxplay.com/FinalFantasy/01_Prelude.vgm` and `07_Town.vgm`; both previously
+`<private-reference>/private-case-001.vgm` and `private-case-002.vgm`; both previously
 completed comparison. Of the 24 OPLL cases, five previously could not compile
 (the resolved buffer failures above), and 19 previously completed comparison.
 These newly incomplete checks must not be silently omitted from fidelity claims.
@@ -137,9 +137,9 @@ avoid interpreting a changed catalog or incomplete export as a count improvement
 On the paired OPLL set, 12 inputs improve in shortage-plus-excess count, 273
 are unchanged, and none worsen. No weighted quality score is defined. Examples:
 
-- `LGPNT01`: shortage/excess sum 58 -> 3.
-- `sx01v`: 11 -> 0.
-- `SORCER10`, `SORCER44`, `SORCER58`: 5 -> 0 each.
+- `private-case-141`: shortage/excess sum 58 -> 3.
+- `private-case-192`: 11 -> 0.
+- `private-case-189`, `private-case-190`, `private-case-191`: 5 -> 0 each.
 
 For completeness, totals over all currently completed exports are:
 
@@ -149,8 +149,8 @@ For completeness, totals over all currently completed exports are:
 | OPLL | 307 | 216,786 | 214,528 | 2,290 | 32 |
 
 Those latter totals are not a before/after improvement measurement.
-Alest202 still has `buffer_error`; normalization was declined because a gate
-boundary exceeded the bound. YsSMS01 has correction applied and completes
+private-case-004 still has `buffer_error`; normalization was declined because a gate
+boundary exceeded the bound. private-case-210 has correction applied and completes
 compilation/comparison; this does not by itself establish waveform equality.
 
 ## Follow-up priorities
@@ -160,10 +160,10 @@ compilation/comparison; this does not by itself establish waveform equality.
    termination before claiming these cases reproduce the source.
 3. Evaluate semantic per-note correction bounds, rather than treating the 95%
    global-fit heuristic as a safety proof.
-4. Improve phrase-level compression separately. The sx01v inspection shows 95
+4. Improve phrase-level compression separately. The private-case-192 inspection shows 95
    applied melodic loops, 58 of them single-unit repetitions. Last-pass exits
    (`|`) and inferred portamento are not reconstructed; current macro layout
    optimizes text length rather than musical presentation.
 
 Keep normalization optional. Do not broaden claims from the successful sample
-and sx01v benchmark to the full catalog, or overwrite native timing evidence.
+and private-case-192 benchmark to the full catalog, or overwrite native timing evidence.

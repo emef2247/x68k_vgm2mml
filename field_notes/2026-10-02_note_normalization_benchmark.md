@@ -1,7 +1,7 @@
 # Source-inferred musical duration normalization benchmark
 
 The user requested implementation using public sample first, then benchmarks
-against sample, grider and sx01v, whose reference MML is available. The native
+against sample, private-case-130 and private-case-192, whose reference MML is available. The native
 VGM is the conversion input; reference MML is used only as a size benchmark.
 No reference note, tempo or gate setting is copied into production inference.
 Private fixture contents are not reproduced here.
@@ -15,28 +15,28 @@ of the same complete source capture. Every listed MML compiled successfully.
 | Input | Baseline MML characters | Corrected characters | Baseline compiled used bytes | Corrected used bytes | Reference MML characters / used bytes |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | sample | 6,333 | 3,544 | 2,956 | 1,678 | 810 / 664 |
-| grider | 25,243 | 25,243 | 13,075 | 13,075 | 5,122 / 4,044 |
-| sx01v | 17,428 | 11,248 | 9,128 | 7,183 | 6,267 / 2,860 |
+| private-case-130 | 25,243 | 25,243 | 13,075 | 13,075 | 5,122 / 4,044 |
+| private-case-192 | 17,428 | 11,248 | 9,128 | 7,183 | 6,267 / 2,860 |
 
 Characters count the complete merged MML, including headers/macros/comments.
 Used bytes sum MGSC's actual-used track figures, including track 0, rather than
 allocation declarations or MGS file size. Sample shrinks 44.0% in source and
-43.2% in used bytes; sx01v shrinks 35.5% and 21.3% respectively. Both duration
+43.2% in used bytes; private-case-192 shrinks 35.5% and 21.3% respectively. Both duration
 normalization and safe setter/layout changes contribute; these are not pure
 loop-only savings.
 
 | Input | Source melodic KEYON | Baseline export | Corrected export | Corrected shortage / excess |
 | --- | ---: | ---: | ---: | ---: |
 | sample | 609 | 604 | 609 | 0 / 0 |
-| grider | 2,596 | 2,559 | 2,559 | 37 / 0 |
-| sx01v | 1,615 | 1,604 | 1,615 | 0 / 0 |
+| private-case-130 | 2,596 | 2,559 | 2,559 | 37 / 0 |
+| private-case-192 | 1,615 | 1,604 | 1,615 | 0 / 0 |
 
 Shortage/excess are sums of per-channel count differences, not matched individual
 events. Source terminal sub-frame KEYONs are included. Retaining a minimum
 positive terminal target note explains the increased corrected counts; it does
 not establish a source KEYOFF or additional musical intent.
 
-Grider did not meet the common-clock confidence requirement and stays byte-for-
+private-case-130 did not meet the common-clock confidence requirement and stays byte-for-
 byte unchanged. Its 37-count deficit belongs to the conventional output; this
 implementation does not fix it. Do not force the known reference tempo to make
 this benchmark appear successful.
@@ -51,7 +51,7 @@ The reference size is a useful target, not a like-for-like normalized score.
 | Input | Inferred tempo | Anchor coverage | Applied target loops | Max onset shift | Max closed-gate shift |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | sample | 120 | 100% | 29 | 269.1 samples (6.10 ms) | 408.3 samples (9.26 ms) |
-| sx01v | 160 | 100% | 95 | 362.7 samples (8.22 ms) | 523.7 samples (11.88 ms) |
+| private-case-192 | 160 | 100% | 95 | 362.7 samples (8.22 ms) | 523.7 samples (11.88 ms) |
 
 Both fitted lattices use 12 MML steps per sixteenth. Correction amounts are
 relative to the fitted source clock, not raw MGS wall-clock alignment. Fitted
@@ -64,9 +64,9 @@ rhythm notation, batch and public conversion suites passed (39 tests total).
 
 Ordered target pitch names, volumes, and preset/custom-patch bytes were compared
 per OPLL attack after MGS export. With the declared 44-sample intermediate-state
-inspection threshold, sample's 609 and sx01v's 1,615 note state sequences all
+inspection threshold, sample's 609 and private-case-192's 1,615 note state sequences all
 agree. Rhythm instrument/volume sequences agree: 282 hits for sample and 1,588
-for sx01v. Raw register values and sub-millisecond intermediate states are not
+for private-case-192. Raw register values and sub-millisecond intermediate states are not
 claimed identical. No WAV comparison or PSG envelope waveform equivalence was
 performed. Existing target pitch/sustain/rhythm limitations remain.
 

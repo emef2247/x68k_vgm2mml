@@ -5,7 +5,7 @@
 The user wanted actual old/new conversion differences and coverage of different
 loop shapes, not only a split-file inventory. Compare all35 matching loop-block
 MML/VGM pairs from the ten multi-block songs under the private msxplay.com/
-gra2_msx catalog. Reuse the six already verified gra2_001 conversion pairs and
+private-collection-017 catalog. Reuse the six already verified private-case-099 conversion pairs and
 run the other29 pairs. Private source fixtures remain unchanged.
 
 Both variants use enhanced macros, ordinary target ticks, default allocations
@@ -30,28 +30,28 @@ MMLs here are ASCII, so final character and byte counts coincide.
 
 | Song | Blocks | Earlier characters | Structural characters | Saved | Compile successes, each variant |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| gra2_001 | 6 | 49135 | 48902 | 0.47% | 6/6 |
-| gra2_003 | 2 | 14224 | 14182 | 0.30% | 2/2 |
-| gra2_004 | 3 | 14700 | 14242 | 3.12% | 3/3 |
-| gra2_007 | 3 | 17124 | 17693 | -3.32% | 3/3 |
-| gra2_009 | 2 | 13336 | 13242 | 0.70% | 2/2 |
-| gra2_010 | 2 | 18122 | 18025 | 0.54% | 2/2 |
-| gra2_011 | 3 | 13455 | 13754 | -2.22% | 3/3 |
-| gra2_014 | 7 | 36948 | 36644 | 0.82% | 7/7 |
-| gra2_015 | 4 | 14747 | 14625 | 0.83% | 4/4 |
-| gra2_016 | 3 | 54733 | 53877 | 1.56% | 2/3 |
+| private-case-099 | 6 | 49135 | 48902 | 0.47% | 6/6 |
+| private-case-101 | 2 | 14224 | 14182 | 0.30% | 2/2 |
+| private-case-102 | 3 | 14700 | 14242 | 3.12% | 3/3 |
+| private-case-104 | 3 | 17124 | 17693 | -3.32% | 3/3 |
+| private-case-106 | 2 | 13336 | 13242 | 0.70% | 2/2 |
+| private-case-108 | 2 | 18122 | 18025 | 0.54% | 2/2 |
+| private-case-109 | 3 | 13455 | 13754 | -2.22% | 3/3 |
+| private-case-110 | 7 | 36948 | 36644 | 0.82% | 7/7 |
+| private-case-111 | 4 | 14747 | 14625 | 0.83% | 4/4 |
+| private-case-112 | 3 | 54733 | 53877 | 1.56% | 2/3 |
 | Total | 35 | 246524 | 245186 | 0.54% | 34/35 |
 
 23 blocks shrink, two are unchanged and ten grow. Excluding comment-only/blank
 lines and trailing comments, code characters total218404->217724 (-0.31%).
-Largest individual saving: gra2_004 block01,4611->4226 (-8.35%). Largest growth:
-gra2_007 block02,8553->9088 (+6.26%). That growing pair has the same14 envelope
+Largest individual saving: private-case-102 block01,4611->4226 (-8.35%). Largest growth:
+private-case-104 block02,8553->9088 (+6.26%). That growing pair has the same14 envelope
 definitions occupying430 characters and32 macros; its physical loops increase
 38->45. The current source-tree objective does not guarantee the best final
 character count after stateful command projection and macro allocation.
 
 All70 conversions succeed. MGSC1.11 via mgsc-js2.0.0 compiles68 MMLs. Both
-variants of gra2_016 block03 fail with Track buffer full in track1. Its text
+variants of private-case-112 block03 fail with Track buffer full in track1. Its text
 shrinks27254->26860, but that is insufficient to resolve the existing buffer
 failure. No compilation regression or improvement in the pass/fail set occurs.
 No manual allocation changes, removed tracks or shortened music are used.
@@ -133,7 +133,7 @@ bodies counted once and not multiplied by calls. Selected source trees contain
 2116 markers and reach depth4. Final bracket nesting remains at most2 in both
 variants. Marker counts and physical bracket counts measure different things.
 
-gra2_004 block01 track5 provides a concrete inspected example. The reference
+private-case-102 block01 track5 provides a concrete inspected example. The reference
 has a384-step nested body repeated twice. The new source tree selects a48-note
 body repeated twice, containing inner6-note loops repeated4/2/2 times. The
 projection CSV retains the parent with emitted_repeats=0 and status
@@ -153,7 +153,7 @@ optimization or automatic old/new winner selection is added in this benchmark.
 
 ## Artifacts
 
-Private Codex output directory: co/outputs/gra2-source-structure.
+Private Codex output directory: <private-output>/private-collection-016-source-structure.
 
 - all-blocks-comparison.csv/json:35 paired character, compilation, source/state
   and structure measurements; JSON includes per-song totals.

@@ -2,8 +2,8 @@
 
 ## Scope
 
-Inspected the paired reference MML and exported VGM for sample, grider and
-sx01v. gra2_001 was excluded at the user's request. This is a bounded validation
+Inspected the paired reference MML and exported VGM for sample, private-case-130 and
+private-case-192. private-case-099 was excluded at the user's request. This is a bounded validation
 of the current note-unit work, not a change to the converter or loop matcher.
 
 The question is whether repeated reference MML instructions survive export as
@@ -22,9 +22,9 @@ loop exits are separate cases; they must not obscure the ordinary repeat test.
   at relative tick 90 in one repetition starts at 91 in the next. Equal adjacent
   states must also be coalesced for comparison: an extra register write can
   partition an otherwise unchanged state interval.
-- grider line 69, rhythm track f: the first two repetitions match in state
+- private-case-130 line 69, rhythm track f: the first two repetitions match in state
   sequence and relative tick intervals.
-- sx01v line 190, rhythm track f: its four repetitions match in state sequence
+- private-case-192 line 190, rhythm track f: its four repetitions match in state sequence
   and relative tick intervals under the declared reference-window mapping.
   Other windows include fractional tick lengths, exits and relative controls;
   a window mismatch alone is not evidence of a changed musical instruction.
@@ -43,8 +43,8 @@ used for this comparison. All three generated MGS files compiled successfully.
 | Input | Source KEYON | Exported KEYON | Count shortage | Count excess | Source positive keyed units | Exported positive keyed units |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | sample | 609 | 604 | 5 | 0 | 604 | 603 |
-| grider | 2596 | 2558 | 38 | 0 | 2558 | 2555 |
-| sx01v | 1615 | 1604 | 11 | 0 | 1604 | 1603 |
+| private-case-130 | 2596 | 2558 | 38 | 0 | 2558 | 2555 |
+| private-case-192 | 1615 | 1604 | 11 | 0 | 1604 | 1603 |
 
 KEYON shortages/excesses are summed per-channel inventory differences, not
 time-matched missing/added event counts. Positive keyed units are continuous

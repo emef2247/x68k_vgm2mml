@@ -19,15 +19,15 @@ targetとtool入力を検討する。source PCM IRへtarget都合の制約を戻
 生成物のoffset、length、sample bytes、PCM音符長、保持解除、終端を仕様と参照
 データに照合する。環境回答をデータ生成作業の前提にしない。
 
-ユーザーはBOSCON06の演奏自体は良好だが、終端でノイズが入り、止まらない場合が
+ユーザーはprivate-case-027の演奏自体は良好だが、終端でノイズが入り、止まらない場合が
 あると報告した。今回の範囲は、整理済みの参照MML/MDX/PDXとの静的比較と、
 ドライバ由来コードによる終了要求の追跡。productionの生成処理、source timing、
 sample bytes、XM6設定は変更していない。停止問題の解決／実音声停止は未確認。
 
 ## 参照集合と検査範囲
 
-現在の集合は15 MDX、8 PDX。原MMLはFF4SIRENとRAY2Cの2件。
-FF4SIRENは標準9track PCM1で、P trackはループ終端。残る14 MDXは16trackの
+現在の集合は15 MDX、8 PDX。原MMLはprivate-case-054とprivate-case-180の2件。
+private-case-054は標準9track PCM1で、P trackはループ終端。残る14 MDXは16trackの
 PCM8拡張である。113 PCM trackの符号化末尾を調べると、音符を含む有限終了trackは
 18本あったが、すべてPCM8側だった。標準PCM1の有限終了を実再生で保証する
 参照曲は、今回の集合からは得られていない。
@@ -67,23 +67,23 @@ continuation/resetを保てることは別途検証が必要。今回はsliceを
 
 | PDX | file bytes | 非空samples | 最大sample bytes | offset >65535のsamples |
 |---|---:|---:|---:|---:|
-| FF4SIREN | 2221 | 1 | 1453 | 0 |
-| SFA02 | 120914 | 26 | 17540 | 3 |
-| SFA02_ | 121880 | 26 | 17510 | 3 |
-| SFA11 | 25708 | 13 | 6096 | 0 |
-| RAY01C | 840134 | 156 | 12000 | 141 |
-| RAY2C | 319068 | 48 | 14000 | 31 |
-| RAYFOR | 187296 | 28 | 15643 | 16 |
-| RF2 | 16465 | 9 | 4223 | 0 |
-| generated BOSCON06 | 71941 | 55 | 3196 | 7 |
-| generated BOSCON07 | 52859 | 24 | 3406 | 0 |
+| private-case-054 | 2221 | 1 | 1453 | 0 |
+| private-case-185 | 120914 | 26 | 17540 | 3 |
+| private-case-186 | 121880 | 26 | 17510 | 3 |
+| private-case-187 | 25708 | 13 | 6096 | 0 |
+| private-case-173 | 840134 | 156 | 12000 | 141 |
+| private-case-180 | 319068 | 48 | 14000 | 31 |
+| private-case-181 | 187296 | 28 | 15643 | 16 |
+| private-case-184 | 16465 | 9 | 4223 | 0 |
+| generated private-case-027 | 71941 | 55 | 3196 | 7 |
+| generated private-case-028 | 52859 | 24 | 3406 | 0 |
 
 全10 PDXで非空entryのoffset/lengthがtable外のfile内を指し、範囲外アクセスに
 なるentryはなかった。全sample長は65535以下。奇数offsetと奇数lengthは原PDXにも
 存在し、生成物だけの異常ではない。全fileで最後のsample範囲がfile末尾に達して
 おり、sample外の末尾paddingはなかった。
 
-BOSCON06の最後はbank0 slot54、offset71574、length367で、
+private-case-027の最後はbank0 slot54、offset71574、length367で、
 `71574 + 367 = 71941`、PDX file末尾と一致する。PDX addressの16bitへの切捨てや
 sample長の巻戻りを示す不具合は今回の静的検査で見つかっていない。
 標準PDXはtableの長さで再生範囲を渡す。ADPCM payloadの末尾に停止opcodeを
@@ -92,12 +92,12 @@ sample長の巻戻りを示す不具合は今回の静的検査で見つかっ�
 
 ## 末尾のPCM停止要求
 
-原FF4SIRENのPはF4、rest、NOTE、finite repeat、Lを使い、無限ループへ戻る。
-原RAY2CもPCM8のloop参照である。PCM8の有限終了例にはrestを挟むtrackと
+原private-case-054のPはF4、rest、NOTE、finite repeat、Lを使い、無限ループへ戻る。
+原private-case-180もPCM8のloop参照である。PCM8の有限終了例にはrestを挟むtrackと
 NOTE直後にF1/00へ進むtrackの両方があり、一部にはF7保持もある。
 これらから「有限終了には必ず最後のrestが必要」とは導けない。
 
-生成BOSCON06の最後のplayback139はsource samples1180591..1182662。
+生成private-case-027の最後のplayback139はsource samples1180591..1182662。
 `termination=source_end`であり、観測されたchip STOPではない。記録終了までPLAYが
 activeなことと、targetが有限演奏として閉じることを区別する。367 bytesから計算
 する公称sample長と184 MDX ticksの音符長も完全に同一ではなく、実際のdecoder
@@ -116,7 +116,7 @@ Key-Offは標準PCM1のIOCS `_ADPCMMOD`（trap15、D0=0x67）に進み、D1=0の
 
 独立したmdx2vgm移植コードrevision
 `00e00ff767ee52c941987fd586c78d021349a99`の診断copyで、200000 ticksのhard bound、
-20秒timeoutを設定して生成BOSCON06を実行した。最後のADPCMOUTはtick104573、
+20秒timeoutを設定して生成private-case-027を実行した。最後のADPCMOUTはtick104573、
 length367。tick104757でADPCMMOD_ENDを呼び、tick104758で全track終了、active mask0、
 fatal0となった。停止要求とsequence終了のintentは確認できた。
 STOP/ENDは空stubなので、IOCS/DMA/ADPCMの実停止を証明する試験ではない。
@@ -124,7 +124,7 @@ portが出したVGMをPCM oracleとして比較に使っていない。
 
 ユーザーの指摘により説明を訂正：空stubは外部の検証用移植ツール側の未実装であり、
 再生環境の差を理由に正当化するものではない。このツールはMMDSPの再生経路に
-関与せず、BOSCON06の停止不良の原因とも断定できない。生成MDXの停止条件は
+関与せず、private-case-027の停止不良の原因とも断定できない。生成MDXの停止条件は
 参照MXDRVを基準に満たすべきで、PDXを個別環境へ適応させる問題ではない。
 移植ツールを停止検証に使うには、参照の終了・中断要求を実際に処理するbackendが
 必要。停止要求の呼出しログだけを実装完了や停止保証として扱わない。
@@ -157,9 +157,9 @@ private/generated内容はignoredに保持し、stageしない。
 
 ### 以下は現在の対象外となったruntime調査案
 
-今回の画像はDRIVER MADRVだが、NOW PLAYINGはDSLY4_03である。BOSCON06の
+今回の画像はDRIVER MADRVだが、NOW PLAYINGはprivate-case-037である。private-case-027の
 実再生driverをこの画像から確定しない。以前のMXDRV30.x/PCM8報告も、今回の
-BOSCON06の再生経路の証明とは別。BOSCON06固有のdriverと、終了表示後にも音が
+private-case-027の再生経路の証明とは別。private-case-027固有のdriverと、終了表示後にも音が
 残るのか／演奏時間が続くのかをユーザーに確認中。
 
 次は実際に読み込んだMDX/PDXのhash、解決したPDX pathとdriverを固定したうえで、
@@ -178,7 +178,7 @@ Ignored evidence:
 - `outputs/pcm_stream_2026-10-09/audit_end_references.py`
 - `outputs/pcm_stream_2026-10-09/end_reference_review/summary.json`と各PDX table CSV
 - 同folderの原MML PCM抜粋（private内容を含み、commitしない）
-- `outputs/pcm_stream_2026-10-09/probe_boscon06_end.py`
+- `<private-output>/probe_private-case-027_end.py`
 - `outputs/pcm_stream_2026-10-09/end_reference_review/intent_probe/summary.json`、
   stdout/stderr、terminal_states.csv、build/configure logs
 - `outputs/research/x68kd11s/mxdrv17.utf8.txt`のsample取得、SendKeyOff、gate、EndPlay
