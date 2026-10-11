@@ -178,6 +178,8 @@ class MdxStructure:
 def build_structure(projection, source_segments, *, title='OPM Segment replay', loops=True):
     """Build target units, then reversible loops; no inferred source edits."""
     source_plans = build_source_loops(source_segments)
+    from opm_pitch_projection import target_segments
+    source_segments = target_segments(projection, source_segments)
     by_event = {}
     for segment in source_segments:
         if segment.source_event_id is not None:
@@ -318,6 +320,8 @@ def compare_hybrid(projection, source, actual, *, initialization, source_timing_
     It checks all source-known raw/decoded values, including released tails.
     """
     from opm_roundtrip import controls
+    from opm_pitch_projection import target_segments
+    projected_events = target_segments(projection, source.events)
     def known_state_differences(reference, observed):
         # Compare immutable native values directly. Deep-copying every OPM
         # state into dictionaries at every boundary dominates large audits.
@@ -354,7 +358,7 @@ def compare_hybrid(projection, source, actual, *, initialization, source_timing_
     mismatch_count = 0
     for ch in range(8):
         expected = [(projection.projected_samples(projection.mdx_tick(e.vgmticks)), e.state)
-                    for e in source.events if e.ch == ch]
+                    for e in projected_events if e.ch == ch]
         returned = [(e.vgmticks, e.state) for e in actual.events if e.ch == ch]
         boundaries = sorted({t for t, _ in expected} | {t for t, _ in returned})
         i = j = 0; ref = act = None

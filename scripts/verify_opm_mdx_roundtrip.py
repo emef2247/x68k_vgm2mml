@@ -162,9 +162,9 @@ def main():
             if select_mdx_route(row['source_usage']) != 'native-opm-pcm':
                 row['status'] = 'unsupported_target'
                 raise ValueError('This roundtrip verifier requires native OPM/PCM source commands')
-            if row['clock_hz'] != 4000000 or row['chip_type'] != 'YM2151' or row['dual_chip']:
+            if row['clock_hz'] <= 0 or row['chip_type'] != 'YM2151' or row['dual_chip']:
                 row['status'] = 'unsupported_target'
-                raise ValueError('MDX control replay requires one 4 MHz YM2151; source clock/state is not retuned')
+                raise ValueError('MDX control replay requires one YM2151 with a positive source clock')
             mml, source_analysis, projection = convert(source, folder, dump_passes=True, track_layout=args.track_layout,
                                                         notation=args.notation, loops=not args.no_loops,title=args.title,
                                                         normalize_lengths=args.normalize_lengths,
@@ -187,7 +187,8 @@ def main():
                 result = compare_hybrid(projection, expected_analysis, returned, initialization=initialization,
                                         source_timing_tolerance_samples=tolerance)
                 result.update(intentional_omitted_gates=len(omitted),
-                              exact_source_equivalence=not omitted and correction['status'] != 'applied')
+                              exact_source_equivalence=not omitted and correction['status'] != 'applied'
+                                  and projection.source_clock_hz == projection.clock_hz)
             else:
                 result = compare(scheduled, source_analysis.segments, returned, initialization=initialization)
             result['track_layout'] = args.track_layout

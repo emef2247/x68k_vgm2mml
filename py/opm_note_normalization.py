@@ -49,7 +49,7 @@ def normalize_projection(segments, original, *, loop_metadata=None, pcm_analysis
         return original, report, []
     if segments:
         candidate = project_segments(segments, end_vgmticks=original.source_end_vgmticks,
-                                     sample_multiplier=multiplier)
+                                     sample_multiplier=multiplier, pitch_policy=original.pitch_policy)
     else:
         end_tick = mdx_tick(original.source_end_vgmticks, multiplier)
         candidate = replace(original, sample_multiplier=multiplier, end_mdx_tick=end_tick,

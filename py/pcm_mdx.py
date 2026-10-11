@@ -128,10 +128,12 @@ def boundaries(analysis):
                         | {c.vgmticks for c in analysis.controls}))
 
 
-def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playback_ids=(), normalization_ms=8):
+def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playback_ids=(), normalization_ms=8,
+            tick_mapper=None):
     """Bind unchanged samples; omit nominated notes within the source-time policy."""
     from conversion_config import normalization_samples
     omission_bound = normalization_samples(normalization_ms)
+    target_tick = tick_mapper or (lambda t: mdx_tick(t, sample_multiplier))
     assessment = PcmAssessment(policy)
     def reject(detail, *, code='projection_undefined', status='unverified', criterion='eligibility'):
         assessment.add(criterion, status, code, detail,
@@ -304,7 +306,7 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
                                 source_first_event_id=p.first_source_event_id,
                                 source_last_event_id=p.last_source_event_id))
             continue
-        start, end = mdx_tick(p.start_vgmticks, sample_multiplier), mdx_tick(p.end_vgmticks, sample_multiplier)
+        start, end = target_tick(p.start_vgmticks), target_tick(p.end_vgmticks)
         if end <= start:
             reject(f'PCM playback {p.playback_id} collapses on the MDX clock', status='lossy', code='clock_collapse')
         if start < cursor:
@@ -342,14 +344,14 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
                          source_last_event_id=p.last_source_event_id))
         cursor = end
         source_cursor = p.end_vgmticks
-    end = mdx_tick(analysis.source_end_vgmticks, sample_multiplier)
+    end = target_tick(analysis.source_end_vgmticks)
     if end > cursor:
         units.append(unit(cursor, end, 'pcm_rest', render(duration_commands('rest', cursor, end)),
                           source_cursor, analysis.source_end_vgmticks))
     clock_rows = tuple(dict(source_event_id=c.source_event_id, source_address=c.address,
                             source_vgmticks=c.vgmticks, register=c.register, data=c.data,
-                            mdx_tick=mdx_tick(c.vgmticks, sample_multiplier),
-                            error_samples=projected_samples(mdx_tick(c.vgmticks, sample_multiplier),
+                            mdx_tick=target_tick(c.vgmticks),
+                            error_samples=projected_samples(target_tick(c.vgmticks),
                                                             sample_multiplier)-c.vgmticks)
                        for c in analysis.controls)
     assessment.add('sample', 'pass', 'sample_bytes_exact', 'PDX binding retains encoded source sample bytes')

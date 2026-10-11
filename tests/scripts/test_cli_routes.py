@@ -16,6 +16,21 @@ class CliRoutes(unittest.TestCase):
         return subprocess.run([sys.executable, str(ROOT / 'vgm2mml.py'), *map(str, args)],
                               capture_output=True, text=True, timeout=30)
 
+    def test_native_pitch_policy_clamps_with_loss_report_or_rejects_explicit_error(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'low.vgm'
+            source.write_bytes(vgm(bytes.fromhex('54 28 00 54 08 78 62 54 08 00 62'), 3579580))
+            run = self.run_cli(source, '--outdir', root / 'clamp', '--opm-pitch-policy', 'clamp')
+            self.assertEqual(run.returncode, 0, run.stderr)
+            report = json.loads((root / 'clamp/low.mdx.normalization.json').read_text())
+            pitch = report['selected']['pitch_projection']
+            self.assertEqual(pitch['policy'], 'clamp')
+            self.assertTrue(pitch['known_pitch_loss'])
+            run = self.run_cli(source, '--outdir', root / 'error', '--opm-pitch-policy', 'error')
+            self.assertEqual(run.returncode, 2)
+            self.assertIn('outside the 4 MHz target KC/KF range', run.stderr)
+
     def test_explicit_mdx_matches_default(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

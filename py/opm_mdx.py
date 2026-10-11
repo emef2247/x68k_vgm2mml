@@ -8,7 +8,9 @@ import csv
 from dataclasses import dataclass, replace
 import json
 from pathlib import Path
+from functools import cached_property
 from opm import register_channel, register_role
+from opm_pitch_projection import TARGET_CLOCK_HZ, project_controls, pitch_report
 
 # Fixed MXDRV playback tick at @t255: 256 us, or 7056/625 VGM samples.
 MDX_SAMPLE_NUMERATOR = 7056
@@ -24,6 +26,9 @@ class MdxWrite:
     projected_vgmticks: int
     register: int
     data: int
+    source_register: int | None = None
+    source_data: int | None = None
+    target_sequence: int = 0
 
     @property
     def ch(self):
@@ -42,9 +47,17 @@ class MdxProjection:
     end_projected_vgmticks: int
     clock_hz: int
     sample_multiplier: int = 1
+    source_clock_hz: int = TARGET_CLOCK_HZ
+    pitch_evidence: tuple = ()
+    pitch_policy: str = 'clamp'
+    boundary_ticks: tuple = ()
+
+    @cached_property
+    def _boundary_map(self):
+        return dict(self.boundary_ticks)
 
     def mdx_tick(self, samples):
-        return mdx_tick(samples, self.sample_multiplier)
+        return self._boundary_map.get(samples, mdx_tick(samples, self.sample_multiplier))
 
     def projected_samples(self, tick):
         return projected_samples(tick, self.sample_multiplier)
@@ -61,7 +74,8 @@ class MdxProjection:
                     max_abs_timing_error_samples=max(map(abs, errors), default=0),
                     collapsed_positive_intervals=sum(a[0] < b[0] and a[1] == b[1]
                                                      for a, b in zip(times, times[1:])),
-                    controls=len(self.writes), clock_hz=self.clock_hz)
+                    controls=len(self.writes), clock_hz=self.clock_hz,
+                    pitch_projection=pitch_report(self))
 
 
 def mdx_tick(samples, sample_multiplier=1):
@@ -76,7 +90,7 @@ def projected_samples(tick, sample_multiplier=1):
     return tick * MDX_SAMPLE_NUMERATOR * sample_multiplier // MDX_SAMPLE_DENOMINATOR
 
 
-def project_segments(segments, *, end_vgmticks, sample_multiplier=1):
+def project_segments(segments, *, end_vgmticks, sample_multiplier=1, pitch_policy='clamp'):
     """Consume actual OpmSegments, deduplicating shared-write fanout.
 
     Source nonchanging writes omitted by Segment construction cannot be
@@ -85,6 +99,8 @@ def project_segments(segments, *, end_vgmticks, sample_multiplier=1):
     """
     if not isinstance(sample_multiplier, int) or not 1 <= sample_multiplier <= 255:
         raise ValueError('MDX sample multiplier must be in 1..255')
+    if pitch_policy not in ('clamp', 'error'):
+        raise ValueError('OPM pitch policy must be clamp or error')
     end_tick = mdx_tick(end_vgmticks, sample_multiplier)
     facts = set()
     grouped = {}
@@ -105,19 +121,33 @@ def project_segments(segments, *, end_vgmticks, sample_multiplier=1):
         if previous != identity:
             raise ValueError('Conflicting shared-write Segment evidence')
         ids.append(segment.segment_id)
-    if facts != {(0, 'YM2151', 4000000)}:
-        raise ValueError('Initial MDX target requires one 4 MHz YM2151 instance')
+    if len(facts) != 1 or next(iter(facts))[:2] != (0, 'YM2151'):
+        raise ValueError('MDX target requires one YM2151 instance with a positive source clock')
+    source_clock = next(iter(facts))[2]
+    if source_clock <= 0:
+        raise ValueError('OPM source clock must be positive')
+    events = [(event_id, identity, tuple(sorted(ids)))
+              for event_id, (identity, ids) in sorted(grouped.items())]
+    pitch_evidence = ()
+    if source_clock != TARGET_CLOCK_HZ:
+        controls, pitch_evidence = project_controls(events, source_clock, policy=pitch_policy)
+    else:
+        controls = [(event_id, samples, ids, register, data, register, data, 0)
+                    for event_id, (samples, register, data), ids in events]
     writes = []
     last_sample = 0
-    for event_id, ((samples, register, data), ids) in sorted(grouped.items()):
+    for _, (samples, _, _), _ in events:
         if samples < last_sample:
             raise ValueError('Segment source-event order is not chronological')
         last_sample = samples
+    for event_id, samples, ids, register, data, source_register, source_data, sequence in controls:
         tick = mdx_tick(samples, sample_multiplier)
         writes.append(MdxWrite(event_id, tuple(sorted(ids)), samples, tick,
-                               projected_samples(tick, sample_multiplier), register, data))
+                               projected_samples(tick, sample_multiplier), register, data,
+                               source_register, source_data, sequence))
     return MdxProjection(tuple(writes), end_vgmticks, end_tick,
-                         projected_samples(end_tick, sample_multiplier), 4000000, sample_multiplier)
+                         projected_samples(end_tick, sample_multiplier), TARGET_CLOCK_HZ,
+                         sample_multiplier, source_clock, pitch_evidence, pitch_policy)
 
 
 def scheduled_projection(projection, *, track_layout='channels'):
@@ -132,7 +162,7 @@ def scheduled_projection(projection, *, track_layout='channels'):
     if track_layout != 'channels':
         raise ValueError('Unknown MDX track layout')
     return replace(projection, writes=tuple(sorted(projection.writes,
-                   key=lambda w: (w.mdx_tick, w.mdx_track, w.source_event_id))))
+                   key=lambda w: (w.mdx_tick, w.mdx_track, w.source_event_id, w.target_sequence))))
 
 
 def render(projection, *, title='OPM Segment replay', track_layout='channels'):
@@ -162,7 +192,10 @@ def render(projection, *, title='OPM Segment replay', track_layout='channels'):
         for write in writes:
             advance(write.mdx_tick - cursor)
             cursor = write.mdx_tick
-            lines.append(f'{track} y{write.register},{write.data} ; event {write.source_event_id}, sample {write.source_vgmticks}')
+            # MXC v1.01 accepts full-line comments, but parses an inline ';'
+            # after a channel command as music. Keep provenance off that line.
+            lines.append(f'; event {write.source_event_id}, sample {write.source_vgmticks}')
+            lines.append(f'{track} y{write.register},{write.data}')
         advance(projection.end_mdx_tick - cursor)
     return '\n'.join(lines) + '\n'
 
@@ -170,7 +203,8 @@ def render(projection, *, title='OPM Segment replay', track_layout='channels'):
 def dump_projection(projection, path, *, track_layout='channels'):
     fields = ('source_event_id', 'source_segment_ids', 'source_vgmticks', 'mdx_tick',
               'projected_vgmticks', 'timing_error_samples', 'register', 'data', 'ch', 'mdx_track',
-              'logical_track', 'stream_scope', 'event_role')
+              'logical_track', 'stream_scope', 'event_role',
+              'source_register', 'source_data', 'target_sequence')
     with Path(path).open('w', newline='', encoding='utf-8') as stream:
         writer = csv.DictWriter(stream, fieldnames=fields, lineterminator='\n')
         writer.writeheader()
@@ -183,3 +217,13 @@ def dump_projection(projection, path, *, track_layout='channels'):
             row['source_segment_ids'] = json.dumps(write.source_segment_ids)
             row['timing_error_samples'] = write.projected_vgmticks - write.source_vgmticks
             writer.writerow(row)
+    if projection.pitch_evidence:
+        pitch_path = Path(path).with_name(Path(path).name.replace('.controls.csv', '.pitch.csv'))
+        if pitch_path == Path(path):
+            pitch_path = Path(str(path) + '.pitch.csv')
+        with pitch_path.open('w', newline='', encoding='utf-8') as stream:
+            fields = tuple(dict.fromkeys(k for row in projection.pitch_evidence for k in row))
+            writer = csv.DictWriter(stream, fieldnames=fields, lineterminator='\n')
+            writer.writeheader()
+            for row in projection.pitch_evidence:
+                writer.writerow(dict(row, source_segment_ids=json.dumps(row['source_segment_ids'])))

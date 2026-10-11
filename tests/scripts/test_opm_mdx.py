@@ -31,7 +31,7 @@ def write(register, data):
 
 
 class OpmMdxTests(unittest.TestCase):
-    def test_cli_defaults_to_mml_only_and_dump_retains_identical_music_and_evidence(self):
+    def test_cli_defaults_to_mml_and_diagnostics_and_dump_retains_identical_music(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             path = root / 'source.vgm'
@@ -46,7 +46,8 @@ class OpmMdxTests(unittest.TestCase):
                 self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
                 outputs.append((folder / 'source.mdx.mml').read_bytes())
                 if name == 'default':
-                    self.assertEqual([p.name for p in folder.iterdir()], ['source.mdx.mml'])
+                    self.assertEqual({p.name for p in folder.iterdir()},
+                                     {'source.mdx.mml', 'source.mdx.normalization.json', 'source.conversion.json'})
                 else:
                     for filename in ('source_trace.opm_regs.csv', 'source_trace.opm.csv',
                                      'source.opm.segments.csv', 'source.mdx.controls.csv',
@@ -103,13 +104,13 @@ class OpmMdxTests(unittest.TestCase):
             self.assertEqual(sum(advances), plan.end_mdx_tick)
 
     def test_unsupported_clock_variant_and_instances_are_explicit(self):
-        for clock in (3579545, 0x80000000 | 4000000, 0x40000000 | 4000000):
+        for clock in (0x80000000 | 4000000, 0x40000000 | 4000000):
             with self.subTest(clock=clock), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 path = root / 'source.vgm'
                 path.write_bytes(vgm(write(8, 8) + b'\xa4\x08\x08' + wait(100), clock))
                 source = analyze(path, root / 'source')
-                with self.assertRaisesRegex(ValueError, 'one 4 MHz'):
+                with self.assertRaisesRegex(ValueError, 'one YM2151'):
                     project_segments(source.segments, end_vgmticks=source.source_end_vgmticks)
 
     def test_conflicting_source_evidence_is_rejected(self):

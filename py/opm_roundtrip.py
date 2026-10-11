@@ -29,6 +29,8 @@ def compare(projection, source_segments, actual, *, initialization):
     Unknown source registers/parameters do not become invented expectations.
     """
     source_segments = tuple(source_segments)
+    from opm_pitch_projection import target_segments
+    source_segments = target_segments(projection, source_segments)
     raw_actual = controls(actual)
     prefix_ok = raw_actual[:len(initialization)] == list(initialization)
     replayed = raw_actual[len(initialization):] if prefix_ok else raw_actual
@@ -75,7 +77,10 @@ def compare(projection, source_segments, actual, *, initialization):
         for segment in source_segments:
             if segment.source_event_id is not None:
                 source_groups.setdefault(segment.source_event_id, []).append(segment)
-        for write, actual_id in zip(projection.writes, replay_ids):
+        for index, (write, actual_id) in enumerate(zip(projection.writes, replay_ids)):
+            if (index + 1 < len(projection.writes)
+                    and projection.writes[index + 1].source_event_id == write.source_event_id):
+                continue  # Compare after the whole target KC/KF pair, before the next source event.
             for segment in source_groups[write.source_event_id]:
                 ref, act = asdict(segment.state), asdict(actual_groups[actual_id][segment.ch])
                 # Additional initialized registers on the returned side are not
