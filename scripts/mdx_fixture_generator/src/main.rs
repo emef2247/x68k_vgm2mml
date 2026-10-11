@@ -156,6 +156,7 @@ struct PcmTrackPlan {
     pdx_name: String,
     tempo: u8,
     end_tick: u64,
+    song_loop_tick: Option<u64>,
     commands: Vec<soundlog::mdx::command::MdxCommand>,
 }
 
@@ -179,6 +180,7 @@ fn parse_pcm_track(text: &str) -> Result<PcmTrackPlan, Error> {
     let mut initial = HashSet::new();
     let mut hold = false;
     let mut ended = false;
+    let mut song_loop = None;
     for row in rows.iter().skip(4) {
         if ended { return Err("Commands after PCM end".into()); }
         if hold && row[0] != "note" { return Err("PCM hold must immediately precede a note".into()); }
@@ -217,9 +219,24 @@ fn parse_pcm_track(text: &str) -> Result<PcmTrackPlan, Error> {
                 commands.push(MdxRest::new(ticks).ok_or("PCM rest ticks must be 1..128")?.into());
                 total = total.checked_add(u64::from(ticks)).ok_or("PCM duration overflow")?;
             }
+            "song_loop" => {
+                if !row[1].is_empty() || !row[2].is_empty() || song_loop.is_some() {
+                    return Err("PCM song_loop requires empty operands and one marker".into());
+                }
+                let position: usize = commands.iter().map(|command: &MdxCommand| command.to_mdx_bytes().unwrap().len()).sum();
+                song_loop = Some((position, total));
+            }
             "end" => {
                 if !row[1].is_empty() || !row[2].is_empty() { return Err("PCM end operands must be empty".into()); }
-                commands.push(MdxEndOfTrack.into());
+                if let Some((position, tick)) = song_loop {
+                    if tick >= total { return Err("PCM song loop must have positive duration".into()); }
+                    let length: usize = commands.iter().map(|command: &MdxCommand| command.to_mdx_bytes().unwrap().len()).sum();
+                    let offset = i16::try_from(position as i64 - length as i64 - 3)
+                        .map_err(|_| "PCM song loop exceeds signed 16-bit offset")?;
+                    commands.push(MdxCommand::EndOfTrackLoop(MdxRelativeOffset { opcode: 0xf1, offset }));
+                } else {
+                    commands.push(MdxEndOfTrack.into());
+                }
                 ended = true;
             }
             kind => return Err(format!("Unknown PCM command: {kind}").into()),
@@ -228,15 +245,20 @@ fn parse_pcm_track(text: &str) -> Result<PcmTrackPlan, Error> {
     if !ended || total != end_tick {
         return Err(format!("PCM plan needs final end and exact end_tick: {total} != {end_tick}").into());
     }
-    Ok(PcmTrackPlan { pdx_name: rows[1][1].to_owned(), tempo, end_tick, commands })
+    Ok(PcmTrackPlan { pdx_name: rows[1][1].to_owned(), tempo, end_tick, song_loop_tick: song_loop.map(|(_, tick)| tick), commands })
 }
 
-fn fm_track_ticks(commands: &[soundlog::mdx::command::MdxCommand], tempo: u8, saw_tempo: &mut bool) -> Result<u64, Error> {
+fn fm_track_timing(commands: &[soundlog::mdx::command::MdxCommand], tempo: u8, saw_tempo: &mut bool) -> Result<(u64, Option<u64>), Error> {
     use soundlog::mdx::command::MdxCommand;
     let mut total = 0u64;
     let mut repeats = Vec::new();
     let mut byte_position = 0usize;
+    let mut boundary_ticks = std::collections::HashMap::new();
+    let mut song_loop_tick = None;
+    let mut ended = false;
     for command in commands {
+        if ended { return Err("Commands after FM track end".into()); }
+        if repeats.is_empty() { boundary_ticks.insert(byte_position as i64, total); }
         match command {
             MdxCommand::Note(note) => total = total.checked_add(u64::from(note.length)).ok_or("FM duration overflow")?,
             MdxCommand::Rest(rest) => total = total.checked_add(u64::from(rest.ticks)).ok_or("FM duration overflow")?,
@@ -265,14 +287,28 @@ fn fm_track_ticks(commands: &[soundlog::mdx::command::MdxCommand], tempo: u8, sa
                 frame.3.get_or_insert(total);
                 frame.4.push(byte_position as i64 + 2 + i64::from(escape.offset));
             }
-            MdxCommand::Jump(_) | MdxCommand::EndOfTrackLoop(_) | MdxCommand::SyncWait(_) | MdxCommand::PcmMode(_) =>
+            MdxCommand::EndOfTrackLoop(offset) => {
+                if !repeats.is_empty() || offset.offset >= 0 { return Err("Invalid FM song loop".into()); }
+                let target = byte_position as i64 + 3 + i64::from(offset.offset);
+                let tick = *boundary_ticks.get(&target).ok_or("FM song loop does not target an outer command boundary")?;
+                if tick >= total { return Err("FM song loop must have positive duration".into()); }
+                song_loop_tick = Some(tick);
+                ended = true;
+            }
+            MdxCommand::EndOfTrack(_) => { ended = true; }
+            MdxCommand::Jump(_) | MdxCommand::SyncWait(_) | MdxCommand::PcmMode(_) =>
                 return Err("Unsupported FM control flow in direct PCM compilation".into()),
             _ => (),
         }
         byte_position += command.to_mdx_bytes().ok_or("Unserializable FM command")?.len();
     }
     if !repeats.is_empty() { return Err("Unterminated FM repeat".into()); }
-    Ok(total)
+    Ok((total, song_loop_tick))
+}
+
+#[cfg(test)]
+fn fm_track_ticks(commands: &[soundlog::mdx::command::MdxCommand], tempo: u8, saw_tempo: &mut bool) -> Result<u64, Error> {
+    Ok(fm_track_timing(commands, tempo, saw_tempo)?.0)
 }
 
 fn invalidate_pcm_output(fm_input: &Path, plan_input: &Path, output: &Path) -> Result<(), Error> {
@@ -323,7 +359,10 @@ fn compile_pcm_inner(fm_input: &Path, plan_input: &Path, output: &Path) -> Resul
     let mut saw_tempo = false;
     let mut longest = 0;
     for track in fm.tracks.iter().take(8) {
-        let ticks = fm_track_ticks(track, plan.tempo, &mut saw_tempo)?;
+        let (ticks, loop_tick) = fm_track_timing(track, plan.tempo, &mut saw_tempo)?;
+        if ticks > 0 && (loop_tick != plan.song_loop_tick || loop_tick.is_some() && ticks != plan.end_tick) {
+            return Err("FM/PCM song loop start and end must match on every active track".into());
+        }
         if ticks > plan.end_tick { return Err("FM track exceeds shared PCM end_tick".into()); }
         longest = longest.max(ticks);
     }
@@ -417,7 +456,7 @@ fn run_args(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         return write_pdx_atomic(Path::new(&args[2]), Path::new(&args[3]));
     }
     if args.len() < 4 || (args.len() - 4) % 2 != 0 {
-        return Err("usage: mdx-fixture-generator INPUT.mml OUTPUT.mdx OUTPUT.vgm [--max-ticks N] [--pcm-mode standard] | --compile-pcm FM_ONLY.mml PLAN.tsv OUTPUT.mdx | --compile-only INPUT.mml OUTPUT.mdx [--pcm-mode standard] | --from-mdx INPUT.mdx OUTPUT.vgm [--max-ticks N] | --inspect-mdx INPUT.mdx OUTPUT.csv | --inspect-commands INPUT.mdx OUTPUT.csv | --build-pdx MANIFEST.tsv OUTPUT.pdx".into());
+        return Err("usage: mdx-fixture-generator INPUT.mml OUTPUT.mdx OUTPUT.vgm [--max-ticks N] [--loop-count N] [--pcm-mode standard] | --compile-pcm FM_ONLY.mml PLAN.tsv OUTPUT.mdx | --compile-only INPUT.mml OUTPUT.mdx [--pcm-mode standard] | --from-mdx INPUT.mdx OUTPUT.vgm [--max-ticks N] [--loop-count N] | --inspect-mdx INPUT.mdx OUTPUT.csv | --inspect-commands INPUT.mdx OUTPUT.csv | --build-pdx MANIFEST.tsv OUTPUT.pdx".into());
     }
     if args[1] == "--inspect-mdx" {
         if args.len() != 4 { return Err("--inspect-mdx takes only INPUT.mdx OUTPUT.csv".into()); }
@@ -451,6 +490,11 @@ fn run_args(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 let limit: u32 = option[1].parse()?;
                 if limit == 0 { return Err("max-ticks must be positive".into()); }
                 options.max_ticks = Some(limit);
+            }
+            "--loop-count" => {
+                let count: u32 = option[1].parse()?;
+                if count == 0 { return Err("loop-count must be positive".into()); }
+                options.loop_count = Some(count);
             }
             "--pcm-mode" if option[1] == "standard" => standard_pcm = true,
             _ => return Err("Unknown option (PCM mode supports only standard)".into()),
@@ -786,6 +830,34 @@ mod tests {
         assert_eq!(result.pcm_sample_bytes(&result.pcm_references()[0]), Some([0x37, 0xfe, 0x01].as_slice()));
         assert_eq!(fs::read(directory.0.join("test.pdx")).unwrap(), pdx_bytes);
         assert!(!directory.0.join("combined.vgm").exists());
+    }
+
+    #[test]
+    fn replay_accepts_positive_loop_count_and_rejects_zero() {
+        let directory = Directory::new();
+        let input = directory.0.join("loop.mml");
+        let mdx = directory.0.join("loop.mdx");
+        let vgm = directory.0.join("loop.vgm");
+        fs::write(&input, "A @t255 r%2 L r%4\n").unwrap();
+        let args = vec!["helper".into(), input.to_string_lossy().into_owned(),
+                        mdx.to_string_lossy().into_owned(), vgm.to_string_lossy().into_owned(),
+                        "--loop-count".into(), "3".into(), "--max-ticks".into(), "100".into()];
+        run_args(&args).unwrap();
+        assert!(vgm.exists());
+        let mut invalid = args.clone();
+        invalid[5] = "0".into();
+        assert!(run_args(&invalid).unwrap_err().to_string().contains("loop-count must be positive"));
+    }
+
+    #[test]
+    fn direct_pcm_song_loop_encodes_shared_positive_boundary() {
+        let plan = "kind\tvalue\tticks\npdx_name\ttest.pdx\t\ntempo\t255\t\nend_tick\t6\t\nrest\t\t2\nsong_loop\t\t\nrest\t\t4\nend\t\t\n";
+        let pcm = parse_pcm_track(plan).unwrap();
+        assert_eq!(pcm.song_loop_tick, Some(2));
+        let mut saw_tempo = false;
+        assert_eq!(fm_track_timing(&pcm.commands, 255, &mut saw_tempo).unwrap(), (6, Some(2)));
+        assert!(parse_pcm_track(&plan.replace("rest\t\t4\n", "").replace("end_tick\t6", "end_tick\t2")).is_err());
+        assert!(parse_pcm_track(&plan.replace("song_loop\t\t\n", "song_loop\t\t\nsong_loop\t\t\n")).is_err());
     }
 
     #[test]

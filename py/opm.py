@@ -5,7 +5,7 @@ assumption); release is not silence. All write evidence, including nonchanges,
 is retained separately from state intervals. No timing quantization is applied.
 """
 import csv
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import json
 
 
@@ -86,6 +86,9 @@ class OpmStateEvent:
     falling_mask: int
     continuity_id: int
     state: OpmState
+    original_event_id: int | None = field(default=None, kw_only=True)
+    loop_iteration: int = field(default=0, kw_only=True)
+    original_vgmticks: int | None = field(default=None, kw_only=True)
 
     @property
     def time(self):
@@ -237,6 +240,7 @@ def build_segments(trace_csv, *, end_vgmticks):
     events, segments = [], []
     previous_id = previous_address = -1
     previous_time = 0
+    previous_iteration = 0
     csm_observed = False
 
     def close(event, end):
@@ -253,9 +257,15 @@ def build_segments(trace_csv, *, end_vgmticks):
             expected_ch = register_channel(register, data)
             if row['ch'] != ('' if expected_ch is None else str(expected_ch)):
                 raise ValueError('OPM trace channel disagrees with register control')
-        if event_id <= previous_id or address <= previous_address or not previous_time <= tick <= end_vgmticks:
+        iteration = int(row.get('loop_iteration') or 0)
+        original_id = int(row.get('original_event_id') or event_id)
+        original_tick = int(row.get('original_vgmticks') or tick)
+        if (event_id <= previous_id or iteration < previous_iteration
+                or (iteration == previous_iteration and address <= previous_address)
+                or not previous_time <= tick <= end_vgmticks):
             raise ValueError('OPM evidence must be in source order and within source end')
         previous_id, previous_address, previous_time = event_id, address, tick
+        previous_iteration = iteration
         identity = (row['chip_type'], clock, clock_raw)
         if instance not in chips:
             chips[instance] = OpmRegisterState()
@@ -274,7 +284,8 @@ def build_segments(trace_csv, *, end_vgmticks):
             changed = state != prior.state
             event = OpmStateEvent(event_id, address, command, register, data, instance,
                                   *identity, ch, tick, kind, changed, rising, falling,
-                                  chip.continuity[ch], state)
+                                  chip.continuity[ch], state, original_event_id=original_id,
+                                  loop_iteration=iteration, original_vgmticks=original_tick)
             events.append(event)
             csm_observed |= state.csm_enabled == 1
             if changed or register in (1, 0x14):

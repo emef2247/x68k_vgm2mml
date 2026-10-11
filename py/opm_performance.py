@@ -82,7 +82,7 @@ class PerformancePlan:
             json.dumps(report, indent=2) + '\n', encoding='utf-8')
 
 
-def build_performance(baseline):
+def build_performance(baseline, *, terminate=True):
     """Infer gates without modifying source rows or baseline register evidence."""
     build_target_trajectory(baseline.scheduled_writes(), end_tick=baseline.end_tick,
                             source_end_vgmticks=baseline.source_end)
@@ -132,9 +132,9 @@ def build_performance(baseline):
                              key_origin='musical_attack_inferred', source_key_observed=False,
                              performance_write_ids=json.dumps(list(range(first, len(writes)))),
                              baseline_write_ids=json.dumps([w.write_id for w in row_writes])))
-        if gate:
+        if gate and terminate:
             key(chip, ch, None, baseline.source_end, target, False, None)
-        for w in terminal:
+        for w in terminal if terminate else ():
             if w.register != 8:
                 copy(w, None)
     settings = dict(baseline.settings, sourcegate='inferred_from_audibility',

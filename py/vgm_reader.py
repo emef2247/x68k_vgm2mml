@@ -741,7 +741,8 @@ class _OpmTrace:
 
     fields = ('event_id', 'address', 'command', 'vgmticks', 'time',
               'chip_instance', 'chip_type', 'clock_hz', 'clock_raw',
-              'register', 'data', 'ch', 'register_scope')
+              'register', 'data', 'ch', 'register_scope',
+              'original_event_id', 'loop_iteration', 'original_vgmticks')
 
     def __init__(self, raw, version):
         clock_offset = 0x30 if version >= 0x110 else 0x10
@@ -762,7 +763,8 @@ class _OpmTrace:
                  if register < 64 else 'operator')
         self.rows.append((event_id, event.address, event.command, event.vgmticks,
                           event.vgmticks / 44100.0, instance, self.chip_type,
-                          self.clock_hz, self.clock_raw, register, data, ch, scope))
+                          self.clock_hz, self.clock_raw, register, data, ch, scope,
+                          event.source_event_id, event.loop_iteration, event.original_vgmticks))
 
     def output_csv(self, path):
         import csv
@@ -777,7 +779,7 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
               include_vgmticks: bool = False,
               opm_metadata: dict | None = None,
               pcm_metadata: dict | None = None,
-              dump_opm_segments: bool = False) -> tuple[str, str, str, str, str, str, str, str]:
+              dump_opm_segments: bool = False, loop_count: int = 1) -> tuple[str, str, str, str, str, str, str, str]:
     """
     Parse a VGM file and write PSG/SCC/OPLL traces plus declared OPM raw writes.
 
@@ -810,7 +812,7 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
     header = read_vgm_header(raw)
     if pcm_metadata is not None:
         from okim6258 import analyze
-        pcm_metadata.update(analysis=analyze(raw),
+        pcm_metadata.update(analysis=analyze(raw, loop_count=loop_count),
                             clock_raw=header['okim6258_clock_raw'],
                             flags=header['okim6258_flags'])
     vgm_version = header['version']
@@ -824,12 +826,20 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
     opll = _OpllState()
     opm = _OpmTrace(raw, vgm_version)
     from vgm_timing import command_times
-    source_times = {}
+    source_times = []
+    replay_start_event_id = None
+    loop_start_event_id = None
+    replay_ends = {}
     for state in (psg, scc, opll):
         state._include_vgmticks = include_vgmticks
-    for event_id, event in enumerate(command_times(raw)):
+    for event_id, event in enumerate(command_times(raw, loop_count=loop_count)):
         if include_vgmticks:
-            source_times[event.address] = event
+            source_times.append(event)
+        if event.loop_iteration == 0 and event.address == metadata['loop_address']:
+            loop_start_event_id = event_id
+        if event.loop_iteration and replay_start_event_id is None:
+            replay_start_event_id = event_id
+        replay_ends[event.loop_iteration] = event.vgmticks + event.wait_samples
         for state in (psg, scc, opll):
             state._vgmticks = event.vgmticks
         global_time = event.vgmticks / 44100.0
@@ -856,9 +866,19 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
         import csv
         from dataclasses import asdict
         with open(os.path.join(output_dir, f'{base_name}.vgm.timing.csv'), 'w', newline='') as stream:
-            writer = csv.DictWriter(stream, fieldnames=('address', 'command', 'vgmticks', 'wait_samples'))
+            writer = csv.DictWriter(stream, fieldnames=('occurrence_event_id', *event.__dataclass_fields__))
             writer.writeheader()
-            writer.writerows(asdict(event) for event in source_times.values())
+            writer.writerows(dict(occurrence_event_id=i, **asdict(event))
+                             for i, event in enumerate(source_times))
+    metadata.update(loop_count=loop_count if replay_start_event_id is not None else 1,
+                    playback_end_samples=event.vgmticks,
+                    loop_start_event_id=loop_start_event_id,
+                    replay_start_samples=metadata['decoded_end_samples'] if replay_start_event_id is not None else None,
+                    replay_start_event_id=replay_start_event_id,
+                    replay_loop_samples=(replay_ends[1] - metadata['decoded_end_samples'])
+                    if replay_start_event_id is not None else None)
+    if loop_metadata is not None:
+        loop_metadata.update(metadata)
     if dump_loop:
         dump_loop_metadata(os.path.join(output_dir, f'{base_name}.vgm.loop.csv'), metadata)
 

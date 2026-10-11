@@ -28,6 +28,17 @@ VGMの実際のコマンドから使用音源を判定し、OPM／PCM入力ま�
 
 OPMのみのMML生成にRustコンパイラは不要です。PCMを含む通常変換では外部helperのビルドが必要です。
 
+### VGMの曲全体ループ
+
+VGMヘッダーに指定されたループは、既定でMDX用MMLへ引き継ぎます。読み取り段階で音源状態を保ったままループ部分をもう1周展開し、増えたSegmentを既存の構造化処理へ渡します。MMLでは最初の1周を通過した後、2周目の入口に L を置いて繰り返します。境界で新たなKey-Onや状態リセットは追加しません。
+
+有限1周で終了させたい場合は --no-song-loop を指定してください。これは、MML内の有限反復圧縮を無効にする --no-loops とは別の設定です。
+
+    python scripts/export_mdx.py input.vgm --outdir outputs/listen/input --no-vgm
+    python scripts/export_mdx.py input.vgm --outdir outputs/listen/finite --no-vgm --no-song-loop
+
+--dump-passesでは、元の命令位置・時刻、展開後の時刻、周回番号をCSVで追跡できます。発音がループ境界をまたぐFM部分は制御命令として保持します。PCMは独立して再生できるサンプルを対象とし、境界をまたぐデコーダ継続は診断して拒否します。legacy表記とPSG/SCCのheld-register互換経路では、現在は --no-song-loop が必要です。詳細は[ループ処理](docs/vgm_loop.md)を参照してください。
+
 ### X68000と異なるOPMクロックの入力
 
 単一のYM2151であれば、3,579,580Hzなど4MHz以外の入力も変換できます。入力クロックはVGMヘッダーから読み、**Segment → Target (MML)** でKC/KFを4MHz向けに補正します。`structured`／`legacy`／`registers`、PCM併用にも共通で適用し、追加オプションは不要です。元のState・Segmentは変更しません。

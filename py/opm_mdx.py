@@ -165,7 +165,12 @@ def scheduled_projection(projection, *, track_layout='channels'):
                    key=lambda w: (w.mdx_tick, w.mdx_track, w.source_event_id, w.target_sequence))))
 
 
-def render(projection, *, title='OPM Segment replay', track_layout='channels'):
+def render(projection, *, title='OPM Segment replay', track_layout='channels',
+           song_loop_start=None, song_loop_event_id=None):
+    loop_tick = (projection.mdx_tick(song_loop_start)
+                 if song_loop_start is not None else None)
+    if loop_tick is not None and not 0 <= loop_tick < projection.end_mdx_tick:
+        raise ValueError('Song loop must have a positive target duration')
     title = str(title).replace('"', "'").replace('\r', ' ').replace('\n', ' ')
     scheduled_projection(projection, track_layout=track_layout)
     layout_comment = ('; OPM Segment target: ch0..7 -> A..H; shared controls on A, noise on H.'
@@ -184,18 +189,31 @@ def render(projection, *, title='OPM Segment replay', track_layout='channels'):
         if track != 'A':
             lines.append(f'/* Track {track} */')
         cursor = 0
+        marker_emitted = False
         def advance(gap):
             while gap:
                 count = min(gap, 65535)
                 lines.append(f'{track} r%{count}')
                 gap -= count
         for write in writes:
+            after_marker = (write.source_event_id >= song_loop_event_id
+                            if song_loop_event_id is not None else
+                            song_loop_start is not None and write.source_vgmticks >= song_loop_start)
+            if loop_tick is not None and not marker_emitted and after_marker:
+                advance(loop_tick-cursor)
+                cursor=loop_tick
+                lines.append(f'{track} L')
+                marker_emitted=True
             advance(write.mdx_tick - cursor)
             cursor = write.mdx_tick
             # MXC v1.01 accepts full-line comments, but parses an inline ';'
             # after a channel command as music. Keep provenance off that line.
             lines.append(f'; event {write.source_event_id}, sample {write.source_vgmticks}')
             lines.append(f'{track} y{write.register},{write.data}')
+        if loop_tick is not None and not marker_emitted:
+            advance(loop_tick-cursor)
+            cursor=loop_tick
+            lines.append(f'{track} L')
         advance(projection.end_mdx_tick - cursor)
     return '\n'.join(lines) + '\n'
 

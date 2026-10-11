@@ -189,7 +189,8 @@ class MusicalMdx:
             for ch in line:
                 if ch=='[': depth+=1; maximum=max(maximum,depth)
                 elif ch==']': depth-=1
-        return dict(notation='structured', musical_note_units=sum(u.kind=='note' for u in flat),
+        return dict(notation='structured', song_loop_tracks=sum(u.kind=='song_loop' for u in flat),
+                    musical_note_units=sum(u.kind=='note' for u in flat),
                     note_units=sum(u.kind=='note' for u in flat),
                     raw_units=sum(bool(u.fallback_reason) for u in flat), voices=len(self.voices),
                     fallback_reasons=dict(Counter(u.fallback_reason for u in flat if u.fallback_reason)),
@@ -252,8 +253,13 @@ class MusicalMdx:
 
 
 def build_music(projection, segments, *, title='OPM music', loops=True,
-                additional_tracks=None, additional_headers=()):
+                additional_tracks=None, additional_headers=(),
+                song_loop_start=None, song_loop_event_id=None):
     from opm_pitch_projection import target_segments
+    loop_tick = (projection.mdx_tick(song_loop_start)
+                 if song_loop_start is not None else None)
+    if loop_tick is not None and not 0 <= loop_tick < projection.end_mdx_tick:
+        raise ValueError('Song loop must have a positive target duration')
     segments = target_segments(projection, segments)
     by_event = {}
     for s in segments:
@@ -267,6 +273,12 @@ def build_music(projection, segments, *, title='OPM music', loops=True,
     for track,writes in sorted(tracks.items()):
         ch=ord(track)-65
         units=[];cursor=0;source_cursor=0;i=0
+        split = next((n for n,w in enumerate(writes)
+                      if (w.source_event_id >= song_loop_event_id
+                          if song_loop_event_id is not None else
+                          song_loop_start is not None and w.source_vgmticks >= song_loop_start)),
+                     len(writes))
+        marker_emitted = False
         def state(write):
             return by_event[write.source_event_id].get(ch)
         def make(members,start,end,kind,command,voice=None,pitch='',reason='',
@@ -281,7 +293,17 @@ def build_music(projection, segments, *, title='OPM music', loops=True,
                 tuple(w.source_event_id for w in members),
                 tuple(sid for w in members for sid in w.source_segment_ids),trajectory,voice,pitch,reason,
                 command if unlooped is None else unlooped)
+        def marker():
+            nonlocal cursor, source_cursor, marker_emitted
+            if cursor < loop_tick:
+                units.append(make([],cursor,loop_tick,'rest',timed('r',loop_tick-cursor),
+                                  source_end=song_loop_start))
+            units.append(make([],loop_tick,loop_tick,'song_loop','L',
+                              source_start=song_loop_start,source_end=song_loop_start))
+            cursor=loop_tick;source_cursor=song_loop_start;marker_emitted=True
         while i<len(writes):
+            if loop_tick is not None and not marker_emitted and i >= split:
+                marker()
             first=writes[i]
             if first.mdx_tick>cursor:
                 units.append(make([],cursor,first.mdx_tick,'rest',timed('r',first.mdx_tick-cursor),
@@ -291,10 +313,12 @@ def build_music(projection, segments, *, title='OPM music', loops=True,
             s=state(first)
             reason=''
             onset=i
-            while (onset<len(writes) and writes[onset].mdx_tick==cursor
+            while (onset<len(writes) and (marker_emitted or loop_tick is None or onset < split)
+                   and writes[onset].mdx_tick==cursor
                    and writes[onset].register!=8):
                 onset+=1
-            if (onset<len(writes) and writes[onset].mdx_tick==cursor
+            if (onset<len(writes) and (marker_emitted or loop_tick is None or onset < split)
+                    and writes[onset].mdx_tick==cursor
                     and state(writes[onset]) is not None and state(writes[onset]).rising_mask):
                 first=writes[onset];s=state(first)
             else:
@@ -305,7 +329,9 @@ def build_music(projection, segments, *, title='OPM music', loops=True,
                 tone=tone_and_level(s.state)
                 spelling=note_spelling(s.state)
                 terminal=state(writes[off]) if off<len(writes) else None
-                if s.rising_mask!=s.state.key_mask or s.falling_mask or first.data & 128:
+                if loop_tick is not None and not marker_emitted and off >= split:
+                    reason='gate_crosses_song_loop'
+                elif s.rising_mask!=s.state.key_mask or s.falling_mask or first.data & 128:
                     reason='partial_or_reserved_key_edge'
                 elif terminal is None or terminal.state.key_mask or writes[off].data!=ch:
                     reason='no_complete_terminal_keyoff'
@@ -381,17 +407,20 @@ def build_music(projection, segments, *, title='OPM music', loops=True,
             # Never attach an unrelated attack to the preceding control group.
             stop=i+1
             while stop<len(writes):
+                if loop_tick is not None and not marker_emitted and stop >= split: break
                 following=state(writes[stop])
                 if writes[stop].register==8 and following is not None and (following.rising_mask or following.falling_mask): break
                 stop+=1
             # Leave same-time setup with the following real edge, so an
             # ordinary voice/note can represent it without redundant y writes.
-            if stop<len(writes):
+            if stop<len(writes) and not (loop_tick is not None and not marker_emitted and stop == split):
                 stamp=writes[stop].mdx_tick
                 while stop>i+1 and writes[stop-1].mdx_tick==stamp and writes[stop-1].register!=8:
                     stop-=1
             end=writes[stop].mdx_tick if stop<len(writes) else projection.end_mdx_tick
             source_end=writes[stop].source_vgmticks if stop<len(writes) else projection.source_end_vgmticks
+            if loop_tick is not None and not marker_emitted and stop == split:
+                end=loop_tick;source_end=song_loop_start
             members=writes[i:stop]
             pieces=[];control_keys=[];position=0
             while position<len(members):
@@ -415,6 +444,8 @@ def build_music(projection, segments, *, title='OPM music', loops=True,
             units.append(make(members,cursor,end,'controls',body,reason=reason,source_end=source_end,
                               unlooped=' '.join(pieces)))
             cursor=end;source_cursor=source_end;i=stop
+        if loop_tick is not None and not marker_emitted:
+            marker()
         if cursor<projection.end_mdx_tick:
             units.append(make([],cursor,projection.end_mdx_tick,'rest',timed('r',projection.end_mdx_tick-cursor)))
         unit_tracks[track]=tuple(units)

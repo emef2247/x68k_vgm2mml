@@ -130,6 +130,7 @@ def build_parser():
                         help='Native MDX notation (default: structured)')
     advanced.add_argument('--track-layout', choices=['channels', 'conductor'], default='channels',
                         help='Native MDX tracks; conductor requires --notation registers')
+    advanced.add_argument('--no-song-loop', action='store_true', help='Export one finite VGM pass instead of its declared song loop')
     advanced.add_argument('--no-loops', action='store_true', help='Disable MDX finite-repeat compression')
     advanced.add_argument('--psg-gain', type=float, default=None, help='PSG projection gain: fm=1, additive=0.125')
     advanced.add_argument('--psg-model', choices=['fm', 'additive'], default=None,
@@ -195,7 +196,7 @@ def main():
                                   (']' in value if field == 'name' else '"' in value)):
             parser.error(f'--{field} contains a character that would break the MML header')
 
-    if args.target == 'mgs' and (args.notation != 'structured' or args.track_layout != 'channels' or args.no_loops):
+    if args.target == 'mgs' and (args.notation != 'structured' or args.track_layout != 'channels' or args.no_loops or args.no_song_loop):
         parser.error('MDX notation/track/loop options require --target mdx')
     if args.pcm_generator and args.target != 'mdx':
         parser.error('--pcm-generator requires --target mdx')
@@ -306,7 +307,7 @@ def main():
                                 psg_model=args.psg_model or ('additive' if compatibility_target == 'opm-additive' else 'fm'),
                                 pitch_policy=args.opm_pitch_policy,
                                 dump_passes=args.dump_passes or args.debug,
-                                notation=args.notation, loops=not args.no_loops,
+                                notation=args.notation, loops=not args.no_loops, song_loop=not args.no_song_loop,
                                 normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
@@ -326,7 +327,7 @@ def main():
         try:
             mml, _, _ = convert(vgm_path, song_dir, dump_passes=args.dump_passes or args.debug,
                                 track_layout=args.track_layout, notation=args.notation,
-                                loops=not args.no_loops, title=args.title,
+                                loops=not args.no_loops, song_loop=not args.no_song_loop, title=args.title,
                                 gd3_language=args.gd3_language, normalize_lengths=args.normalize_lengths,
                                 pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'strict',
                                 pitch_policy=args.opm_pitch_policy or 'clamp',

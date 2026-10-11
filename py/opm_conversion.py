@@ -25,7 +25,7 @@ def _record_pcm_assessment(assessment, outdir, stem, *, requires_pdx, retained=(
     assessment.dump(outdir, stem)
 
 
-def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None, normalization_source_times=None, normalization_ms=8, pitch_policy='clamp'):
+def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None, normalization_source_times=None, normalization_ms=8, pitch_policy='clamp', song_loop=True, replayed_song_loop=False):
     source, outdir = Path(source), Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     requested_normalization = normalize_lengths
@@ -62,7 +62,8 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         analysis_dir = outdir if dump_passes else Path(temporary)
         parse_vgm(str(source), str(analysis_dir), opm_metadata=metadata,
                   pcm_metadata=pcm_metadata,
-                  loop_metadata=source_loop, dump_loop=dump_passes)
+                  loop_metadata=source_loop, dump_loop=dump_passes,
+                  loop_count=2 if song_loop and not replayed_song_loop else 1)
         pcm_analysis = pcm_metadata['analysis']
         has_pcm = bool(pcm_analysis.transfers or pcm_analysis.raw_commands or pcm_analysis.blocks)
         if has_pcm:
@@ -82,6 +83,22 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         if dump_passes:
             dump_analysis(analysis, state_csv=outdir/(source.stem+'_trace.opm.csv'),
                           segments_csv=outdir/(source.stem+'.opm.segments.csv'))
+    loop_start = None
+    loop_event_id = None
+    if song_loop and source_loop.get('status') == 'valid':
+        loop_start = (source_loop['loop_start_samples'] if replayed_song_loop
+                      else source_loop['replay_start_samples'])
+        loop_event_id = (source_loop.get('loop_start_event_id') if replayed_song_loop
+                         else source_loop.get('replay_start_event_id'))
+        if loop_start >= analysis.source_end_vgmticks:
+            raise ValueError('Declared song loop has no positive playback duration')
+        if notation == 'legacy':
+            raise ValueError('Declared song loops require structured or registers notation; use --no-song-loop for legacy')
+    song_options = dict(song_loop_start=loop_start, song_loop_event_id=loop_event_id)
+    normalization_loop = dict(source_loop)
+    if loop_start is not None:
+        normalization_loop.update(loop_start_samples=loop_start,
+                                  decoded_end_samples=analysis.source_end_vgmticks)
     if has_pcm and (notation != 'structured' or track_layout != 'channels'):
         raise ValueError('PCM output requires structured notation and channel tracks')
     clock = None
@@ -112,7 +129,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
     if normalize_lengths:
         from opm_note_normalization import normalize_projection
         projection, normalization, evidence = normalize_projection(analysis.segments, before,
-                                                                   loop_metadata=source_loop,
+                                                                   loop_metadata=normalization_loop,
                                                                    pcm_analysis=pcm_analysis if has_pcm else None,
                                                                    output_short_note_policy=True,
                                                                    source_events=analysis.events,
@@ -134,9 +151,9 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                 plan = project(pcm_analysis, stem=source.stem,
                                sample_multiplier=selected.sample_multiplier, policy=pcm_policy,
                                tick_mapper=selected.mdx_tick,
-                               omit_playback_ids=omitted, normalization_ms=normalization_ms)
+                               omit_playback_ids=omitted, normalization_ms=normalization_ms, song_loop_start=loop_start)
                 build_music(selected, analysis.segments, title=source.stem, loops=loops,
-                            additional_tracks={'P': plan.units} if plan.bindings else {})
+                            additional_tracks={'P': plan.units} if plan.bindings else {}, **song_options)
                 return plan
             try:
                 baseline_pcm_plan = preflight_pcm(before)
@@ -157,6 +174,10 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                         row['projection_status'] = 'unchanged'
     elif notation != 'structured':
         normalization['reason'] = 'target-clock correction is not applicable to this notation'
+    normalization['song_loop'] = dict(enabled=song_loop, emitted=loop_start is not None,
+        source_loop=source_loop, playback_start_samples=loop_start,
+        playback_end_samples=analysis.source_end_vgmticks,
+        strategy='state-preserving reader replay; repeat the second traversal' if loop_start is not None else 'finite source pass')
     normalization.update(requested=requested_normalization, enabled=normalize_lengths,
                          adopted=normalization['status'] == 'applied', notation=notation,
                          selected=projection.timing_report(), shared_pcm_clock=has_pcm,
@@ -181,7 +202,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                                 tick_mapper=projection.mdx_tick,
                                 policy=pcm_policy,
                                 omit_playback_ids=normalization.get('omitted_pcm_playback_ids', ()),
-                                normalization_ms=normalization_ms)
+                                normalization_ms=normalization_ms, song_loop_start=loop_start)
         except ProjectionError as error:
             record_pcm_assessment(error.assessment, requires_pdx=bool(pcm_analysis.samples))
             raise ProjectionError(f'{error}; PCM assessment: {outdir / (source.stem + ".pcm.assessment.json")}',
@@ -223,7 +244,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                        if pcm_plan else {})
         try:
             structure = build_structure(projection, analysis.segments, title=title or source.stem,
-                                        loops=loops, **pcm_options)
+                                        loops=loops, **pcm_options, **(song_options if notation == 'structured' else {}))
         except (OSError, ValueError) as error:
             if pcm_assessment is not None:
                 pcm_assessment.error(str(error))
@@ -237,12 +258,12 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                                              '; Readable PCM projection; canonical MDX uses .pcm/target.tsv.'))
                                     if baseline_pcm_plan else {})
             baseline = build_structure(before, analysis.segments, title=title or source.stem,
-                                       loops=loops, **baseline_pcm_options)
+                                       loops=loops, **baseline_pcm_options, **(song_options if notation == 'structured' else {}))
             (outdir / (source.stem + '.mdx.before.normalize.mml')).write_text(baseline.text, encoding='utf-8')
             normalization.update(before_structure=baseline.summary(), after_structure=structure.summary())
             (outdir / (source.stem + '.mdx.normalization.json')).write_text(json.dumps(normalization, indent=2) + '\n', encoding='utf-8')
     elif notation == 'registers':
-        text = render(projection, title=title if title is not None else source.stem, track_layout=track_layout)
+        text = render(projection, title=title if title is not None else source.stem, track_layout=track_layout, **song_options)
     else:
         raise ValueError('Unknown MDX notation')
     try:
@@ -278,7 +299,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         from pcm_mdx import write_mdx
         try:
             fm_structure = build_structure(projection, analysis.segments,
-                                           title=title or source.stem, loops=loops)
+                                           title=title or source.stem, loops=loops, **song_options)
             write_mdx(pcm_plan, fm_structure, outdir, source.stem, generator=pcm_generator)
         except (OSError, ValueError) as error:
             if not isinstance(error, ProjectionError):
