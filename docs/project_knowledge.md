@@ -466,7 +466,24 @@ The final MGSDRV layout may differ between melodic mode and rhythm mode,
 but layout selection is a target concern and must not delete source
 Segments.
 
-## 9.3 PSG / SSG
+## 9.3 OPNA
+
+Native OPNA/YM2608 analysis keeps FNUM/BLOCK, frequency-latch
+evidence, per-operator parameters and key edges in its own source IR.
+Do not project it into OPM merely to build source Segments. Register-bank
+operator order and key-mask order differ. Committed frequency is not the last
+upper-register write; preserve both write evidence and effective pairs.
+Source FM support and SSG/rhythm/ADPCM evidence retention are separate scopes.
+See `docs/opna_segments.md` for the current FM-only analysis and limits.
+
+MUCOMVGM register-MML is a diagnostic target used to validate OPNA Segments;
+it is not an output option of the X68000 converter. Keep it separate from the
+future OPNA-to-OPM (4 MHz) / MSM6258 projection, which will adopt the vgm-conv
+mapping and retain its source/target evidence. Shared native OPNA analysis and
+MUCOM-specific validation modules should remain separable for a future
+mucom88_vgm2mml repository. Unknown source state is not an invented expectation.
+
+## 9.4 PSG / SSG
 
 PSG state is not "OPLL with different parameters."
 
@@ -478,7 +495,7 @@ Noise and hardware envelope behavior are musical source data.
 If the target needs IDs, macros, reconstructed commands, or conversion
 to another chip family, retain decoded source state in an earlier pass.
 
-## 9.4 SCC
+## 9.5 SCC
 
 Programmable waveform data is first-class source information.
 

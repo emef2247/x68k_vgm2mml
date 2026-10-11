@@ -197,6 +197,16 @@ MDX側の主なオプションは次のとおりです。
 
 ## 中間結果と検証
 
+OPNA（YM2608）は、現在ReaderとFM State／Segment解析まで対応しています。
+通常のMDX変換経路への統合とPCM IR生成は次段階です。SSG・リズム・ADPCMはRawとして保存し、未解釈の領域を診断します。
+
+```bash
+python py/vgm_reader.py input.vgm outputs/opna-analysis
+```
+
+全チャンネルを含むRaw・State・Segment CSVと未解釈writeのCSVを生成します。
+API・フィールド・検証範囲は[OPNAのSegment解析](docs/opna_segments.md)を参照してください。
+
 ```bash
 python vgm2mml.py input.vgm --outdir OUTPUT --dump-passes
 python -m unittest discover -s tests/scripts -v
@@ -226,12 +236,15 @@ python scripts/verify_opm_mdx_roundtrip.py tests/fixtures/public/opm \
 
 Copyright (c) 2026 emef2247. Licensed under the [MIT License](LICENSE).
 
+外部検証ツールMUCOMVGMもMIT Licenseで、著作権表示は `Copyright (c) 2026 WING` です。使用版のライセンス全文と確認元を[第三者の表示](THIRD_PARTY_NOTICES.md#mucomvgm-005)に保持しています。MUCOMVGM本体はリポジトリに同梱せず、再配布する場合は同ライセンスの著作権表示・許諾文を含めます。
+
 ## 謝辞
 
 本プロジェクトのMDX／VGM出力と往復検証では、以下のツールを利用しています。開発者・メンテナー・貢献者の皆様に感謝します。
 
 | プロジェクト | 本リポジトリでの用途 | 確認した利用条件 |
 |---|---|---|
+| [MUCOMVGM](https://github.com/wingghost/MUCOMVGM) v0.0.5（WING） | OPNAのFM制御状態の往復検証に利用する外部コンパイラ | MIT |
 | MXC v1.01（MFS soft, milk） | MML→MDXコンパイル | フリーウェア・配布自由（付属文書による） |
 | [run68x](https://github.com/kg68k/run68x)（TcbnErik・run68の貢献者） | MXCなどHuman68kプログラムの実行 | GPL v2以降 |
 | [mmlx](https://github.com/h1romas4/chipstream/tree/main/crates/mmlx) 0.2.0（h1romas4） | 明示選択時のMML→MDXコンパイル、およびPCM経路のFM部分 | MIT |
@@ -241,7 +254,9 @@ Copyright (c) 2026 emef2247. Licensed under the [MIT License](LICENSE).
 
 PSG→OPMのSegment処理とターゲット生成は本プロジェクトで実装しており、通常変換にvgm-convのライブラリは不要です。
 
-各ツールの使用版・確認元・著作権表示・配布時の扱いは[第三者の表示](THIRD_PARTY_NOTICES.md)に記録しています。vgm-convのISC全文と、mmlx／soundlogのMIT全文も保持しています。本プロジェクトのMITライセンス表記と併せて、この表示も配布物に含めてください。
+MUCOMVGMとMUCOMVGM-Studioを公開してくださったWINGさんに感謝します。OPNA対応とMUCOM88形式MMLの検証に活用させていただいています。
+
+各ツールの使用版・確認元・著作権表示・配布時の扱いは[第三者の表示](THIRD_PARTY_NOTICES.md)に記録しています。vgm-convのISC全文と、MUCOMVGM／mmlx／soundlogのMIT全文も保持しています。本プロジェクトのMITライセンス表記と併せて、この表示も配布物に含めてください。
 
 セットアップで取得するMXC・run68x・mdxtoolsはローカルの外部ツールで、リポジトリや試聴用出力には同梱しません。これらを別途再配布する場合は各ツールの条件に従います。Rust helperのバイナリを配布する場合は、直接利用するmmlx／soundlogに加えて、推移的依存のライセンス表示も必要です。
 
