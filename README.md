@@ -31,7 +31,7 @@ VGMの実際のコマンドから使用音源を判定し、OPM／PCM、OPNA FM�
 
 OPMのみのMML生成にRustコンパイラは不要です。PCMを含む通常変換では外部helperのビルドが必要です。
 
-OPNA FM→OPMには[vgm-conv](https://github.com/digital-sound-antiques/vgm-conv)のOPN→OPM方式を採用しています。音色・operator・キー・左右出力を対応付け、元の11bit FNUM/BLOCKから既存のKC/KF処理で4MHz向けの音程を生成します。外部vgm-convの実行は不要です。参照実装のISC表示は[第三者の表示](THIRD_PARTY_NOTICES.md#vgm-conv)に保持しています。
+OPNA FM→OPMには[vgm-conv](https://github.com/digital-sound-antiques/vgm-conv)のOPN→OPM方式を採用しています。音色・operator・キー・左右出力を対応付け、元の11bit FNUM/BLOCKから既存のKC/KF処理で4MHz向けの音程を生成します。外部vgm-convの実行は不要です。参照実装のISC表示は[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md#vgm-conv)に保持しています。
 
 OPNAのFM・SSGをMDXへ投影し、ADPCM-Bは別のPCM経路へ渡します。SSGには既存PSGと同じFM音色・音量対応・発音推定を使用します。曲全体で使用チャンネルを調べ、FMを優先してOPMの8チャンネルへ割り当てます。残りをSSGの番号順に使用し、入りきらないSSGは省略して診断します。割り当て結果は `<stem>.opna_channel_allocation.csv`／`.json` に保存します。FM 6＋SSG 3を使う場合、SSG 3番目が省略されます。
 
@@ -252,7 +252,7 @@ python scripts/verify_opm_mdx_roundtrip.py tests/fixtures/public/opm \
 
 Copyright (c) 2026 emef2247. Licensed under the [MIT License](LICENSE).
 
-テスト用VGM生成・外部検証に使用するMUCOMVGMもMIT Licenseで、著作権表示は `Copyright (c) 2026 WING` です。使用版のライセンス全文と確認元を[第三者の表示](THIRD_PARTY_NOTICES.md#mucomvgm-005)に保持しています。MUCOMVGM本体はリポジトリに同梱せず、再配布する場合は同ライセンスの著作権表示・許諾文を含めます。
+テスト用VGM生成・外部検証に使用するMUCOMVGMもMIT Licenseで、著作権表示は `Copyright (c) 2026 WING` です。使用版のライセンス全文と確認元を[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md#mucomvgm-005)に保持しています。MUCOMVGM本体はリポジトリに同梱せず、再配布する場合は同ライセンスの著作権表示・許諾文を含めます。
 
 ## 謝辞
 
@@ -268,9 +268,9 @@ Copyright (c) 2026 emef2247. Licensed under the [MIT License](LICENSE).
 | [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv)（Mitsutaka Okazaki and Contributors） | PSG→OPMの音色・音量対応、およびOPNA FM→OPMのレジスタ対応方式を採用。外部変換結果との比較にも利用しています。 | ISC |
 | [mdxtools](https://github.com/vampirefrog/mdxtools)（任意導入） | MDX／PDXの独立検査と逆コンパイル | GPL v3（上流LICENSE） |
 
-OPNA FM→OPMとPSG／SSG→OPMは、vgm-convの対応方式を参照してPython側に実装しています。通常変換で外部のvgm-convコマンドを実行するわけではなく、そのライブラリも不要です。参照した対応方式のISC著作権表示・許諾文は第三者の表示に保持しています。
+OPNA FM→OPMとPSG／SSG→OPMは、vgm-convの対応方式を参照してPython側に実装しています。通常変換で外部のvgm-convコマンドを実行するわけではなく、そのライブラリも不要です。参照した対応方式のISC著作権表示・許諾文はTHIRD_PARTY_NOTICES.mdに保持しています。
 b
-各ツールの使用版・確認元・著作権表示・配布時の扱いは[第三者の表示](THIRD_PARTY_NOTICES.md)に記録しています。vgm-convのISC全文と、MUCOMVGM／mmlx／soundlogのMIT全文も保持しています。本プロジェクトのMITライセンス表記と併せて、この表示も配布物に含めてください。
+各ツールの使用版・確認元・著作権表示・配布時の扱いは[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)に記録しています。vgm-convのISC全文と、MUCOMVGM／mmlx／soundlogのMIT全文も保持しています。本プロジェクトのMITライセンス表記と併せて、この表示も配布物に含めてください。
 
 セットアップで取得するMXC・run68x・mdxtoolsはローカルの外部ツールで、リポジトリや試聴用出力には同梱しません。これらを別途再配布する場合は各ツールの条件に従います。Rust helperのバイナリを配布する場合は、直接利用するmmlx／soundlogに加えて、推移的依存のライセンス表示も必要です。
 
