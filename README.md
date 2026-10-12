@@ -269,9 +269,7 @@ Copyright (c) 2026 emef2247. Licensed under the [MIT License](LICENSE).
 | [mdxtools](https://github.com/vampirefrog/mdxtools)（任意導入） | MDX／PDXの独立検査と逆コンパイル | GPL v3（上流LICENSE） |
 
 OPNA FM→OPMとPSG／SSG→OPMは、vgm-convの対応方式を参照してPython側に実装しています。通常変換で外部のvgm-convコマンドを実行するわけではなく、そのライブラリも不要です。参照した対応方式のISC著作権表示・許諾文は第三者の表示に保持しています。
-
-MUCOMVGMとMUCOMVGM-Studioを公開してくださったWINGさんに感謝します。OPNAのテストVGM生成とFM制御状態の検証に活用させていただいています。
-
+b
 各ツールの使用版・確認元・著作権表示・配布時の扱いは[第三者の表示](THIRD_PARTY_NOTICES.md)に記録しています。vgm-convのISC全文と、MUCOMVGM／mmlx／soundlogのMIT全文も保持しています。本プロジェクトのMITライセンス表記と併せて、この表示も配布物に含めてください。
 
 セットアップで取得するMXC・run68x・mdxtoolsはローカルの外部ツールで、リポジトリや試聴用出力には同梱しません。これらを別途再配布する場合は各ツールの条件に従います。Rust helperのバイナリを配布する場合は、直接利用するmmlx／soundlogに加えて、推移的依存のライセンス表示も必要です。
