@@ -1,13 +1,20 @@
 # Project AGENTS.md
 
 ## What this repo is
-- Convert X68000 OPM/YM2151 VGM into inspectable structured MDX MML; retain PSG/SCC/OPLL to MGSDRV compatibility.
-- Main native sources: OPM/YM2151 and scoped MSM6258 PCM. Compatibility sources: PSG, YM2413/OPLL, and SCC.
+
+- Reconstruct inspectable, source-derived musical Segments from VGM, then generate editable, structurally meaningful MML. The primary orientation is X68000 music, with OPM/YM2151 and MDX MML as the default native route.
+- Retain inherited PSG/SCC/OPLL to MGSDRV compatibility. Preserve native analysis for additional sources, including OPNA, and distinguish source-analysis support from completed target projection.
+- Main native sources: OPM/YM2151 and scoped MSM6258 PCM. Compatibility sources include PSG, YM2413/OPLL and SCC. Check current code and focused documentation for other supported routes.
 - Main language: Python 3.
 - Primary working environment: WSL.
-- Goal: preserve observable VGM/chip behavior and make every important transformation inspectable, not merely produce compact or musically cleaner MML.
+- Source-derived Segments are the primary deliverable; musical MML is an output of that analysis. Preserve source evidence while reconstructing useful musical structure.
+- Reuse established musical interpretation, note-length correction and phrase/loop processing. Do not replace them with one MML fragment per Segment joined by ties.
+- YM2151/MDX and MSM6258/PDX constraints belong to target projection, not native source State or Segments.
 
 ## How to run
+
+Verify current commands/options against `README.md`, `python vgm2mml.py --help` and implementation. Do not infer support from a filename or inherited module.
+
 - Default OPM/MDX converter: `python vgm2mml.py <input.vgm>`
 - MGSDRV compatibility: `python vgm2mml.py <input.vgm> --target mgs`
 - Automated checks: `python -m unittest discover -s tests/scripts -v`
@@ -16,11 +23,16 @@
 - If a requested command or option is not documented here or in `README.md`, inspect the repository and report the actual command. Do not invent a workflow.
 
 ## Layout
+
+The entries below are navigation aids. Verify current file roles and support scope in the implementation.
+
 - `vgm2mml.py`: canonical OPM/MDX and compatibility conversion entry point.
 - `py/vgm_reader.py`: VGM parsing / trace-side implementation.
 - `py/opm.py`: immutable native OPM state/Segment types, Segment construction, and state/Segment CSV dumping.
 - `py/opm_conversion.py`: native OPM-to-MDX pipeline orchestration.
 - `py/opm_mdx.py`, `py/opm_mdx_music.py`: native OPM target projection and structured MDX rendering.
+- `py/opna.py`, `py/opna_adpcm.py`, `py/opna_pcm.py`, `py/opna_ssg.py`: inherited native OPNA source analysis and evidence; inspect actual support scope.
+- `py/opna_opm.py`, `py/opna_ssg_opm.py`: OPNA-to-OPM target projection where supported; preserve native OPNA evidence.
 - `py/msm6258.py`: backend-neutral PCM source evidence, encoded samples and playback spans.
 - `py/pcm_mdx.py`: single-P PCM binding/projection, 16-track/E8 target layout and externally packed PDX byte verification.
 - `py/opm_target_state.py`: explicitly projected OPM state/write trajectories and interval CSVs for PSG/SCC targets.
@@ -34,15 +46,18 @@
 - `tests/scripts/`: automated checks and shared test helpers; `tests/fixtures/`: source/reference material.
 - `docs/project_knowledge.md`: project design context and transformation rules. Read before changing conversion behavior.
 - `docs/opm_segments.md`: native OPM state/Segment fields, source evidence and validation rules.
+- `docs/opna_segments.md`: native OPNA source evidence and Segment semantics, where retained.
+- `docs/pcm_source_and_target.md`: source PCM evidence and target boundaries, where retained.
 - `docs/pcm_pdx.md`: PCM eligibility, pass artifacts, shared clock, external-tool limits and future backend boundary.
 - `docs/psg_scc_segments.md`: current PSG/SCC pipeline, Segment fields and validation limits.
 - `inputs/`: source/reference material if present locally. Do not commit private game-derived material.
 - `outputs/`: generated artifacts and intermediate results if present locally.
-- `field_notes/`: reusable discoveries if this workflow directory is added.
-- `handoffs/current.md`: current restart state if this workflow directory is added.
+- `field_notes/...`: logical references to external private notes; see External private field notes.
+- `handoffs/current.md`: current restart state, if present.
 - `mistaken.md`: do-not-repeat rules if present.
 
 ## Most important rule: preserve intermediate results
+
 - Intermediate results are first-class project artifacts for development and validation.
 - Do not design a conversion as an opaque VGM -> MML transformation when a meaningful intermediate representation can be emitted.
 - Every non-trivial interpretation or transformation should be inspectable before the next transformation consumes it.
@@ -54,16 +69,20 @@
 ## Transformation boundary
 Keep these conceptual stages separate:
 
-`Raw VGM -> State / trace -> Segment / interpreted event -> Target MML`
+`Raw VGM -> Native State / Events -> Segments / PCM IR -> Musical interpretation / Structural analysis -> Target projection -> MML / required PCM assets`
 
 - Raw VGM: source commands, waits, register writes, and timing facts.
 - State / trace: chip state reconstructed from those writes.
 - Segment / interpreted event: notes, rests, volumes, instruments, rhythm events, envelopes, waveforms, legato/retrigger and similar musical interpretations.
-- Target MML: MDX/MGSDRV-specific representation, formatting, quantization, compression, macros, and notation choices.
+- Musical interpretation / structural analysis: reconstruct sounding units and internal pitch/volume/control trajectories; infer continuity, phrases, patterns and loops while retaining mappings to source Segments.
+- Target projection: map the musical representation to OPM/MDX or explicitly supported compatibility targets, with separate pitch/timing correction, channel allocation, PCM binding and loss diagnostics.
+- Target MML: render the projected musical structure using the selected target syntax. Textual compaction must preserve projected semantics; macro support is target/compiler-specific.
+- Keep source State/Segments intact. A short internal control slice is not automatically a complete short sounding gate, and a Segment boundary is not automatically a note or tie boundary.
 
 Do not move target-format convenience backward into earlier stages unless the user explicitly decides that the intermediate representation itself should change.
 
 ## Evidence and inference
+
 - Preserve directly observed values separately from inferred values whenever practical.
 - Do not overwrite source-derived timing/register/state information with a quantized or normalized value without retaining the pre-transformation value somewhere inspectable.
 - If a value is inferred, make that fact visible in naming, fields, comments, or documentation where useful.
@@ -71,12 +90,14 @@ Do not move target-format convenience backward into earlier stages unless the us
 - When behavior is unclear, inspect source VGM, traces, pass CSVs, and existing code before changing the algorithm.
 
 ## Private fixtures
+
 - Private VGM, ROM-derived data, WAV, MML test material, and other copyrighted fixtures stay outside git unless explicitly safe to commit.
 - If a local fixture configuration exists, local checks may use it.
 - If private fixtures are unavailable, skip those playback/data checks and report that limitation.
 - Never paste private fixture contents into documentation, logs intended for commit, issues, or pull requests.
 
 ## Conventions
+
 - Follow existing style in the nearest files.
 - Keep changes small and attributable to one transformation stage when practical.
 - Prefer existing utilities and pass structures over parallel implementations.
@@ -85,14 +106,19 @@ Do not move target-format convenience backward into earlier stages unless the us
 - Preserve enough identifiers/timestamps/channel information in intermediate data to trace a final MML event back toward its source.
 
 ## Do not
+
 - Do not rewrite the whole project merely to introduce this workflow.
 - Do not put long-form design documentation into this file; put it in `docs/project_knowledge.md`.
 - Do not collapse Raw, State, Segment, and Target into one representation for convenience.
 - Do not discard intermediate information solely to make MML shorter or cleaner.
 - Do not change timing, note boundaries, retrigger/legato behavior, volume, envelope, rhythm interpretation, SCC waveform handling, or OPLL patch handling without checking the relevant intermediate stage.
 - Do not promote experimental mappings or heuristics to specifications.
+- Do not silently omit active unsupported chips, streams, rhythm or PCM. Report the affected source and target route.
+- Do not treat successful MML compilation, register replay or matching event counts as proof of musical/structural correctness.
+- Do not import MUCOM88/YM2608 target rules into the MDX renderer or use OPM/PDX constraints to redefine OPNA source semantics.
 
 ## Done means
+
 - The requested change is implemented.
 - Relevant automated checks were run, or the blocker is reported.
 - Relevant intermediate results were generated and inspected when conversion behavior changed.
@@ -100,8 +126,24 @@ Do not move target-format convenience backward into earlier stages unless the us
 - Any newly learned stable rule is recorded in the appropriate project knowledge / field note rather than being left only in chat or code archaeology.
 - If `handoffs/current.md` is in use, update it with what changed, what is unfinished, the next allowed action, and what must not happen next.
 
+## External private field notes
+
+- Field notes are maintained in a separate private repository.
+- Resolve this path relative to this project's repository root:
+  `../my-external-intelligence-/x68k_vgm2mml/field_notes/`
+- Treat references to `field_notes/...` in project documents as references to that external directory. A local directory or symbolic link is not required.
+- Before changing established conversion behavior, search relevant notes for prior decisions, rejected approaches and known regressions.
+- Classify notes by meaning, not filename or chip name. Repository separation or note relocation does not revoke established shared principles.
+- If a relevant inherited decision is missing, also search `../my-external-intelligence-/msx_vgm2mml/field_notes/` and `../my-external-intelligence-/mucom88_vgm2mml/field_notes/`. Evaluate each note's source/target scope; newer notes from another project do not automatically override this project's decisions.
+- Keep new notes in this project's external directory. Do not recreate local field_notes or copy private notes into this public repository.
+- If external reading or writing is unavailable, report the limitation. Do not invent missing decisions. Continue independent work using public principles; identify ungrounded decisions or unsaved findings and their intended destination.
+- Keep stable principles required for public maintenance in docs/project_knowledge.md without copying private experimental details.
+- Inspect the private repository's status and diff separately. When task commits are requested, commit its note changes separately and report both repositories' commit status. Stage only task-related notes and preserve unrelated changes.
+- A public-project commit does not include external note changes. Do not push the private repository unless the task's authorization includes that push.
+
 ## When you learn something useful
-- One-off observation or experiment: `field_notes/YYYY-MM-DD_topic.md` if that workflow is present.
+
+- One-off observation or experiment: `YYYY-MM-DD_topic.md` in the external private field-notes directory defined above.
 - Repeated failure / known trap: `mistaken.md` if present.
 - Stable design principle or domain knowledge: `docs/project_knowledge.md`.
 - Always-on short rule: only then add a concise bullet here.

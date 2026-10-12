@@ -226,3 +226,4 @@ node_modules
 
 # Local external compiler/runtime installations; independent of generated output
 /.tools/
+/field_notes
