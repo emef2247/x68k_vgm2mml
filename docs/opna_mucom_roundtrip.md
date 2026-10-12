@@ -4,12 +4,51 @@ The validation path is `VGM -> native State/Segments -> diagnostic MUCOMVGM
 register-MML -> VGM -> native State/Segments`. It is a development check,
 separate from the X68000 converter's MDX output. It establishes preservation
 of modeled FM controls, not acoustic equivalence or musical note/voice MML.
+PCM, SSG and rhythm remain outside this comparison. Source ADPCM-B IR is
+saved for inspection, but the returned diagnostic MUC contains FM only.
+MSM6258 transcoding and MDX/PDX generation belong to the X68000 target path;
+native PCM MUCOM roundtrip work is deferred.
 
 ```bash
 python scripts/verify_opna_mucom_roundtrip.py tests/fixtures/public/opna \
   --outdir outputs/opna/mucom_roundtrip
 python -m unittest discover -s tests/scripts -p 'test_opna*.py' -v
 ```
+
+## Local MUCOM88 fixture preparation
+
+```bash
+python scripts/prepare_mucom88_fixtures.py \
+  tests/fixtures/local_only/opna/mucom88/mucom88win_yk2mml191012
+python scripts/verify_opna_mucom_roundtrip.py /path/to/selected.vgm \
+  --outdir outputs/opna/selected_roundtrip \
+  --fixture-manifest outputs/local_only/mucom88_fixture_preparation/manifest.json
+```
+
+Preparation removes loop-command `L` from main MUC music/macro bodies while
+keeping comments, strings and titles. Backup directories such as `org/` are
+excluded. It backs up local source files, preserves source encoding/newlines,
+and compiles temporary UTF-8 inputs beside the original dependencies. VGM is
+published beside each MUC only after compilation succeeds. MUB is not used or
+created. Manifest JSON/CSV retain MUC, compiler-input, compiler and VGM hashes,
+logs and success/failure status. Fixtures and generated songs stay local-only.
+
+MUCOMVGM does not parse native `@%` raw voice blocks. Preparation overlays
+their exact 25 register bytes into temporary DAT slots and points only the
+temporary input at that DAT. Original MUC/DAT files remain intact. This is a
+compiler adaptation, not substitution of another voice. MUCOMVGM's DAT loader
+masks DR register AM bit 7; successful compilation does not establish original
+MUCOM88 musical/voice equivalence. The roundtrip reference is the actual
+generated VGM. The manifest option checks that VGM and its original edited MUC
+still match the recorded compiler generation.
+
+## FM comparison profile
+
+FM checks retain compiler-control order, semantic State and operator edges.
+The report explicitly marks PCM as `not_compared` and records the number of
+source PCM Segments retained in the source passes. Source PCM evidence does
+not contribute to the FM pass result. There is no PCM calibration prelude,
+PCM playback injection or timeline rebasing in this runner.
 
 The runner uses WING's `mucomvgm.exe` v0.0.5 under
 `.tools/mucomvgm-0.0.5/mucomvgm/`; `--mucomvgm PATH` selects its location.
@@ -61,8 +100,8 @@ controls cannot be excused as initialization. No final key-off or wait is stripp
 
 For each input, `tracks/<relative input>/` contains:
 
-- `source/`: Raw, State, integrated Segments, unmodeled/auxiliary evidence and
-  native analysis manifest, plus shared timing CSV.
+- `source/`: Raw, State, integrated FM Segments, unmodeled/auxiliary evidence,
+  native FM and ADPCM-B analysis manifests, and shared timing CSV.
 - `target_writes.csv`, `generated.muc`, `generated.compile.log`: projection and
   exact external compiler input/output diagnostics.
 - `returned.vgm`, `returned/`: external VGM and its reconstructed native passes.
@@ -93,9 +132,12 @@ PSG, alongside FM. Preserve SSG source evidence, construct inspectable Segments,
 and include the13 currently `no_active_fm` patterns in SSG MML roundtrip coverage.
 The current milestone intentionally validates FM only, as accepted by the user.
 
-The X68000 branch will project native OPNA Segments to OPM at 4 MHz using the
-vgm-conv mapping and to MSM6258 PCM IR. Source evidence, target projection and
+The X68000 branch projects native OPNA FM Segments to OPM at 4 MHz using the
+vgm-conv register mapping and the existing nominal pitch helper. Source evidence, target projection and
 loss/eligibility diagnostics remain separate. Normal chip usage detection will
 select that route and output MDX MML; MUCOM MML is not a normal output format.
-The mapping is not implemented by this validation change. On adoption, record
-the vgm-conv method, provenance and notice in README and developer documentation.
+The implementation is `py/opna_opm.py`; method, provenance and notice are
+recorded in README and THIRD_PARTY_NOTICES. The ADPCM-B source and MSM6258
+target PCM IR are separate stages. `opna_pcm` now adapts transcoded MSM6258
+samples into the existing PCM P-track/PDX path under explicit best-effort loss
+diagnostics; this target connection does not alter the shared source boundary.

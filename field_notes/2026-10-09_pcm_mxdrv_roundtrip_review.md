@@ -119,7 +119,7 @@ Z_MUSICの再生profileを標準MXDRVへ混ぜない。
 
 [VGM specification](https://github.com/vgmrips/vgmplay-legacy/blob/master/VGMPlay/vgmspec171.txt)
 では0x90–95はデータ書込みschedulerの制御。stream stopとチップSTOPは別。
-[MAME OKIM6258](https://github.com/mamedev/mame/blob/master/src/devices/sound/okim6258.cpp)
+[MAME MSM6258](https://github.com/mamedev/mame/blob/master/src/devices/sound/okim6258.cpp)
 もchip状態の参考だが、modelの版を記録し、実機specの代わりに一般化しない。
 今回の短い探索でSharp純正IOCS原本/ROM実装の特定まではできていない。
 

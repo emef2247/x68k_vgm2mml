@@ -1,4 +1,74 @@
-# Current checkpoint: OPNA diagnostic FM roundtrip (2026-10-12)
+# Current checkpoint: OPNA FM/SSG/PCM to MDX/PDX (2026-10-12)
+
+Branch: codex/opna_to_opm. User confirmed the preceding FM/PCM MDX/PDX plays,
+then requested SSG via the existing PSG FM method. The user accepts the same
+noise/hardware-envelope restrictions and will generate/listen to songs.
+Stop after repository reflection. No commit/push, branch switch, private song
+build, playback or PCM MUCOM roundtrip is requested.
+
+Native FM -> vgm-conv OPN/OPM mapping and ADPCM-B -> MSM6258 -> existing PDX
+remain connected. New opna_ssg reads native OPNA raw CSV into immutable
+PSG-compatible source Segments, with raw snapshots, exact sample boundaries,
+original/expanded event IDs, envelope strobes and prescaler clock evidence.
+New opna_ssg_opm reuses the existing PSG FM AL4/FB7/TL/performance model.
+
+Whole-song any-FM-key use reserves the existing OPM0,1,2,4,5,6 mapping for used
+FM parts, preserving release tails and output gating. Used SSG parts fill the
+lowest vacant channels in source order. Six FM plus three SSG drops SSG2 with
+an allocation reason. Register initialization alone does not reserve FM; its
+unallocated target writes are filtered to avoid clobbering SSG. Every native
+SSG part remains in source IR. Only allocated SSG parts undergo target mode
+validation. Allocation CSV/JSON is always retained; --dump-passes keeps native
+SSG and the reused PSG baseline/performance before final remapping.
+
+FM and SSG writes merge by exact samples/event IDs/within-event ordinal before
+existing OPM/PCM clock projection. Loops suppress synthetic SSG EOF release.
+Prescaler changes use per-Segment master/4, master/2, master AY-compatible clock
+and do not restart held gates. Source interpretation and target key inference
+remain distinct. See docs/opna_ssg.md and README.md.
+
+Checks:53 focused OPNA source/target/PCM tests,20 existing PSG FM/performance
+checks and9 new SSG-allocation/merge/renderer tests passed. The9 include actual
+WSL helper MDX/PDX generation on an authored FM+SSG+PCM input and independent
+PDX target-byte equality. One previously played local source was parsed/dumped
+only: five used FM plus three SSG fit eight OPM channels, without exclusions.
+No song target binaries or native playback were run for the SSG change.
+Source/mapping pass evidence stays in ignored local outputs. Read-only design
+and final reviews found no blockers.
+
+All46 local main MUC sources already have loops removed and MUCOMVGM VGM
+created; org backups/MUB are preserved. Fixture scripts/manifests and the
+FM-only diagnostic runner remain available. PCM MUCOM roundtrip is deferred.
+Own chip/module/fixture names use MSM6258; external API names retain spelling.
+Local copyrighted songs, external tools and outputs remain outside Git.
+
+User command (WSL, existing helper):
+python scripts/export_mdx.py input.vgm --outdir outputs/listen/opna --no-vgm --pcm-policy best-effort
+
+Next allowed action: stop and await user build/listening results. Do not re-add
+OPN/OPN2, run private song conversions or resume separate MUCOM work automatically.
+
+# Previous checkpoint: OPNA X68000 FM projection and PCM IR (2026-10-12)
+
+Branch: codex/mucom88. User requests repository registration without commit;
+conversion/listening verification belongs to the user for this checkpoint.
+Implement automatic OPNA FM -> native Segments -> OPM4MHz projected VGM ->
+existing OPM MDX MML. Preserve original sample timing until downstream MDX
+projection, event-aware replayed loops and RL output gating without key restart.
+README and ISC reference notices now record vgm-conv register mapping.
+Native ADPCM-B memory/control/decoder-epoch IR and explicit MSM6258 transcoded
+target PCM IR are also generated. Use existing F0..F4 rates. Do not claim PDX,
+PCM P-track integration or acoustic equivalence; those remain next-stage work.
+See docs/opna_adpcm.md and field_notes/2026-10-12_opna_x68k_projection.md.
+Only syntax/import and source inventory checks were performed; new focused
+tests are supplied but conversion/playback/full-suite tests were not run.
+Next allowed action: user validates FM MML and PCM IR, then address findings
+and bridge target PCM IR to existing PDX/MDX PCM binding. MUCOM FM/SSG
+validation and future mucom88_vgm2mml extraction remain separate work.
+Do not commit/push, re-add OPN/OPN2, or stage external song archives or the
+unrelated untracked AGENTS.mucom.md.
+
+# Previous checkpoint: OPNA diagnostic FM roundtrip (2026-10-12)
 
 Branch: codex/mucom88. User moved29 public OPNA patterns here and requests a
 repository commit once VGM->Segment->MUCOM MML->VGM is runnable. That supersedes
@@ -310,7 +380,7 @@ oldhelpers. Rebuildscripts/mdx_fixture_generator beforeWSL use. NeutralPCMIR,
 samplebytes/sharedclock/sourceinterpretation are unchanged. Longerthan65535
 samples stayblocked asunverified scope, not assertedextendedformatloss.
 export_mdx.py --no-vgm generates MML/MDX/PDX withoutreplay; defaultreplay and
-roundtrip remain. Public inputfixtures movedto tests/fixtures/public/opm_oki6258.
+roundtrip remain. Public inputfixtures movedto tests/fixtures/public/opm_msm6258.
 138public/authored tests and12Rusttests pass; actual11-inputpublicbatchsuccess,
 10pairs independentaudit16/E8/validbindings. mdxinfoSuccess/title/PDXresolved,
 butzero-toneoffset triggersitsTracks=-1limitation; nofalsemodeverificationclaim.

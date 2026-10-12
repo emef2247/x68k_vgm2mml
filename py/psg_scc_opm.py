@@ -235,7 +235,8 @@ def project(psg, scc, *, psg_clock, scc_clock, end_vgmticks, psg_gain=None,
                     if s.envelope_enabled or s.mode in (2, 3):
                         raise ValueError(f'PSG ch{ch} row{row_id}: noise/hardware EG not implemented')
                 active = bool(s.volume and (s.enabled if chip == 'scc' else s.mode))
-                freq = source_frequency(chip, clock, s.tone_period) if active else 0.
+                segment_clock = getattr(s, 'source_clock_hz', clock)
+                freq = source_frequency(chip, segment_clock, s.tone_period) if active else 0.
                 approximation = ''
                 if active and freq:
                     try:

@@ -57,6 +57,14 @@ source-selection request. Used unsupported chips, combinations and streams
 must be diagnosed rather than silently omitted. Existing inactive compatibility
 initialization handling must remain explicit in the source inventory.
 
+OPNA FM/SSG projection reserves OPM channels for the whole song, with FM
+priority over SSG. Any FM key activity retains its channel through release
+tails and output gating. SSG uses the existing PSG FM model in remaining
+channels; capacity exclusions retain native source evidence and explicit
+allocation diagnostics. Channel allocation is a target constraint and never
+rewrites source Segments. Native SSG prescaler clocks and source event/sample
+order remain intact before the shared downstream MDX/PCM clock projection.
+
 Canonical FM conversion generates MML, not MDX/PDX binaries. A matching stem
 does not establish ownership of an adjacent MDX/PDX reference. Remove previous
 PCM binaries only when their generated assessment, saved path and SHA-256 match.
@@ -478,8 +486,14 @@ See `docs/opna_segments.md` for the current FM-only analysis and limits.
 
 MUCOMVGM register-MML is a diagnostic target used to validate OPNA Segments;
 it is not an output option of the X68000 converter. Keep it separate from the
-future OPNA-to-OPM (4 MHz) / MSM6258 projection, which will adopt the vgm-conv
-mapping and retain its source/target evidence. Shared native OPNA analysis and
+OPNA-to-OPM (4 MHz) projection, which adopts vgm-conv register mapping and
+retains source/target evidence. Use committed native11-bit FNUM/BLOCK and the
+existing nominal KC/KF helper; never replay uncommitted high latches as pitch.
+Output-enable gates become RL mute controls, not invented key-off/on pairs.
+An exact-sample target VGM feeds the existing OPM MDX converter; MDX clock
+projection remains downstream. Same-sample loop boundaries retain event order.
+OPNA ADPCM-B and MSM6258 use distinct codecs: native memory/playback evidence
+and transcoded target PCM IR must remain separate. Shared native OPNA analysis and
 MUCOM-specific validation modules should remain separable for a future
 mucom88_vgm2mml repository. Unknown source state is not an invented expectation.
 
@@ -976,6 +990,13 @@ and runtime validation are separate results.
 Reference playback evidence must be distinguished from assumptions and
 tool-specific behavior. Successful MDX/PDX generation does not establish
 native playback equivalence.
+
+Native OPNA ADPCM-B diagnostics preserve Yamaha memory and decoder/control
+evidence independently of MSM6258 target transcoding. Read-only RAM seeded
+from VGM type-81 memory evidence is an explicit source assumption, retained in
+Segment observations and target diagnostics. RAM1 uses four-byte address units;
+ROM/RAM8 use 32-byte units. Unsupported decoder epochs remain blocking even
+under best-effort target projection.
 
 Details:
 - `docs/pcm_source_and_target.md`

@@ -110,7 +110,7 @@ def make_samples(out, mdxtools):
             filename = f'samples/{sample_id:03d}.adpcm'
             (out / filename).parent.mkdir(parents=True, exist_ok=True)
             (out / filename).write_bytes(encoded)
-            samples.append(dict(sample_id=sample_id, codec='okim6258-adpcm4-low-first',
+            samples.append(dict(sample_id=sample_id, codec='msm6258-adpcm4-low-first',
                 encoded_file=filename, byte_length=len(encoded),
                 sha256=hashlib.sha256(encoded).hexdigest(),
                 source='original integer triangle with authored fade',

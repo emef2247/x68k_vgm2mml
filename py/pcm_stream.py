@@ -1,4 +1,4 @@
-"""Inspectable finite OKIM6258 DAC supplies, separate from raw chip writes.
+"""Inspectable finite MSM6258 DAC supplies, separate from raw chip writes.
 
 Timing follows libvgm's 44.1 kHz, 32.32 DAC counter profile. Source commands
 at a tick precede its DAC update. This models byte delivery, not consumption.
@@ -99,7 +99,7 @@ class StreamDecoder:
                 self.compressed = True
                 self.blocks.append(None)
                 self.issue('unsupported_pcm_data_bank', event_id, event,
-                           'Compressed OKIM6258 bank retained; decompression is not implemented')
+                           'Compressed MSM6258 bank retained; decompression is not implemented')
             return
         if not 0x90 <= cmd <= 0x95:
             return
@@ -156,7 +156,7 @@ class StreamDecoder:
                            f'Stream {sid} start requires data and frequency configuration')
             elif stream['bank'] != 4 or self.compressed:
                 self.issue('invalid_stream_reference', event_id, event,
-                           f'Stream {sid} has no fully decoded OKIM6258 data bank')
+                           f'Stream {sid} has no fully decoded MSM6258 data bank')
             elif stream['frequency'] > 44100:
                 pass
             elif not stream['frequency']:

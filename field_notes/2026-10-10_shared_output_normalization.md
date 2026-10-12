@@ -78,7 +78,7 @@ Reproduction:
 ```sh
 python scripts/export_mdx.py tests/fixtures/public/opm/from_fm \
   --outdir outputs/listen/opm/from_fm
-python scripts/export_mdx.py tests/fixtures/public/opm_oki6258 \
+python scripts/export_mdx.py tests/fixtures/public/opm_msm6258 \
   --outdir outputs/listen/normalization_pcm_public --no-vgm --pcm-policy best-effort
 ```
 

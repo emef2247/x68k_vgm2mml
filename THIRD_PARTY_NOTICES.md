@@ -13,7 +13,8 @@ Author: WING. Release: [Ver.0.0.5](https://github.com/wingghost/MUCOMVGM/release
 revision `827a97c6c63e0df1ce74c8cee7dcc93cd6a00a22`.
 
 Use: separately executed `mucomvgm.exe` compiles MUCOM88-format MML to YM2608
-VGM for native OPNA reader/State/Segment validation and the diagnostic FM
+VGM for local test-fixture preparation, native OPNA reader/State/Segment
+validation and the diagnostic FM
 control-state roundtrip. This is not the X68000 converter's normal output.
 The Studio GUI is a separate wrapper and is not required by this project.
 This compiler is distinct from the official MUCOM88 Windows CLI.
@@ -65,6 +66,16 @@ AL4/FB7, the MUL2/TL27 modulator, MUL1 carrier, fixed-level TL table and eight
 attenuation steps of headroom. Segment processing and target generation are
 implemented in this project; the external converter is not a runtime dependency.
 The upstream notice is retained for these referenced mapping materials.
+
+The OPNA FM projection in `py/opna_opm.py` also references
+[opn-to-opm-converter.ts](https://github.com/digital-sound-antiques/vgm-conv/blob/780a20ed505e23eb21aa9c6ce3f349029718b5a0/src/converter/opn-to-opm-converter.ts)
+at the same revision for operator-bank addresses, channels0..2/4..6, key masks,
+RL swapping, FB/algorithm, PMS/AMS and approximate LFO frequency mapping.
+This project consumes native committed11-bit FNUM/BLOCK and uses its existing
+4MHz OPM pitch helper, rather than the upstream raw-register9-bit cache path.
+Source parsing, exact-sample serialization and MDX generation use this project's
+separate stages; vgm-conv is not a runtime dependency. The ISC notice below
+also applies to the referenced OPN mapping materials.
 
 Upstream [LICENSE.md](https://github.com/digital-sound-antiques/vgm-conv/blob/780a20ed505e23eb21aa9c6ce3f349029718b5a0/LICENSE.md):
 

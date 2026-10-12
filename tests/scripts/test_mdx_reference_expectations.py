@@ -121,7 +121,7 @@ class ReferenceExpectationsTests(unittest.TestCase):
             target = write_expectations(result, root / 'expected')
             saved = json.loads(target.read_text(encoding='utf-8'))
             self.assertEqual((target.parent / sample['encoded_file']).read_bytes(), payload)
-            self.assertEqual(saved['pdx']['samples'][0]['codec'], 'okim6258-adpcm4-low-first')
+            self.assertEqual(saved['pdx']['samples'][0]['codec'], 'msm6258-adpcm4-low-first')
             self.assertNotIn('_encoded_payloads', saved)
             pcm_expected = json.loads((target.parent / 'pcm_ir.expected.json').read_text())
             self.assertEqual(pcm_expected['variant'], 'decoded-mdx-pdx-requests')

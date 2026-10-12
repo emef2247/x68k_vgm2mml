@@ -1,6 +1,6 @@
 # x68k_vgm2mml
 
-VGMから、検査可能な中間表現を経由してMDX用MMLを生成するツールです。現状はym2151,oki6258,scc,psgの一部の音源に対応しています。
+VGMから、検査可能な中間表現を経由してMDX用MMLを生成するツールです。現状はym2151,ym2608のFM,msm6258,scc,psgの一部の音源に対応しています。
 
 このプロジェクトの主目的は、VGMのレジスタ操作から導出される情報をx68000で扱えるMMLとして取り出すことです。
 
@@ -16,17 +16,28 @@ python vgm2mml.py input.vgm --outdir OUTPUT
 
 既定のターゲットはMDX用MMLで、`OUTPUT/input.mdx.mml`を生成します。`--outdir`を省略した場合は入力ファイルと同じディレクトリへ出力します。fixtureの検証には入力と異なる出力先を指定してください。
 
-VGMの実際のコマンドから使用音源を判定し、OPM／PCM入力または対応するPSG／SCC入力の経路を選択します。未対応の音源・組み合わせ・ストリームは診断します。
+VGMの実際のコマンドから使用音源を判定し、OPM／PCM、OPNA FM／SSG、または対応するPSG／SCC入力の経路を選択します。未対応の音源・組み合わせ・ストリームは診断します。
 
 ### 入力と出力
 
 | 入力 | 主な出力・変換経路 |
 |---|---|
 | OPM（YM2151） | OPMの状態・SegmentからMDX用MMLを生成 |
+| OPNA（YM2608）のFM | Native SegmentからOPM（4MHz）へ投影し、既存OPM経路でMDX用MMLを生成 |
+| OPNAのSSGトーン | 既存PSGのFM方式でOPMへ投影。曲全体でFMを優先し、残りのOPMチャンネルへ割り当て |
+| OPNAのADPCM-B（Delta-T） | 元のIRを保持し、MSM6258へ再圧縮して既存Pトラック／PDX経路へ接続（`best-effort`） |
 | PSG／SCC | OPM向け音色・演奏に投影してMDX用MMLを生成 |
-| 対応するOKIM6258 PCM（OPM併用を含む） | PCM IRとMDX用MMLを生成し、外部helperでMDX／PDXを生成 |
+| 対応するMSM6258 PCM（OPM併用を含む） | PCM IRとMDX用MMLを生成し、外部helperでMDX／PDXを生成 |
 
 OPMのみのMML生成にRustコンパイラは不要です。PCMを含む通常変換では外部helperのビルドが必要です。
+
+OPNA FM→OPMには[vgm-conv](https://github.com/digital-sound-antiques/vgm-conv)のOPN→OPM方式を採用しています。音色・operator・キー・左右出力を対応付け、元の11bit FNUM/BLOCKから既存のKC/KF処理で4MHz向けの音程を生成します。外部vgm-convの実行は不要です。参照実装のISC表示は[第三者の表示](THIRD_PARTY_NOTICES.md#vgm-conv)に保持しています。
+
+OPNAのFM・SSGをMDXへ投影し、ADPCM-Bは別のPCM経路へ渡します。SSGには既存PSGと同じFM音色・音量対応・発音推定を使用します。曲全体で使用チャンネルを調べ、FMを優先してOPMの8チャンネルへ割り当てます。残りをSSGの番号順に使用し、入りきらないSSGは省略して診断します。割り当て結果は `<stem>.opna_channel_allocation.csv`／`.json` に保存します。FM 6＋SSG 3を使う場合、SSG 3番目が省略されます。
+
+SSGのノイズ・ハードウェアエンベロープには、既存PSG投影と同じ未対応診断を適用します。リズムは出力対象外です。CH3特殊モード・CSM・未知のレジスタ効果・DACストリームは拒否し、FMのSSG-EGやLFOなどの近似・省略は `<stem>.opna-opm.json` に記録します。`--dump-passes`では元のOPNA Raw／FM State／Segment、SSG Segment、`projected_opm/` のOPM VGM・対応CSV・既存OPMパスを保存します。[SSGの変換と割り当て](docs/opna_ssg.md)を参照してください。
+
+OPNAのADPCM-B（Delta-T）は、元のメモリ・制御・再生区間を `<stem>.opna_adpcm.*` に保存します。対応する独立再生区間は、デコード・レート変換・再圧縮したMSM6258向けPCM IRを `<stem>.msm6258_ir.*` として出力し、既存のPトラック・外部helperによるMDX／PDX生成へ渡します。FMとPCMは同じMDXクロックを使用します。近似を伴うため、既定の`strict`では停止し、`--pcm-policy best-effort`で生成します。未対応のデコーダ継続などはこの設定でも拒否します。変換対応表は `<stem>.opna_pcm_bridge.json`、損失は `<stem>.pcm.assessment.json` に記録します。[PCM IRの範囲](docs/opna_adpcm.md)を参照してください。
 
 ### VGMの曲全体ループ
 
@@ -120,7 +131,8 @@ python scripts/export_mdx.py input.vgm --outdir outputs/listen/input \
 
 ## PCMを含むVGMからMML・MDX・PDXを生成する
 
-対応するOKIM6258入力には、直接レジスタ書き込みと、対応する非圧縮Data Bank／有限DAC Streamがあります。PCMだけの入力も対象です。
+対応するMSM6258入力には、直接レジスタ書き込みと、対応する非圧縮Data Bank／有限DAC Streamがあります。PCMだけの入力も対象です。
+OPNAのADPCM-Bも、対応する独立再生区間からMSM6258へ変換して接続できます。再圧縮による近似を許容する`--pcm-policy best-effort`を指定してください。
 
 ```bash
 python vgm2mml.py input.vgm --outdir outputs/input --dump-passes
@@ -128,6 +140,10 @@ python vgm2mml.py input.vgm --outdir outputs/input --dump-passes
 # 既知の投影損失を診断付きで許容する場合
 python vgm2mml.py input.vgm --outdir outputs/input-best \
   --pcm-policy best-effort --dump-passes
+
+# OPNAのFM・ADPCM-Bから、再生確認用のMDX／PDXをまとめて出力
+python scripts/export_mdx.py input.vgm --outdir outputs/listen/opna \
+  --no-vgm --pcm-policy best-effort
 ```
 
 PCMを含む経路では、MMLに加えてMDX／PDXを生成します。可読MMLにはPCM参照を記述しますが、PCM部分のMDX生成は型付き命令列から行い、MMLテキストそのものには依存しません。
@@ -142,8 +158,8 @@ PCMの符号化バイト列・サンプル同一性と、供給タイミング�
 PCMを含む一括出力では、VGM再生成を要求しない`--no-vgm`を指定できます。
 
 ```bash
-python scripts/export_mdx.py tests/fixtures/public/opm_oki6258 \
-  --outdir outputs/listen/opm_oki6258 --no-vgm --pcm-policy best-effort
+python scripts/export_mdx.py tests/fixtures/public/opm_msm6258 \
+  --outdir outputs/listen/opm_msm6258 --no-vgm --pcm-policy best-effort
 ```
 
 ## 互換性と主なオプション
@@ -197,8 +213,8 @@ MDX側の主なオプションは次のとおりです。
 
 ## 中間結果と検証
 
-OPNA（YM2608）は、現在ReaderとFM State／Segment解析まで対応しています。
-通常のMDX変換経路への統合とPCM IR生成は次段階です。SSG・リズム・ADPCMはRawとして保存し、未解釈の領域を診断します。
+OPNA（YM2608）はReaderとFM State／Segment解析に対応し、通常変換ではOPMへ投影してMDX用MMLを生成します。
+SSGはRawと別のSegmentからPSGのFM方式でOPMへ投影し、リズムはRawとして保存・診断します。ADPCM-Bは別のメモリ／再生IRからMSM6258へ変換します。
 
 ```bash
 python py/vgm_reader.py input.vgm outputs/opna-analysis
@@ -236,7 +252,7 @@ python scripts/verify_opm_mdx_roundtrip.py tests/fixtures/public/opm \
 
 Copyright (c) 2026 emef2247. Licensed under the [MIT License](LICENSE).
 
-外部検証ツールMUCOMVGMもMIT Licenseで、著作権表示は `Copyright (c) 2026 WING` です。使用版のライセンス全文と確認元を[第三者の表示](THIRD_PARTY_NOTICES.md#mucomvgm-005)に保持しています。MUCOMVGM本体はリポジトリに同梱せず、再配布する場合は同ライセンスの著作権表示・許諾文を含めます。
+テスト用VGM生成・外部検証に使用するMUCOMVGMもMIT Licenseで、著作権表示は `Copyright (c) 2026 WING` です。使用版のライセンス全文と確認元を[第三者の表示](THIRD_PARTY_NOTICES.md#mucomvgm-005)に保持しています。MUCOMVGM本体はリポジトリに同梱せず、再配布する場合は同ライセンスの著作権表示・許諾文を含めます。
 
 ## 謝辞
 
@@ -244,17 +260,17 @@ Copyright (c) 2026 emef2247. Licensed under the [MIT License](LICENSE).
 
 | プロジェクト | 本リポジトリでの用途 | 確認した利用条件 |
 |---|---|---|
-| [MUCOMVGM](https://github.com/wingghost/MUCOMVGM) v0.0.5（WING） | OPNAのFM制御状態の往復検証に利用する外部コンパイラ | MIT |
+| [MUCOMVGM](https://github.com/wingghost/MUCOMVGM) v0.0.5（WING） | テスト用MUC→VGM生成、およびOPNA FM制御状態の往復検証に利用する外部コンパイラ | MIT |
 | MXC v1.01（MFS soft, milk） | MML→MDXコンパイル | フリーウェア・配布自由（付属文書による） |
 | [run68x](https://github.com/kg68k/run68x)（TcbnErik・run68の貢献者） | MXCなどHuman68kプログラムの実行 | GPL v2以降 |
 | [mmlx](https://github.com/h1romas4/chipstream/tree/main/crates/mmlx) 0.2.0（h1romas4） | 明示選択時のMML→MDXコンパイル、およびPCM経路のFM部分 | MIT |
 | [soundlog](https://github.com/h1romas4/chipstream/tree/main/crates/soundlog) 0.15.0（h1romas4） | FMのMDX→VGM、PDX構築・PCM参照検査 | MIT |
-| [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv)（Mitsutaka Okazaki and Contributors） | PSG→OPMのFM方式で、AY8910→YM2151の音色パラメータと音量→TL対応表を参考にしました。また、外部変換結果との比較に利用しています。 | ISC |
+| [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv)（Mitsutaka Okazaki and Contributors） | PSG→OPMの音色・音量対応、およびOPNA FM→OPMのレジスタ対応方式を採用。外部変換結果との比較にも利用しています。 | ISC |
 | [mdxtools](https://github.com/vampirefrog/mdxtools)（任意導入） | MDX／PDXの独立検査と逆コンパイル | GPL v3（上流LICENSE） |
 
-PSG→OPMのSegment処理とターゲット生成は本プロジェクトで実装しており、通常変換にvgm-convのライブラリは不要です。
+OPNA FM→OPMとPSG／SSG→OPMは、vgm-convの対応方式を参照してPython側に実装しています。通常変換で外部のvgm-convコマンドを実行するわけではなく、そのライブラリも不要です。参照した対応方式のISC著作権表示・許諾文は第三者の表示に保持しています。
 
-MUCOMVGMとMUCOMVGM-Studioを公開してくださったWINGさんに感謝します。OPNA対応とMUCOM88形式MMLの検証に活用させていただいています。
+MUCOMVGMとMUCOMVGM-Studioを公開してくださったWINGさんに感謝します。OPNAのテストVGM生成とFM制御状態の検証に活用させていただいています。
 
 各ツールの使用版・確認元・著作権表示・配布時の扱いは[第三者の表示](THIRD_PARTY_NOTICES.md)に記録しています。vgm-convのISC全文と、MUCOMVGM／mmlx／soundlogのMIT全文も保持しています。本プロジェクトのMITライセンス表記と併せて、この表示も配布物に含めてください。
 

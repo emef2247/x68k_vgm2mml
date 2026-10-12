@@ -11,7 +11,7 @@ from vgm_loop import read_loop_metadata
 from vgm_reader import parse_vgm
 from vgm_timing import command_times
 from opm import build_segments
-from okim6258 import analyze
+from msm6258 import analyze
 
 
 def vgm(commands, loop=None, loop_samples=0):

@@ -16,8 +16,10 @@ python -m unittest discover -s tests/scripts -p 'test_opna*.py' -v
 ```
 
 The reader CLI emits the existing chip artifacts and the new native FM dumps.
-The production `vgm2mml.py` target routing remains unchanged; OPNA input is
-not yet an MDX or MGSDRV conversion route.
+The production `vgm2mml.py` detects OPNA commands and projects native FM
+Segments to OPM4MHz through `py/opna_opm.py`, then reuses the existing MDX
+converter. This target stage does not change the native analysis. OPNA is
+not an MGSDRV compatibility route.
 
 `parse_vgm` keeps its existing eight-path return tuple. Its independent new
 keyword arguments are `opna_metadata` and

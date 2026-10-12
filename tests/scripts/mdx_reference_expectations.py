@@ -50,7 +50,7 @@ def read_pdx(data):
                 seen[digest] = sample_id
                 filename = 'samples/{:03d}.adpcm'.format(sample_id)
                 samples.append(dict(sample_id=sample_id,
-                                    codec='okim6258-adpcm4-low-first',
+                                    codec='msm6258-adpcm4-low-first',
                                     sha256=digest, byte_length=length,
                                     nominal_nibbles=length * 2,
                                     encoded_file=filename))

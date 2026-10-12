@@ -11,9 +11,9 @@
 
 ## 実装
 
-- OKIM6258 clock=0x90、options=0x94をversion/data_start境界付きで読む。
+- MSM6258 clock=0x90、options=0x94をversion/data_start境界付きで読む。
   往復監査がOKIM6295の0x98を誤読していた点も修正した。
-- `py/okim6258.py`にimmutableな生転送／制御状態／再生span／符号化sample tableを追加。
+- `py/msm6258.py`にimmutableな生転送／制御状態／再生span／符号化sample tableを追加。
   数百万件のbyte書き込みはpacked列で保持する。source event ID/address/timeを追える。
 - データ供給とdecoder消費を区別する。`consumed_nibbles=None`、`nominal_nibbles`は計算値。
   `reset_observed`とfresh-VGM初期resetの仮定を分け、PLAYの連発を再発音扱いしない。
@@ -31,7 +31,7 @@
 - PCM-onlyとOPM+PCMを通常native pipelineへ接続した。付随して全無音OPMおよびPSG投影の
   共通終端までの休符出力を確認した。架空のOPM key-onや音色は作らない。
 
-初期対応は直接B7、単一OKIM6258、4-bit low-first、10-bit出力、標準F0..F4、bank 0／96 slots。
+初期対応は直接B7、単一MSM6258、4-bit low-first、10-bit出力、標準F0..F4、bank 0／96 slots。
 source IRにはPDXのslot上限を入れていない。12-bit sourceは設定とbytesを保持してMDX側で拒否する。
 MAME X68000構成は10-bit、decoder clampは出力精度で異なり、PDXにはそのモード指定がない。
 
@@ -63,7 +63,7 @@ FMのみの再生は維持した。原bytes保存と再生波形同等は別の�
 - architect完了前レビューP1（12-bit無条件受理）はtarget reject＋対照テストで修正。
   P2（PCM finite loop/tie証拠不足）は通常版・compact版をmmlxでコンパイルし、typed有限反復を
   テスト内で展開してNote/length/KeyOffDisable/Pan/F/volume等のordered command一致で補った。
-- `tests/fixtures/public/opm_oki6258`の2ケースは完全自作byte patternで、ゲーム／ROM音声なし。
+- `tests/fixtures/public/opm_msm6258`の2ケースは完全自作byte patternで、ゲーム／ROM音声なし。
   reset/retrigger、pan left/right/mute/center、asset共有、OPM同時再生とF0/F4切替を含む。
   independent schedule/hashをJSONに保持し、PDX payloadとcompiled MDX header/holdを検査。
 - 既存native公開9ケースの往復 **9/9成功**。

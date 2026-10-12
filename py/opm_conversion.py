@@ -25,7 +25,7 @@ def _record_pcm_assessment(assessment, outdir, stem, *, requires_pdx, retained=(
     assessment.dump(outdir, stem)
 
 
-def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None, normalization_source_times=None, normalization_ms=8, pitch_policy='clamp', song_loop=True, replayed_song_loop=False):
+def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None, normalization_source_times=None, normalization_ms=8, pitch_policy='clamp', song_loop=True, replayed_song_loop=False, pcm_analysis_override=None, source_passes_outdir=None):
     source, outdir = Path(source), Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     requested_normalization = normalize_lengths
@@ -59,13 +59,16 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
     pcm_metadata = {}
     source_loop = {}
     with TemporaryDirectory(prefix='opm-mdx-') as temporary:
-        analysis_dir = outdir if dump_passes else Path(temporary)
+        analysis_dir = Path(source_passes_outdir or outdir) if dump_passes else Path(temporary)
         parse_vgm(str(source), str(analysis_dir), opm_metadata=metadata,
                   pcm_metadata=pcm_metadata,
                   loop_metadata=source_loop, dump_loop=dump_passes,
                   loop_count=2 if song_loop and not replayed_song_loop else 1)
-        pcm_analysis = pcm_metadata['analysis']
-        has_pcm = bool(pcm_analysis.transfers or pcm_analysis.raw_commands or pcm_analysis.blocks)
+        pcm_analysis = pcm_analysis_override if pcm_analysis_override is not None else pcm_metadata['analysis']
+        has_pcm = bool(pcm_analysis.playbacks or pcm_analysis.samples or pcm_analysis.transfers
+                       or pcm_analysis.raw_commands or pcm_analysis.blocks)
+        if pcm_analysis.source_end_vgmticks != metadata['source_end_vgmticks']:
+            raise ValueError('Projected FM and PCM must share the same source end')
         if has_pcm:
             for suffix in ('.pcm_bindings.csv', '.pcm_projection.csv',
                            '.pcm_clock.csv', '.pcm_target_commands.csv', '.pcm_omitted_playbacks.csv'):
@@ -81,8 +84,8 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         analysis = (build_segments(metadata['csv_path'], end_vgmticks=metadata['source_end_vgmticks'])
                     if metadata['csv_path'] else OpmAnalysis((), (), pcm_analysis.source_end_vgmticks, False))
         if dump_passes:
-            dump_analysis(analysis, state_csv=outdir/(source.stem+'_trace.opm.csv'),
-                          segments_csv=outdir/(source.stem+'.opm.segments.csv'))
+            dump_analysis(analysis, state_csv=analysis_dir/(source.stem+'_trace.opm.csv'),
+                          segments_csv=analysis_dir/(source.stem+'.opm.segments.csv'))
     loop_start = None
     loop_event_id = None
     if song_loop and source_loop.get('status') == 'valid':
@@ -95,6 +98,8 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         if notation == 'legacy':
             raise ValueError('Declared song loops require structured or registers notation; use --no-song-loop for legacy')
     song_options = dict(song_loop_start=loop_start, song_loop_event_id=loop_event_id)
+    if pcm_analysis_override is not None and pcm_analysis.source_loop_vgmticks != loop_start:
+        raise ValueError('Projected FM and PCM must share the same replayed song-loop boundary')
     normalization_loop = dict(source_loop)
     if loop_start is not None:
         normalization_loop.update(loop_start_samples=loop_start,
@@ -289,7 +294,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             report['length_normalization'] = normalization
         if structure is not None:
             structure.dump(outdir / (source.stem + '.mdx.structure'),
-                           segments_csv=outdir / (source.stem + '.opm.segments.csv'))
+                           segments_csv=analysis_dir / (source.stem + '.opm.segments.csv'))
             report.update(structure.summary())
         report['source_state_writes'] = len({e.source_event_id for e in analysis.events})
         report['source_nonchanging_writes_not_in_segments'] = report['source_state_writes'] - len({

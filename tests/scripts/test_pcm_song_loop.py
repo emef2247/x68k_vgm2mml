@@ -7,7 +7,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'py'), str(ROOT / 'tests/scripts')]
 from generate_pcm_fixtures import playback, vgm
-from okim6258 import analyze
+from msm6258 import analyze
 from pcm_mdx import project
 from pcm_assessment import ProjectionError
 

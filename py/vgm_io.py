@@ -29,6 +29,6 @@ def read_vgm_header(raw):
                 extra_header_offset=field(0xbc, 4, 0x170),
                 ay_clock_raw=field(0x74, 4, 0x151),
                 ay_type=field(0x78, 1, 0x151), ay_flags=field(0x79, 1, 0x151),
-                okim6258_clock_raw=field(0x90, 4, 0x161),
-                okim6258_flags=field(0x94, 1, 0x161),
+                msm6258_clock_raw=field(0x90, 4, 0x161),
+                msm6258_flags=field(0x94, 1, 0x161),
                 scc_clock_raw=field(0x9c, 4, 0x161))

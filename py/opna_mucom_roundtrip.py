@@ -62,7 +62,7 @@ def compiler_controls(writes, initialization):
                     continue
                 cache[key] = high, value
                 output.append((write.source_event_id, write.source_vgmticks, port, reg + 4, high))
-        elif key != (0, 0x28):
+        elif key not in ((0, 0x28), (0, 0x10), (0, 0x0d), (1, 0x00)):
             if cache.get(key) == value:
                 continue
             cache[key] = value

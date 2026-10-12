@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'py'))
 from generate_pcm_fixtures import (DESTINATION, data_block, stream_cases,
     stream_fast_start, stream_setup, stream_start, vgm, wait, write)
-from okim6258 import analyze
+from msm6258 import analyze
 
 
 class PcmStreamTests(unittest.TestCase):

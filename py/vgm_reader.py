@@ -907,6 +907,7 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
               opm_metadata: dict | None = None,
               pcm_metadata: dict | None = None,
               opna_metadata: dict | None = None,
+              opna_pcm_metadata: dict | None = None,
               dump_opna_segments: bool = False,
               dump_opm_segments: bool = False, loop_count: int = 1) -> tuple[str, str, str, str, str, str, str, str]:
     """
@@ -930,6 +931,8 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
     source end and unchanged legacy return tuple. All OPNA register writes
     remain in raw CSVs, including non-FM and undeclared-instance evidence.
     Segment dumps currently reconstruct FM only; other domains are diagnosed.
+    Optional opna_pcm_metadata receives independent native ADPCM-B memory and
+    playback analysis; it does not convert that codec into MSM6258 bytes.
     """
     from vgm_io import read_vgm_bytes
     raw = read_vgm_bytes(vgm_path)
@@ -944,10 +947,10 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
     # ── Header ──────────────────────────────────────────────────
     header = read_vgm_header(raw)
     if pcm_metadata is not None:
-        from okim6258 import analyze
+        from msm6258 import analyze
         pcm_metadata.update(analysis=analyze(raw, loop_count=loop_count),
-                            clock_raw=header['okim6258_clock_raw'],
-                            flags=header['okim6258_flags'])
+                            clock_raw=header['msm6258_clock_raw'],
+                            flags=header['msm6258_flags'])
     vgm_version = header['version']
     data_start = header['data_start']
     # Clock zero means absent; extended fields never read command bytes.
@@ -1074,6 +1077,12 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
                             key_counts=opm_counts)
 
     opna.output(output_dir, base_name, event.vgmticks, opna_metadata, dump_opna_segments)
+    if opna_pcm_metadata is not None:
+        from opna_adpcm import analyze as analyze_adpcm
+        adpcm = analyze_adpcm(raw, loop_count=loop_count)
+        summary = (adpcm.dump(output_dir, base_name)
+                   if dump_opna_segments and opna.clock_hz else None)
+        opna_pcm_metadata.update(analysis=adpcm, dump_summary=summary)
 
     return (psg_log_csv, scc_log_csv, psg_trace_csv, scc_trace_csv,
             opll_log_csv, opll_trace_csv, opll_voice_csv, opll_regs_csv)
@@ -1085,10 +1094,11 @@ if __name__ == '__main__':
         sys.exit(1)
     opm_metadata = {}
     opna_metadata = {}
+    opna_pcm_metadata = {}
     p_log, s_log, p_trace, s_trace, o_log, o_trace, o_voice, o_regs = parse_vgm(
         sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None,
         opm_metadata=opm_metadata, dump_opm_segments=True,
-        opna_metadata=opna_metadata, dump_opna_segments=True)
+        opna_metadata=opna_metadata, opna_pcm_metadata=opna_pcm_metadata, dump_opna_segments=True)
     print(f"PSG log CSV:       {p_log}")
     print(f"SCC log CSV:       {s_log}")
     print(f"SCC trace CSV:     {s_trace}")
@@ -1096,6 +1106,8 @@ if __name__ == '__main__':
     print(f"OPLL trace CSV:    {o_trace}")
     print(f"OPLL voice CSV:    {o_voice}")
     print(f"OPLL regs CSV:     {o_regs}")
+    if opna_pcm_metadata.get('dump_summary'):
+        print(f"OPNA ADPCM IR:     {opna_pcm_metadata['dump_summary']['analysis.json']}")
     if opm_metadata['csv_path']:
         print(f"OPM regs CSV:      {opm_metadata['csv_path']}")
         print(f"OPM state CSV:     {opm_metadata['state_csv_path']}")

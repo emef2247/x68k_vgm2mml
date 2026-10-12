@@ -13,7 +13,7 @@
 
 添付案の中心である「生PCM情報 → 再生区間 → 完全一致のサンプル表 → MMLとPDX」は採用を提案する。追加すべき条件は次の通り。
 
-1. DAC Stream Controlと直接OKIM6258書き込みの両方を、同じ物理チップの時刻・状態へ解決する。
+1. DAC Stream Controlと直接MSM6258書き込みの両方を、同じ物理チップの時刻・状態へ解決する。
 2. バイト列の同一性と、開始状態を含む再生の同等性を別に検証する。
 3. 共通 `sample_id` とターゲットのスロット番号を分ける。MDXのMMLとPDXだけが同一のターゲット対応表を共有する。
 4. PCMとOPMが同じMDX時計・曲終端を使う。OPMだけで選んだ時計へPCMを後から付加しない。
@@ -27,8 +27,8 @@
 | --- | --- |
 | Raw VGM | `py/vgm_timing.py:52` はデータブロック長を読み、同:67は0x90〜0x95の命令長を走査する。ペイロードをwaitと誤解しない共通時計を再利用できる。 |
 | Reader / State | `py/vgm_reader.py:824` 以降はPSG/OPLL/OPM/SCCだけを解析。0x67・0x90〜0x95・0xB7のPCM情報は現在捨てられる。 |
-| Header | `py/vgm_io.py` の版・data_startに従うフィールド読取を拡張する。OKIM6258 clockは0x90、optionsは0x94。 |
-| 既存診断 | `scripts/verify_opm_mdx_roundtrip.py:35` は0x98をPCM clockとして読む。これはOKIM6295側であり、OKIM6258の有無判定には使えない。今回バグを確認、修正は未実施。 |
+| Header | `py/vgm_io.py` の版・data_startに従うフィールド読取を拡張する。MSM6258 clockは0x90、optionsは0x94。 |
+| 既存診断 | `scripts/verify_opm_mdx_roundtrip.py:35` は0x98をPCM clockとして読む。これはOKIM6295側であり、MSM6258の有無判定には使えない。今回バグを確認、修正は未実施。 |
 | Native orchestration | `py/opm_conversion.py:22` 以降はOPM不在で拒否。PCMのみ／OPM無音でも、架空のOPMイベントを作らずにMDXを構成する必要がある。 |
 | 時計 | `py/opm_mdx_music.py:66` の時計候補検査はOPMの境界だけ。PCM開始・停止・速度・panなどの境界を候補検査へ加え、現行の6 VGM samples以内の目標を検査する。 |
 | MDX組立 | 同:416 `render_music_tracks` はトラック単位の組立・既存ループ処理を再利用できる。PCM用unitとdumpは別途必要。既存 `MusicalMdx.dump` のtrajectoryや集計はOPM前提なので、そのままPCMをOPM stateに偽装しない。 |
@@ -41,21 +41,21 @@ SCCの `py/scc.py:97` 以降にある波形バイト列の完全一致によるI
 
 [VGM 1.71仕様](https://github.com/vgmrips/vgmplay-legacy/blob/master/VGMPlay/vgmspec171.txt)を確認した。
 
-- OKIM6258のバンク型は0x04。0x44は圧縮データブロックで、VGMの圧縮を解いた後のADPCMバイト列を扱う。これはADPCMの音声デコードとは別工程。
+- MSM6258のバンク型は0x04。0x44は圧縮データブロックで、VGMの圧縮を解いた後のADPCMバイト列を扱う。これはADPCMの音声デコードとは別工程。
 - 0x90は書込先、0x91はバンクとstep/base、0x92は書込頻度、0x93は開始位置と長さの解釈、0x94は停止、0x95はブロックIDによる再生を表す。
 - バンクへのブロック追加と、一回の再生が消費する範囲は別。ブロック境界を自動的に楽器サンプルの境界にしない。
 - ヘッダーのチップ時計・分周・モード、直接0xB7書き込みも保存する。
 
-stream_idは転送制御の識別子で、音楽的声部や独立したPCMチャンネルを意味しない。同じOKIM6258へ書くストリームと直接書き込みは、時刻・命令順を保って同じチップ状態へ解決する。転送終了と音声終了も分ける。
+stream_idは転送制御の識別子で、音楽的声部や独立したPCMチャンネルを意味しない。同じMSM6258へ書くストリームと直接書き込みは、時刻・命令順を保って同じチップ状態へ解決する。転送終了と音声終了も分ける。
 
-[MAME OKIM6258実装](https://github.com/mamedev/mame/blob/master/src/devices/sound/okim6258.cpp)では、データ書き込みは入力値とnibble位置を更新し、再生中のpredictor/stepは継続する。再生へ移る制御でリセットされる。このエミュレーター実装は状態保持が必要な根拠であり、実機確認の代用とはしない。
+[MAME MSM6258実装](https://github.com/mamedev/mame/blob/master/src/devices/sound/okim6258.cpp)では、データ書き込みは入力値とnibble位置を更新し、再生中のpredictor/stepは継続する。再生へ移る制御でリセットされる。このエミュレーター実装は状態保持が必要な根拠であり、実機確認の代用とはしない。
 
 ## 手元の入力調査
 
 本文・音声・ADPCM bytesを出力せず、命令数とヘッダーの数値だけを調べた限定調査。
 
 - 公開 `opm/from_mdx` の9件は、0x67・0x90〜0x95・0xB7がすべて0件。PCM受入テストには使えない。
-- ローカルOPMの代表5件中、private-case-140は0xB7が3,434,358件、OKIM6258 clock=8,000,000、options=2、宣言VGM loopなし。ほかの4件はPCM命令・clockなし。
+- ローカルOPMの代表5件中、private-case-140は0xB7が3,434,358件、MSM6258 clock=8,000,000、options=2、宣言VGM loopなし。ほかの4件はPCM命令・clockなし。
 - この例では0x93/0x95経路の証拠は得ていない。全コレクションの傾向とは断定しない。
 
 したがって、実装開始時には直接0xB7のcontrol/data内訳、play/stop/resetの有無と順序を先に調べる。ストリーム型だけ対応して完了とはしない。数百万件の転送をすべて重複したstate objectに展開する設計も避け、生bytes・時刻の列と状態遷移／checkpointを分けてストリーミング処理する。dump可能なsource event ID、命令位置、転送履歴は残す。
@@ -66,7 +66,7 @@ stream_idは転送制御の識別子で、音楽的声部や独立したPCMチ�
 
 ```text
 Raw VGM / blocks / B7 / stream commands
-    -> OKIM6258 state + ordered transfer history
+    -> MSM6258 state + ordered transfer history
     -> playback segments + exact encoded sample table
     -> target binding
         -> MXDRV MML + PDX
@@ -95,7 +95,7 @@ Raw VGM / blocks / B7 / stream commands
 
 この方式ではPCM/PDX出力にビルド済みhelperが必要になる。OPM-only変換のPython依存は現状のまま維持する。helper不在なら依存不足を明示し、PDX欠落を正常完了として返さない。Pythonだけで完結させる選択を後で行う場合も、PDX writerをターゲット層の限定機能として差し替えればよい。
 
-最初のMDX backend範囲は標準4-bit OKIM6258 ADPCM、単一物理PCMチャンネル、単一PDX bank（96 slots）。超過・別モードは検出して診断する。これは初期スコープであり、最終的なネイティブ対応の完了範囲ではない。
+最初のMDX backend範囲は標準4-bit MSM6258 ADPCM、単一物理PCMチャンネル、単一PDX bank（96 slots）。超過・別モードは検出して診断する。これは初期スコープであり、最終的なネイティブ対応の完了範囲ではない。
 
 OPMの時計選択にPCMの開始・停止・rate/pan変更・曲終端を加える。元VGM clock、stream byte frequency、ADPCM nibble sample rate、MDX F設定は別の量として記録する。任意のstream HzをMDXの離散F値へ無報告で丸めない。PCM-onlyでは必要なtempoトラックを生成できても、架空のOPM発音／voice／source stateを作らない。
 

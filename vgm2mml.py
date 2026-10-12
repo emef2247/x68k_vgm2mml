@@ -251,7 +251,7 @@ def main():
         report['retained_binary_artifacts'] = [path.name for name in ('mdx', 'pdx')
             if (path := Path(song_dir) / (base_name + '.' + name)).is_file() and path not in owned_binary]
         suffixes = ('.mml', '.normalization.json') if args.target == 'mgs' else (
-            '.mdx.mml', '.mdx.normalization.json',
+            '.mdx.mml', '.opna-opm.json', '.mdx.normalization.json',
             '.mdx.normalization.csv', '.mdx.before.normalize.mml',
             '.pcm.timing.json', '.pcm.assessment.json', '.pcm.assessment.csv',
             '.pcm_target_commands.csv', '.pcm_projection.csv', '.pcm_clock.csv', '.pcm_bindings.csv')
@@ -278,14 +278,15 @@ def main():
                                     else ', '.join(usage['used_chips'])))
             route = 'mgs-compatibility'
         report['chip_projection'] = route
-        pcm_applicable = route == 'native-opm-pcm' and 'pcm' in usage['used_chips']
+        pcm_applicable = (route == 'opna-fm-to-opm'
+                          or route == 'native-opm-pcm' and 'pcm' in usage['used_chips'])
         report['pcm_options'] = dict(applicable=pcm_applicable, policy=args.pcm_policy or 'strict',
                                     generator_configured=bool(args.pcm_generator))
         if compatibility_target == 'opm-additive' and args.psg_model not in (None, 'additive'):
             raise ValueError('--target opm-additive requires the additive PSG model')
         if route == 'psg-scc-to-opm' and (args.notation == 'legacy' or args.track_layout != 'channels'):
             raise ValueError('PSG/SCC OPM projection supports structured/registers notation and channel tracks')
-        if route == 'native-opm-pcm' and any(v is not None for v in (args.psg_model, args.psg_gain, args.scc_gain)):
+        if route in ('native-opm-pcm', 'opna-fm-to-opm') and any(v is not None for v in (args.psg_model, args.psg_gain, args.scc_gain)):
             raise ValueError('PSG/SCC projection options do not apply to native MDX')
         report['status'] = 'resolved'
         record_report()
@@ -297,6 +298,50 @@ def main():
         report.update(status='blocked', reason=str(error))
         record_report()
         parser.error(str(error))
+
+    if route == 'opna-fm-to-opm':
+        from opna_opm import convert
+        try:
+            mml, settings = convert(vgm_path, song_dir, dump_passes=args.dump_passes or args.debug,
+                track_layout=args.track_layout, notation=args.notation,
+                loops=not args.no_loops, song_loop=not args.no_song_loop,
+                title=args.title if args.title is not None else title_from_gd3(vgm_path, base_name, args.gd3_language),
+                normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms,
+                pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'strict',
+                pitch_policy=args.opm_pitch_policy or 'clamp')
+        except (OSError, ValueError) as error:
+            report.update(status='blocked', reason=str(error))
+            record_report()
+            parser.error(str(error))
+        report.update(status='generated', projection_settings=settings)
+        record_report()
+        print(f'MDX MML: {mml}')
+        allocation = settings['channel_allocation']
+        for part in allocation['parts']:
+            if part['status'] == 'assigned':
+                print(f'OPNA {part["source_domain"].upper()} ch{part["source_ch"] + 1} -> '
+                      f'OPM {part["target_track"]}')
+            elif part['status'] == 'dropped':
+                print(f'OPNA SSG ch{part["source_ch"] + 1} omitted: {part["reason"]}')
+        for domain, count in settings['excluded_or_approximated'].items():
+            print(f'OPNA projection: {domain} ({count} occurrences)')
+        pcm_ir = settings['pcm_ir']
+        print(f'OPNA PCM IR: {pcm_ir["native_segments"]} source segments, '
+              f'{pcm_ir["target_samples"]} MSM6258 samples, '
+              f'{pcm_ir["pdx_distinct_samples"]} distinct PDX samples, '
+              f'{pcm_ir["ineligible_playbacks"]} ineligible playbacks')
+        timing_path = Path(song_dir) / (base_name + '.pcm.timing.json')
+        if timing_path.is_file():
+            pcm_output = json.loads(timing_path.read_text(encoding='utf-8'))['pcm_pdx_file']
+            print(f'PDX: {Path(song_dir) / pcm_output}')
+            print(f'MDX: {Path(song_dir) / (base_name + ".mdx")}')
+        assessment_path = Path(song_dir) / (base_name + '.pcm.assessment.json')
+        if assessment_path.is_file():
+            assessment = json.loads(assessment_path.read_text(encoding='utf-8'))
+            print(f'PCM projection: {assessment["assessment_status"]}; validation: '
+                  f'{assessment["validation_status"]} ({assessment["validation_run"]})')
+            print(f'PCM known losses: {len(assessment["known_losses"])}; assessment: {assessment_path}')
+        return
 
     if route == 'psg-scc-to-opm':
         from psg_scc_conversion import convert
