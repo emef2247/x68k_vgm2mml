@@ -130,11 +130,11 @@ Do not move target-format convenience backward into earlier stages unless the us
 
 - Field notes are maintained in a separate private repository.
 - Resolve this path relative to this project's repository root:
-  `../my-external-intelligence-/x68k_vgm2mml/field_notes/`
+  `../my-external-intelligence/x68k_vgm2mml/field_notes/`
 - Treat references to `field_notes/...` in project documents as references to that external directory. A local directory or symbolic link is not required.
 - Before changing established conversion behavior, search relevant notes for prior decisions, rejected approaches and known regressions.
 - Classify notes by meaning, not filename or chip name. Repository separation or note relocation does not revoke established shared principles.
-- If a relevant inherited decision is missing, also search `../my-external-intelligence-/msx_vgm2mml/field_notes/` and `../my-external-intelligence-/mucom88_vgm2mml/field_notes/`. Evaluate each note's source/target scope; newer notes from another project do not automatically override this project's decisions.
+- If a relevant inherited decision is missing, also search `../my-external-intelligence/msx_vgm2mml/field_notes/` and `../my-external-intelligence/mucom88_vgm2mml/field_notes/`. Evaluate each note's source/target scope; newer notes from another project do not automatically override this project's decisions.
 - Keep new notes in this project's external directory. Do not recreate local field_notes or copy private notes into this public repository.
 - If external reading or writing is unavailable, report the limitation. Do not invent missing decisions. Continue independent work using public principles; identify ungrounded decisions or unsaved findings and their intended destination.
 - Keep stable principles required for public maintenance in docs/project_knowledge.md without copying private experimental details.
