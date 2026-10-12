@@ -22,7 +22,7 @@ source IR. The independent MXDRV/IOCS/MMDSP PCM stopping investigation is paused
 - Preserve existing inactive OPLL initialization and undeclared zero-volume SCC
   initialization handling. Report these exceptions with reasons and command
   counts rather than removing evidence from the source inventory.
-- OKIM6258 banks/stream controls still reach the existing PCM assessment. Other
+- MSM6258 banks/stream controls still reach the existing PCM assessment. Other
   used DAC stream destinations are explicit unsupported-stream errors. A data
   block alone for an unrelated chip does not fabricate that chip's playback.
 - Group help and README into normal, compatibility, advanced/fidelity and

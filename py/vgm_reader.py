@@ -1,6 +1,6 @@
 """
 vgm_reader.py - Port of vgm_read.tcl + psg.tcl + scc.tcl
-Parse a VGM binary file and produce chip log/trace CSVs, including raw OPM writes.
+Parse VGM and produce chip log/trace CSVs, including native OPM/OPNA writes.
 Usage: python vgm_reader.py <vgm_file> [output_dir]
 
 Log CSV  (*_log.scc.csv)  : events grouped by channel (Tcl scc.tcl output)
@@ -774,14 +774,144 @@ class _OpmTrace:
             writer.writerows(self.rows)
 
 
+class _OpnaTrace:
+    """Ordered source evidence; native interpretation belongs to opna."""
+
+    fields = ('event_id', 'address', 'command', 'vgmticks', 'time',
+              'chip_instance', 'chip_type', 'clock_hz', 'clock_raw', 'port',
+              'register', 'data', 'ch', 'register_scope',
+              'original_event_id', 'loop_iteration', 'original_vgmticks')
+
+    def __init__(self, header):
+        self.family = 'opna'
+        self.chip_type = 'YM2608'
+        self.clock_raw = header['opna_clock_raw']
+        self.clock_hz = self.clock_raw & 0x3fffffff
+        self.dual_chip = bool(self.clock_raw & 0x40000000)
+        self.ssg_flags = header['opna_ssg_flags']
+        self.extra_header_offset = header['extra_header_offset']
+        self.rows = []
+        self.issues = []
+        self.auxiliary_commands = []
+
+    def write(self, event_id, event, register, data, port, instance):
+        from importlib import import_module
+        module = import_module(self.family)
+        ch = module.register_channel(register, data, port=port)
+        role = module.register_role(register, port=port)
+        self.rows.append((event_id, event.address, event.command, event.vgmticks,
+                          event.vgmticks / 44100.0, instance, self.chip_type,
+                          self.clock_hz, self.clock_raw, port, register, data, ch, role,
+                          event.source_event_id, event.loop_iteration, event.original_vgmticks))
+        if not self.clock_hz:
+            self.issues.append(dict(code='undeclared_chip', source_event_id=event_id,
+                                    vgmticks=event.vgmticks, chip_instance=instance))
+        elif instance and not self.dual_chip:
+            self.issues.append(dict(code='undeclared_second_chip', source_event_id=event_id,
+                                    vgmticks=event.vgmticks, chip_instance=instance))
+        elif instance and self.extra_header_offset:
+            self.issues.append(dict(code='extra_header_second_clock_unmodeled',
+                                    source_event_id=event_id, vgmticks=event.vgmticks,
+                                    chip_instance=instance))
+
+    def auxiliary(self, event_id, event, operands, domain):
+        self.auxiliary_commands.append(dict(
+            source_event_id=event_id, address=event.address, command=event.command,
+            vgmticks=event.vgmticks, domain=domain, operands_hex=operands.hex(),
+            original_event_id=event.source_event_id, loop_iteration=event.loop_iteration,
+            original_vgmticks=event.original_vgmticks))
+
+    def output_csv(self, path):
+        import csv
+        with open(path, 'w', encoding='utf-8', newline='') as stream:
+            writer = csv.writer(stream, lineterminator='\n')
+            writer.writerow(self.fields)
+            writer.writerows(self.rows)
+
+    def output(self, output_dir, stem, end, metadata, dump_segments):
+        from importlib import import_module
+        import json
+        regs = state = segments = None
+        analysis = None
+        if self.clock_hz or self.rows:
+            regs = os.path.join(output_dir, f'{stem}_trace.{self.family}_regs.csv')
+            self.output_csv(regs)
+        facts = dict(csv_path=regs, clock_raw=self.clock_raw, clock_hz=self.clock_hz,
+                     dual_chip=self.dual_chip, chip_type=self.chip_type,
+                     ssg_flags=self.ssg_flags, write_count=len(self.rows),
+                     source_end_vgmticks=end, state_csv_path=None, segments_csv_path=None,
+                     key_counts=None, analysis=None, issues=tuple(self.issues),
+                     unmodeled_csv_path=None, auxiliary_csv_path=None,
+                     auxiliary_commands=tuple(self.auxiliary_commands), manifest_path=None)
+        if self.auxiliary_commands:
+            import csv
+            auxiliary_csv = os.path.join(output_dir, f'{stem}.{self.family}.auxiliary.csv')
+            with open(auxiliary_csv, 'w', encoding='utf-8', newline='') as stream:
+                writer = csv.DictWriter(stream, fieldnames=list(self.auxiliary_commands[0]),
+                                        lineterminator='\n')
+                writer.writeheader()
+                writer.writerows(self.auxiliary_commands)
+            facts.update(auxiliary_csv_path=auxiliary_csv,
+                         issues=tuple(self.issues) + ('auxiliary_source_commands_unmodeled',))
+        manifest = os.path.join(output_dir, f'{stem}.{self.family}.analysis.json')
+
+        def save_manifest(status):
+            if not (regs or self.auxiliary_commands or os.path.isfile(manifest)):
+                return
+            facts['manifest_path'] = manifest
+            paths = ('csv_path', 'state_csv_path', 'segments_csv_path',
+                     'unmodeled_csv_path', 'auxiliary_csv_path')
+            report = dict(chip_type=self.chip_type, clock_raw=self.clock_raw,
+                          source_end_vgmticks=end, write_count=len(self.rows),
+                          fm_analysis_status=status, issues=facts['issues'],
+                          current_files=[facts[p] for p in paths if facts[p] is not None])
+            with open(manifest, 'w', encoding='utf-8') as stream:
+                json.dump(report, stream, ensure_ascii=False, indent=2)
+                stream.write('\n')
+
+        save_manifest('raw_only' if regs else 'no_register_writes')
+        if metadata is not None:
+            metadata.update(facts)
+        if regs and dump_segments:
+            if self.issues:
+                save_manifest('rejected_source_declaration')
+                raise ValueError(f'{self.chip_type} writes use an undeclared chip/instance '
+                                 f'or an unsupported second clock; '
+                                 f'raw evidence retained in {regs}')
+            module = import_module(self.family)
+            try:
+                analysis = module.build_segments(regs, end_vgmticks=end)
+            except ValueError as error:
+                facts['issues'] = tuple(facts['issues']) + (str(error),)
+                save_manifest('rejected_register_evidence')
+                if metadata is not None:
+                    metadata.update(facts)
+                raise
+            state = os.path.join(output_dir, f'{stem}_trace.{self.family}.csv')
+            segments = os.path.join(output_dir, f'{stem}.{self.family}.segments.csv')
+            module.dump_analysis(analysis, state_csv=state, segments_csv=segments)
+            unmodeled = os.path.join(output_dir, f'{stem}.{self.family}.unmodeled.csv')
+            module.dump_unmodeled_writes(analysis, csv_path=unmodeled)
+            facts.update(state_csv_path=state, segments_csv_path=segments,
+                         key_counts=module.key_counts(analysis), analysis=analysis,
+                         unmodeled_csv_path=unmodeled,
+                         issues=tuple(facts['issues']) + tuple(analysis.issues))
+            save_manifest('fm_control_state')
+            if metadata is not None:
+                metadata.update(facts)
+
+
 def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
               loop_metadata: dict | None = None, dump_loop: bool = False,
               include_vgmticks: bool = False,
               opm_metadata: dict | None = None,
               pcm_metadata: dict | None = None,
+              opna_metadata: dict | None = None,
+              opna_pcm_metadata: dict | None = None,
+              dump_opna_segments: bool = False,
               dump_opm_segments: bool = False, loop_count: int = 1) -> tuple[str, str, str, str, str, str, str, str]:
     """
-    Parse a VGM file and write PSG/SCC/OPLL traces plus declared OPM raw writes.
+    Parse VGM and write PSG/SCC/OPLL traces plus native FM raw writes.
 
     Returns:
         (psg_log_csv, scc_log_csv, psg_trace_csv, scc_trace_csv,
@@ -797,6 +927,12 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
     return paths remain unchanged; OPM Segment/MML interpretation is separate.
     dump_opm_segments reconstructs native state intervals and dumps their CSVs;
     it does not project OPM into a target chip or MML dialect.
+    OPNA metadata and dump flag use the same native
+    source end and unchanged legacy return tuple. All OPNA register writes
+    remain in raw CSVs, including non-FM and undeclared-instance evidence.
+    Segment dumps currently reconstruct FM only; other domains are diagnosed.
+    Optional opna_pcm_metadata receives independent native ADPCM-B memory and
+    playback analysis; it does not convert that codec into MSM6258 bytes.
     """
     from vgm_io import read_vgm_bytes
     raw = read_vgm_bytes(vgm_path)
@@ -811,10 +947,10 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
     # ── Header ──────────────────────────────────────────────────
     header = read_vgm_header(raw)
     if pcm_metadata is not None:
-        from okim6258 import analyze
+        from msm6258 import analyze
         pcm_metadata.update(analysis=analyze(raw, loop_count=loop_count),
-                            clock_raw=header['okim6258_clock_raw'],
-                            flags=header['okim6258_flags'])
+                            clock_raw=header['msm6258_clock_raw'],
+                            flags=header['msm6258_flags'])
     vgm_version = header['version']
     data_start = header['data_start']
     # Clock zero means absent; extended fields never read command bytes.
@@ -825,11 +961,13 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
     scc  = _SccState()
     opll = _OpllState()
     opm = _OpmTrace(raw, vgm_version)
+    opna = _OpnaTrace(header)
     from vgm_timing import command_times
     source_times = []
     replay_start_event_id = None
     loop_start_event_id = None
     replay_ends = {}
+    opna_streams = {}
     for state in (psg, scc, opll):
         state._include_vgmticks = include_vgmticks
     for event_id, event in enumerate(command_times(raw, loop_count=loop_count)):
@@ -852,6 +990,23 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
             opll.write(global_time, raw[pos], raw[pos + 1])
         elif cmd in (0x54, 0xA4):
             opm.write(event_id, event, raw[pos], raw[pos + 1], int(cmd == 0xA4))
+        elif cmd in (0x56, 0x57, 0xA6, 0xA7):
+            opna.write(event_id, event, raw[pos], raw[pos + 1], cmd & 1, int(cmd >= 0xA6))
+        elif cmd == 0x67 and raw[pos + 1] == 0x81:
+            size = int.from_bytes(raw[pos + 2:pos + 6], 'little') & 0x7fffffff
+            opna.auxiliary(event_id, event, raw[pos:pos + 6 + size], 'adpcm_b_data_block')
+        elif 0x90 <= cmd <= 0x95:
+            size = {0x90: 4, 0x91: 4, 0x92: 5, 0x93: 10, 0x94: 1, 0x95: 4}[cmd]
+            stream_id = raw[pos]
+            if cmd == 0x90:
+                opna_streams[stream_id] = opna if raw[pos + 1] & 0x7f == 7 else None
+            if cmd == 0x94 and stream_id == 0xff:
+                owners = {owner for owner in opna_streams.values() if owner is not None}
+            else:
+                owner = opna_streams.get(stream_id)
+                owners = {owner} if owner is not None else set()
+            for owner in owners:
+                owner.auxiliary(event_id, event, raw[pos:pos + size], 'dac_stream')
         elif cmd == 0xD2 and has_k051649:
             pp, aa, dd = raw[pos:pos + 3]
             base = {0: 0x9800, 1: 0x9880, 2: 0x988A, 3: 0x988F}.get(pp, 0x9800)
@@ -921,6 +1076,14 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
                             state_csv_path=opm_state_csv, segments_csv_path=opm_segments_csv,
                             key_counts=opm_counts)
 
+    opna.output(output_dir, base_name, event.vgmticks, opna_metadata, dump_opna_segments)
+    if opna_pcm_metadata is not None:
+        from opna_adpcm import analyze as analyze_adpcm
+        adpcm = analyze_adpcm(raw, loop_count=loop_count)
+        summary = (adpcm.dump(output_dir, base_name)
+                   if dump_opna_segments and opna.clock_hz else None)
+        opna_pcm_metadata.update(analysis=adpcm, dump_summary=summary)
+
     return (psg_log_csv, scc_log_csv, psg_trace_csv, scc_trace_csv,
             opll_log_csv, opll_trace_csv, opll_voice_csv, opll_regs_csv)
 
@@ -930,9 +1093,12 @@ if __name__ == '__main__':
         print(f"Usage: python {sys.argv[0]} <vgm_file> [output_dir]")
         sys.exit(1)
     opm_metadata = {}
+    opna_metadata = {}
+    opna_pcm_metadata = {}
     p_log, s_log, p_trace, s_trace, o_log, o_trace, o_voice, o_regs = parse_vgm(
         sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None,
-        opm_metadata=opm_metadata, dump_opm_segments=True)
+        opm_metadata=opm_metadata, dump_opm_segments=True,
+        opna_metadata=opna_metadata, opna_pcm_metadata=opna_pcm_metadata, dump_opna_segments=True)
     print(f"PSG log CSV:       {p_log}")
     print(f"SCC log CSV:       {s_log}")
     print(f"SCC trace CSV:     {s_trace}")
@@ -940,7 +1106,19 @@ if __name__ == '__main__':
     print(f"OPLL trace CSV:    {o_trace}")
     print(f"OPLL voice CSV:    {o_voice}")
     print(f"OPLL regs CSV:     {o_regs}")
+    if opna_pcm_metadata.get('dump_summary'):
+        print(f"OPNA ADPCM IR:     {opna_pcm_metadata['dump_summary']['analysis.json']}")
     if opm_metadata['csv_path']:
         print(f"OPM regs CSV:      {opm_metadata['csv_path']}")
         print(f"OPM state CSV:     {opm_metadata['state_csv_path']}")
         print(f"OPM Segments CSV:  {opm_metadata['segments_csv_path']}")
+    for label, facts in (('OPNA', opna_metadata),):
+        if facts['csv_path']:
+            print(f"{label} regs CSV: {facts['csv_path']}")
+            print(f"{label} state CSV: {facts['state_csv_path']}")
+            print(f"{label} Segments CSV: {facts['segments_csv_path']}")
+            print(f"{label} unmodeled CSV: {facts['unmodeled_csv_path']}")
+        if facts['auxiliary_csv_path']:
+            print(f"{label} auxiliary CSV: {facts['auxiliary_csv_path']}")
+        if facts['issues']:
+            print(f"{label} source diagnostics: {facts['issues']}")

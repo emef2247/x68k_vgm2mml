@@ -1,4 +1,4 @@
-"""Original, reproducible OKIM6258 fixtures; no music or ROM-derived assets."""
+"""Original, reproducible MSM6258 fixtures; no music or ROM-derived assets."""
 from fractions import Fraction
 import hashlib
 import json
@@ -6,7 +6,7 @@ from pathlib import Path
 import struct
 
 ROOT = Path(__file__).resolve().parents[2]
-DESTINATION = ROOT / 'tests/fixtures/public/opm_oki6258'
+DESTINATION = ROOT / 'tests/fixtures/public/opm_msm6258'
 
 
 def write(register, value):

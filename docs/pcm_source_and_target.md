@@ -1,6 +1,6 @@
 # Native PCM source evidence and target placement
 
-OKIM6258 encoded sample identity uses codec plus exact supplied bytes. Decoder
+MSM6258 encoded sample identity uses codec plus exact supplied bytes. Decoder
 reset/continuation, rational nibble rate, raw pan and source timing belong to
 playback evidence, not sample identity. Hashes index candidates; actual bytes
 resolve equality. Observed STOP/PLAY resets and a fresh-VGM initialization

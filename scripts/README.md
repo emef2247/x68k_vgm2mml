@@ -8,6 +8,7 @@ Normal single-file conversion uses `python vgm2mml.py`; conversion implementatio
 - `mdx_compiler.py`: isolated MXC invocation, strict CP932 encoding and lossless compiler-dialect preparation; canonical generated MML stays unchanged.
 - `compare_opm_vgm.py`: explicit channel-mapped OPM state/Segment, Key-event, nominal-pitch and command-size diagnostics. Saves both inputs' raw/state/Segment CSVs; does not certify waveform, loop seams or native display behavior.
 - `verify_opm_mdx_roundtrip.py`: OPM state/Segment roundtrip; CLI defaults to MXC via run68, soundlog replays the compiled MDX, and the existing comparator remains unchanged. Explicit mmlx is available. Prepared scores and selected compiler are recorded.
+- `verify_opna_mucom_roundtrip.py`: development-only OPNA FM control-state roundtrip through WING's MUCOMVGM. Keeps source/target/re-read passes and checks known state, operator edge order and exact sample boundaries. Its register-MML is a validation artifact, separate from the X68000 MDX output. See `docs/opna_mucom_roundtrip.md`.
 - `mdx_fixture_generator/`, `generate_opm_public_fixtures.py`: external MDX replay and authored fixture preparation; the helper's own MML compilation modes use mmlx.
 - `decompile_mdx_references.py`: external mdxtools MDX-to-MML reference preparation, provenance and limited structural audit. See `docs/mdx_reference_mml.md`; references are separate from normal VGM conversion.
 - `psg_scc_to_mdx.py`: batch projection audit with optional compiler verification and reference comparison; shares `py/psg_scc_conversion.py`.

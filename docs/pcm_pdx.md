@@ -1,4 +1,17 @@
-# Native OKIM6258 PCM and PDX
+# Native MSM6258 PCM and PDX
+
+The project uses the name MSM6258 for this chip and its PCM IR. VGM keeps
+its existing command `0xB7`, DAC stream chip ID `0x17`, and header fields at
+`0x90`/`0x94`; the naming change does not alter those identifiers or encoded
+sample bytes. Upstream APIs and source filenames such as `okim6258.c` retain
+their published spelling.
+
+This document describes the native MSM6258-to-PDX path. OPNA
+ADPCM-B uses a separate source IR and explicit decode/resample/re-encode target
+stage in `opna_adpcm.py`; see [OPNA PCM IR](opna_adpcm.md). `opna_pcm.py` binds its
+transcoded samples to this PDX/MDX path under explicit best-effort losses.
+The transcoded samples must not be treated as byte-identical
+source MSM6258 samples.
 
 The canonical `vgm2mml.py --target mdx` path emits readable MDX MML and, when
 PCM samples are present, a sixteen-track MDX plus PDX with initial E8 (PCM4/8
@@ -14,10 +27,10 @@ require the helper; their source control evidence is still available in dumps.
 
 ## Implemented scope
 
-- Direct VGM `0xB7` writes, one physical OKIM6258 instance, 4-bit ADPCM with
+- Direct VGM `0xB7` writes, one physical MSM6258 instance, 4-bit ADPCM with
   low nibble first and standard X68000 10-bit output. The chip must be declared
   in the VGM header; runtime clock writes do not invent an absent source chip.
-- Uncompressed bank `0x04` and finite OKIM6258 DAC streams: setup `0x90`,
+- Uncompressed bank `0x04` and finite MSM6258 DAC streams: setup `0x90`,
   bank/step/base `0x91`, byte frequency `0x92`, `0x95` block starts without
   reverse/loop flags, and `0x93` command-count or bank-end modes. `0x94`,
   including stop-all `0xFF`, stops supply only. Zero frequency pauses an
@@ -123,7 +136,7 @@ target artifacts are invalidated before the new attempt.
 
 ## Source evidence and target binding
 
-`py/okim6258.py` holds immutable chip/source records and exact sample bytes.
+`py/msm6258.py` holds immutable chip/source records and exact sample bytes.
 Its transfers use packed ordered columns, avoiding one full state object per
 data byte. State changes retain source event ID, byte address, original time,
 clock/divider, raw pan, play state, reset observation and reset knowledge.
@@ -143,7 +156,7 @@ limits live here and in the packer, not in the source interpreter. Future
 Z_MUSIC output should consume this source evidence using its own binding and
 sample-container writer; MDX text and PDX slot numbers are not common IR.
 
-OKIM6258 raw pan 0/1/2/3 maps to PCM `p3/p1/p2/p0`. MDX FM uses the opposite
+MSM6258 raw pan 0/1/2/3 maps to PCM `p3/p1/p2/p0`. MDX FM uses the opposite
 left/right order for operands 1 and 2; do not reuse the FM mapping for PCM.
 
 ## Inspectable outputs
@@ -235,7 +248,7 @@ MMDSP GUI and waveform comparison remain separate validation work.
 
 ## Evidence and remaining work
 
-Original public fixtures live in `tests/fixtures/public/opm_oki6258/`: PCM-only
+Original public fixtures live in `tests/fixtures/public/opm_msm6258/`: PCM-only
 reset/retrigger, held pan changes/mute, exact asset reuse, and concurrent OPM
 with F0/F4 playback, plus a 512-tick hold followed by STOP/rest. Their independent expected schedule/hashes are regenerated
 without calling the production analyzer. Target tests independently inspect
@@ -256,7 +269,7 @@ records NanoDrive8, the native driver disassembly and tested alternatives.
 Z_MUSIC version/compiler/container choices remain future decisions.
 
 Sources: [VGM 1.71 specification](https://github.com/vgmrips/vgmplay-legacy/blob/master/VGMPlay/vgmspec171.txt),
-[OKIM6258 behavior](https://github.com/mamedev/mame/blob/master/src/devices/sound/okim6258.cpp),
+[MSM6258 behavior](https://github.com/mamedev/mame/blob/master/src/devices/sound/okim6258.cpp),
 [X68000 chip configuration](https://github.com/mamedev/mame/blob/master/src/mame/sharp/x68k.cpp),
 [PDX format](https://github.com/vampirefrog/mdxtools/blob/master/docs/PDX.md).
 Dependency behavior is verified against the pinned Cargo sources and helper

@@ -81,7 +81,7 @@ will run those cases. Further ordering research remains paused.
 
 ```sh
 cargo build --release --locked --manifest-path scripts/mdx_fixture_generator/Cargo.toml
-python scripts/export_mdx.py tests/fixtures/public/opm_oki6258 \
+python scripts/export_mdx.py tests/fixtures/public/opm_msm6258 \
   --outdir outputs/listen/opm_oki6258 --no-vgm --pcm-policy best-effort
 python scripts/export_mdx.py <private-input>/private-collection-003 \
   --outdir <private-output>/private-collection-003 --no-vgm --pcm-policy best-effort
@@ -94,7 +94,7 @@ and `.pdx` when PCM samples exist, plus assessments/target artifacts and results
 MDX and its named PDX must be copied together for playback.
 
 VGM input fixtures formerly in `tests/fixtures/public/pcm/` are now grouped by
-the actual native chips at `tests/fixtures/public/opm_oki6258/`. The generator
+the actual native chips at `tests/fixtures/public/opm_msm6258/`. The generator
 and current documentation references were updated; VGM and expectation bytes
 were preserved during the move. Their README identifies PCM-only, OPM+PCM,
 direct-register and DAC-stream cases, distinct from other chips' PCM formats.

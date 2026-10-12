@@ -1,4 +1,4 @@
-"""Backend-neutral OKIM6258 source evidence and encoded playback spans.
+"""Backend-neutral MSM6258 source evidence and encoded playback spans.
 
 Byte supply is observed; decoder consumption is deliberately unknown. The
 cadence check describes compatibility with continuous low-nibble-first ADPCM
@@ -239,8 +239,8 @@ def analyze(raw, *, initialization='reset', loop_count=1):
     header = read_vgm_header(raw)
     # Header reader supplies these fields; fallback uses the same version/data bound.
     bounded = header['version'] >= 0x161 and header['data_start'] >= 0x95
-    raw_clock = header.get('okim6258_clock_raw', int.from_bytes(raw[0x90:0x94], 'little') if bounded else 0)
-    options = header.get('okim6258_flags', raw[0x94] if bounded else 0)
+    raw_clock = header.get('msm6258_clock_raw', int.from_bytes(raw[0x90:0x94], 'little') if bounded else 0)
+    options = header.get('msm6258_flags', raw[0x94] if bounded else 0)
     original_clock = clock = raw_clock & 0x3fffffff
     divider = DIVIDERS[options & 3]
     clock_buffer = list(clock.to_bytes(4, 'little'))
@@ -285,7 +285,7 @@ def analyze(raw, *, initialization='reset', loop_count=1):
             return
         a = active
         data = bytes(a['bytes'])
-        codec = 'okim6258-adpcm4-low-first' if options & 4 else 'okim6258-adpcm3'
+        codec = 'msm6258-adpcm4-low-first' if options & 4 else 'msm6258-adpcm3'
         sample_id = None
         if data:
             digest = hashlib.sha256(data).hexdigest()
@@ -337,17 +337,17 @@ def analyze(raw, *, initialization='reset', loop_count=1):
         active = None
 
     if raw_clock & 0xc0000000:
-        issue('unsupported_clock_flags', None, 0, f'OKIM6258 clock flags {raw_clock >> 30:#x}')
+        issue('unsupported_clock_flags', None, 0, f'MSM6258 clock flags {raw_clock >> 30:#x}')
     if options & 0xf0:
-        issue('reserved_options', None, 0, f'OKIM6258 options {options:#x}')
+        issue('reserved_options', None, 0, f'MSM6258 options {options:#x}')
     def chip_write(event_id, pos, tick, instance, reg, value, *, derived=False):
         nonlocal missing_clock_reported, active, playing, clock, divider, pan
         if not original_clock and not missing_clock_reported:
             issue('absent_chip_declaration', event_id, tick,
-                  'PCM supplies retained, but the VGM header declares no OKIM6258')
+                  'PCM supplies retained, but the VGM header declares no MSM6258')
             missing_clock_reported = True
         if instance:
-            issue('unsupported_chip_instance', event_id, tick, 'Second OKIM6258 write retained')
+            issue('unsupported_chip_instance', event_id, tick, 'Second MSM6258 write retained')
             return
         if reg == 1:
             if active is not None:
@@ -404,7 +404,7 @@ def analyze(raw, *, initialization='reset', loop_count=1):
         elif 8 <= reg <= 10:
             clock_buffer[reg - 8] = value
         else:
-            issue('unsupported_register', event_id, tick, f'OKIM6258 register {reg:#x}')
+            issue('unsupported_register', event_id, tick, f'MSM6258 register {reg:#x}')
             if active is not None:
                 active['issues'].append('unsupported_register')
         controls.append(PcmControl(event_id, pos, tick, reg, value, clock, divider, pan, playing,

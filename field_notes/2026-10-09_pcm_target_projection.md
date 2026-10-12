@@ -5,7 +5,7 @@ C0/C1直接解析、A/B/B_ref/C比較は未実装。PCM再生器の問題を解�
 
 ## 実装した境界
 
-- `py/okim6258.py`のimmutable PCM IRは変更していない。
+- `py/msm6258.py`のimmutable PCM IRは変更していない。
 - `py/pcm_mdx.py`でMDX profile、bank/slot、共有clock、型付きtarget命令列を決める。
   同じ命令列から可読MMLと`<stem>.pcm/target.tsv`を出力する。
 - helperの`--compile-pcm FM_ONLY.mml PLAN.tsv OUTPUT.mdx`はFMだけをmmlxでコンパイルし、
@@ -40,12 +40,12 @@ IOCS reset／実消費nibble数はunverifiedのまま。strictの既知loss停�
 WSLでhelperをrelease buildし、public fixtureのCLI変換を実行した。
 
 ```bash
-python vgm2mml.py tests/fixtures/public/opm_oki6258/reset_pan_hold.vgm \
+python vgm2mml.py tests/fixtures/public/opm_msm6258/reset_pan_hold.vgm \
   --outdir outputs/pcm_target_2026-10-09/strict --dump-passes
-python vgm2mml.py tests/fixtures/public/opm_oki6258/reset_pan_hold.vgm \
+python vgm2mml.py tests/fixtures/public/opm_msm6258/reset_pan_hold.vgm \
   --outdir outputs/pcm_target_2026-10-09/best-effort \
   --pcm-policy best-effort --dump-passes
-python scripts/export_mdx.py tests/fixtures/public/opm_oki6258 \
+python scripts/export_mdx.py tests/fixtures/public/opm_msm6258 \
   --outdir outputs/pcm_target_2026-10-09/batch --pcm-policy best-effort
 ```
 

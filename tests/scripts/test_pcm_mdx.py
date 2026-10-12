@@ -14,7 +14,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'py'), str(ROOT / 'scripts')]
 from generate_pcm_fixtures import cases, playback, stream_cases, vgm, wait, write
-from okim6258 import analyze
+from msm6258 import analyze
 from opm_conversion import convert
 from opm_mdx_music import infer_clock
 from pcm_mdx import default_generator, project, validate_extended_layout
@@ -290,13 +290,13 @@ class PcmMdxTests(unittest.TestCase):
     def test_clock_header_uses_6258_field_and_respects_data_boundary_and_version(self):
         raw = bytearray(vgm(wait(100)))
         struct.pack_into('<I', raw, 0x98, 1234567)
-        self.assertEqual(read_vgm_header(raw)['okim6258_clock_raw'], 8000000)
+        self.assertEqual(read_vgm_header(raw)['msm6258_clock_raw'], 8000000)
         struct.pack_into('<I', raw, 8, 0x160)
-        self.assertEqual(read_vgm_header(raw)['okim6258_clock_raw'], 0)
+        self.assertEqual(read_vgm_header(raw)['msm6258_clock_raw'], 0)
         struct.pack_into('<I', raw, 8, 0x171)
         struct.pack_into('<I', raw, 0x34, 12)  # command data begins at 0x40
-        self.assertEqual(read_vgm_header(raw)['okim6258_clock_raw'], 0)
-        self.assertEqual(read_vgm_header(raw)['okim6258_flags'], 0)
+        self.assertEqual(read_vgm_header(raw)['msm6258_clock_raw'], 0)
+        self.assertEqual(read_vgm_header(raw)['msm6258_flags'], 0)
 
     def test_pcm_presence_audit_does_not_mistake_6295_for_6258(self):
         with tempfile.TemporaryDirectory() as temp:

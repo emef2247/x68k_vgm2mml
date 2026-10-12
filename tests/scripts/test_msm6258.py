@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'py'))
-from okim6258 import analyze
+from msm6258 import analyze
 
 
 def source(commands, *, clock=8000000, flags=6, loop_command_offset=None):
@@ -43,7 +43,7 @@ def run(data=(0x12, 0x34), pan=0):
             wait(5) + write(1,data[1]) + wait(6) + write(0,1))
 
 
-class Okim6258Tests(unittest.TestCase):
+class Msm6258Tests(unittest.TestCase):
     def test_reset_play_low_first_bytes_and_exact_source_ids(self):
         analysis = analyze(source(run()))
         self.assertEqual(analysis.source_end_vgmticks, 11)
@@ -85,7 +85,7 @@ class Okim6258Tests(unittest.TestCase):
         class Collision:
             def hexdigest(self):
                 return '0'*64
-        with patch('okim6258.hashlib.sha256',return_value=Collision()):
+        with patch('msm6258.hashlib.sha256',return_value=Collision()):
             a=analyze(source(run((0x12,0x34))+run((0x56,0x78))+run((0x12,0x34))))
         self.assertEqual([p.sample_id for p in a.playbacks],[0,1,0])
         self.assertEqual([s.encoded_bytes for s in a.samples],[b'\x12\x34',b'\x56\x78'])

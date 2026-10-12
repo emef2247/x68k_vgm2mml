@@ -17,7 +17,7 @@ from pcm_stream import REFERENCE_REVISION
 RATES = tuple(Fraction(clock, divider) for clock, divider in
               ((4000000, 1024), (4000000, 768), (8000000, 1024),
                (8000000, 768), (8000000, 512)))
-PCM_PAN = (3, 1, 2, 0)  # OKI disable bits -> MDX ADPCM pan (FM uses opposite L/R).
+PCM_PAN = (3, 1, 2, 0)  # MSM6258 disable bits -> MDX ADPCM pan (FM uses opposite L/R).
 
 
 @dataclass(frozen=True)
@@ -64,6 +64,7 @@ class PcmMdxProjection:
     assessment: PcmAssessment | None = None
     typed_commands: tuple[dict, ...] = ()
     omitted_playbacks: tuple[dict, ...] = ()
+    source_origin: str = 'native_msm6258'
 
     @property
     def boundary_times(self):
@@ -71,7 +72,9 @@ class PcmMdxProjection:
                      for time in (row['source_start_vgmticks'], row['source_end_vgmticks']))
 
     def summary(self):
+        projected = self.source_origin != 'native_msm6258'
         return dict(pcm_sample_count=len(self.bindings),
+                    pcm_source_origin=self.source_origin,
                     pcm_playback_count=sum(u.kind == 'pcm_note' for u in self.units),
                     pcm_pdx_file=self.pdx_name,
                     pcm_target='MDX PCM4/8 enabled; single P track, one bank, 96 slots',
@@ -81,10 +84,15 @@ class PcmMdxProjection:
                     pcm_omitted_playback_count=len(self.omitted_playbacks),
                     pcm_omitted_duration_samples=sum(p['duration_samples'] for p in self.omitted_playbacks),
                     pcm_intended_omissions=list(self.omitted_playbacks),
-                    pcm_byte_preservation_scope='encoded playback samples stored in PDX; '
-                                                'all source supply operations are retained in source IR',
-                    pcm_consumption_scope='direct or profile-derived byte supply; '
-                                          'decoder consumption not measured',
+                    pcm_byte_preservation_scope=(
+                        'transcoded MSM6258 target bytes stored unchanged in PDX; '
+                        'original Yamaha encoded bytes retained separately in native OPNA IR'
+                        if projected else 'encoded playback samples stored in PDX; '
+                        'all source supply operations are retained in source IR'),
+                    pcm_consumption_scope=(
+                        'projected independent PDX notes; no observed MSM6258 byte supply'
+                        if projected else 'direct or profile-derived byte supply; '
+                        'decoder consumption not measured'),
                     pcm_max_abs_timing_error_samples=max(
                         [abs(row[field]) for row in self.rows
                          for field in ('start_error_samples', 'end_error_samples')]
@@ -135,6 +143,8 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
     omission_bound = normalization_samples(normalization_ms)
     target_tick = tick_mapper or (lambda t: mdx_tick(t, sample_multiplier))
     assessment = PcmAssessment(policy)
+    for item in getattr(analysis, 'target_evidence', ()):
+        assessment.add(**item)
     def reject(detail, *, code='projection_undefined', status='unverified', criterion='eligibility'):
         assessment.add(criterion, status, code, detail,
                        cause='target_constraint' if status == 'lossy' else '')
@@ -160,11 +170,11 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
     if len(analysis.samples) > 96:
         reject('Initial standard PDX target supports at most 96 distinct samples', status='lossy', code='slot_capacity')
     for sample in analysis.samples:
-        if sample.codec != 'okim6258-adpcm4-low-first':
+        if sample.codec != 'msm6258-adpcm4-low-first':
             assessment.add('sample', 'lossy', 'sample_codec',
-                           'Standard PDX target requires 4-bit low-nibble-first OKIM6258 ADPCM',
+                           'Standard PDX target requires 4-bit low-nibble-first MSM6258 ADPCM',
                            cause='target_constraint', source_value=sample.codec)
-            assessment.block('Standard PDX target requires 4-bit low-nibble-first OKIM6258 ADPCM')
+            assessment.block('Standard PDX target requires 4-bit low-nibble-first MSM6258 ADPCM')
         if not sample.encoded_bytes or len(sample.encoded_bytes) > 0xffffff:
             reject('PDX sample must contain 1..16777215 encoded bytes', status='fail', code='invalid_sample_length')
         if len(sample.encoded_bytes) > 65535:
@@ -386,12 +396,16 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
                             error_samples=projected_samples(target_tick(c.vgmticks),
                                                             sample_multiplier)-c.vgmticks)
                        for c in analysis.controls)
-    assessment.add('sample', 'pass', 'sample_bytes_exact', 'PDX binding retains encoded source sample bytes')
+    projected_pcm = getattr(analysis, 'source_origin', None)
+    assessment.add('sample', 'pass', 'sample_bytes_exact',
+                   'PDX binding retains transcoded MSM6258 target IR bytes; not original Yamaha ADPCM-B bytes'
+                   if projected_pcm else 'PDX binding retains encoded source sample bytes')
     assessment.add('reset', 'unverified', 'iocs_reset_unconfirmed',
                    'Physical decoder reset/continuation through the selected PCM extension is not yet confirmed',
                    scope='runtime_validation')
     assessment.add('consumption', 'unverified', 'consumed_nibbles_unknown',
-                   'Observed byte supply does not establish actual decoder consumption',
+                   'Projected continuous PDX delivery does not establish actual decoder consumption'
+                   if projected_pcm else 'Observed byte supply does not establish actual decoder consumption',
                    scope='runtime_validation')
     if policy == 'strict' and any(item['status'] == 'lossy' for item in assessment.items):
         detail = 'Strict PCM projection blocks known loss: ' + ', '.join(
@@ -400,7 +414,8 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
         raise ProjectionError(detail, assessment)
     emit('end', start_tick=end)
     return PcmMdxProjection(bindings, tuple(units), tuple(rows), stem+'.pdx', sample_multiplier,
-                            clock_rows, assessment, tuple(commands), tuple(omitted))
+                            clock_rows, assessment, tuple(commands), tuple(omitted),
+                            getattr(analysis, 'source_origin', 'native_msm6258'))
 
 
 def default_generator():

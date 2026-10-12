@@ -1,9 +1,9 @@
-# Original OPM / OKIM6258 fixtures
+# Original OPM / MSM6258 fixtures
 
 These VGM files contain arithmetic byte patterns written for this project,
 not game audio or ROM samples. They are distributed under the repository's
 MIT license. Regenerate with `python tests/scripts/generate_pcm_fixtures.py`.
-This folder groups native OKIM6258 inputs, including PCM-only and OPM+PCM.
+This folder groups native MSM6258 inputs, including PCM-only and OPM+PCM.
 It does not stand for other chips' PCM encodings or playback interfaces.
 
 - `reset_pan_hold`: PCM-only, observed STOP/PLAY resets, identical sample reuse,

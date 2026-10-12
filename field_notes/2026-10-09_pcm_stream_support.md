@@ -1,4 +1,4 @@
-# Finite OKIM6258 Data Bank / DAC Stream support
+# Finite MSM6258 Data Bank / DAC Stream support
 
 ## Scope and result
 
@@ -17,7 +17,7 @@ snapshots and nonfatal observations also have separate CSVs. Source header,
 reference revision, blocks and exact sample bytes remain inspectable.
 
 Supported starts are `0x95` finite blocks with flags zero and `0x93` modes 1
-(command count) and 3 (bank end), using one primary OKIM6258 data register.
+(command count) and 3 (bank end), using one primary MSM6258 data register.
 Step zero means one; base and concatenated bank positions are respected.
 `0x94` and stop-all `0xFF` stop only supplies. Exhaustion creates no chip STOP,
 PLAY or reset. Same-tick original commands precede derived DAC supplies.
@@ -40,7 +40,7 @@ Reference revision: libvgm `70e1d1fad8c03df2ce4bfb13f8599c56920dcdc8`.
   runs source commands before the tick's DAC update and interprets header bit 2
   set as 4-bit ADPCM. The previous converter had that interpretation reversed.
   Public authored flags changed from `0x02` to `0x06`; encoded payloads did not.
-- [OKIM6258 core](https://github.com/ValleyBell/libvgm/blob/70e1d1fad8c03df2ce4bfb13f8599c56920dcdc8/emu/cores/okim6258.c)
+- [MSM6258 core](https://github.com/ValleyBell/libvgm/blob/70e1d1fad8c03df2ce4bfb13f8599c56920dcdc8/emu/cores/okim6258.c)
   has no consumption during STOP and reinitializes its FIFO on stopped-to-PLAY.
   This resolves stopped stream supplies under that implementation profile.
   [Current MAME](https://github.com/mamedev/mame/blob/master/src/devices/sound/okim6258.cpp)
@@ -164,7 +164,7 @@ separate from these offset/packing checks.
 The user's normal converter command succeeded with baseline structured timing.
 Normalization declined because the nominated clock would collapse a positive
 source interval; this is the intended fallback, not conversion failure.
-Although the header declares an 8-MHz OKIM6258, actual command inventory contains
+Although the header declares an 8-MHz MSM6258, actual command inventory contains
 only OPM and waits/end: no B7, bank or stream commands, and no PCM sample data.
 Thus private-case-025 does not exercise PCM/PDX generation and needs no PDX.
 
@@ -208,7 +208,7 @@ waveform or MMDSP playback equivalence. Detailed ignored evidence is
 
 ## Verification and next action
 
-- 84 focused tests passed: source OKIM6258, stream scheduling, PCM projection /
+- 84 focused tests passed: source MSM6258, stream scheduling, PCM projection /
   real helper packing, CLI routes and capacity-failure evidence preservation.
 - 45 regression tests passed: VGM timing, structured OPM MML, target VGM and
   export behavior. No whole private catalog or native runtime certification.

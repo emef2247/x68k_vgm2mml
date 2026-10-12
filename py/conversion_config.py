@@ -39,13 +39,16 @@ def inspect_source(source):
         previous_time = event.vgmticks
         counts[f'{cmd:#04x}'] += 1
         item = dict(command=f'{cmd:#04x}', address=pos, source_samples=event.vgmticks)
-        chip = {0x54: 'opm', 0xa4: 'opm', 0xa0: 'psg', 0xd2: 'scc',
+        chip = {0x54: 'opm', 0xa4: 'opm', 0x56: 'opna', 0x57: 'opna',
+                0xa6: 'opna', 0xa7: 'opna', 0xa0: 'psg', 0xd2: 'scc',
                 0x51: 'opll', 0xb7: 'pcm'}.get(cmd)
         if chip:
             chips.add(chip)
             first.setdefault(chip, item)
             if cmd == 0xa4:
                 unsupported.append(dict(item, reason='Second OPM instance is not supported'))
+            elif cmd in (0xa6, 0xa7):
+                unsupported.append(dict(item, reason='Second OPNA instance is not supported'))
             elif cmd == 0x51:
                 reg, value = raw[pos + 1:pos + 3]
                 opll_key_on |= bool((0x20 <= reg <= 0x28 and value & 0x10)
@@ -81,6 +84,9 @@ def inspect_source(source):
             if kind in (4, 0x44):
                 chips.add('pcm')
                 first.setdefault('pcm', item)
+            elif kind == 0x81:
+                chips.add('opna')
+                first.setdefault('opna', item)
         elif 0x90 <= cmd <= 0x95:
             stream_id = raw[pos + 1]
             if stream_id == 255:
@@ -104,11 +110,12 @@ def inspect_source(source):
     opm_offset = 0x30 if header['version'] >= 0x110 else 0x10
     opm_clock = int.from_bytes(raw[opm_offset:opm_offset + 4], 'little')
     opll_clock = int.from_bytes(raw[0x10:0x14], 'little') if header['version'] >= 0x110 else 0
-    declarations = dict(opm=opm_clock, opll=opll_clock, psg=header['ay_clock_raw'],
-                        scc=header['scc_clock_raw'], pcm=header['okim6258_clock_raw'])
+    declarations = dict(opm=opm_clock, opna=header['opna_clock_raw'],
+                        opll=opll_clock, psg=header['ay_clock_raw'],
+                        scc=header['scc_clock_raw'], pcm=header['msm6258_clock_raw'])
     has_song_loop = bool(int.from_bytes(raw[0x1c:0x20], 'little'))
     initialization = {}
-    if 'opm' in chips and 'psg' in chips and psg_silent and psg_volumes == [0, 0, 0]:
+    if chips & {'opm', 'opna'} and 'psg' in chips and psg_silent and psg_volumes == [0, 0, 0]:
         initialization['psg'] = dict(command_count=counts['0xa0'],
             reason='Muted AY initialization: reset volumes remain zero; no nonzero/envelope volume writes; source commands retained')
     if 'opll' in chips and not opll_key_on:
@@ -117,7 +124,7 @@ def inspect_source(source):
     if 'scc' in chips and not declarations['scc'] and not scc_nonzero_volume:
         initialization['scc'] = dict(command_count=counts['0xd2'],
             reason='Existing compatibility initialization: SCC is undeclared and no nonzero volume is written')
-    elif 'opm' in chips and 'scc' in chips and scc_silent and not has_song_loop:
+    elif chips & {'opm', 'opna'} and 'scc' in chips and scc_silent and not has_song_loop:
         initialization['scc'] = dict(command_count=counts['0xd2'],
             reason='Finite silent SCC setup: reset volume/enable zero; every positive-duration enabled nonzero-volume interval has explicitly all-zero waveform RAM; source commands retained')
     for chip in chips - {'pcm'} - initialization.keys():
@@ -143,6 +150,8 @@ def select_mdx_route(usage, *, compatibility_target=None):
         return 'psg-scc-to-opm'
     if chips and chips <= {'opm', 'pcm'}:
         return 'native-opm-pcm'
+    if chips == {'opna'}:
+        return 'opna-fm-to-opm'
     if chips and chips <= {'psg', 'scc'}:
         return 'psg-scc-to-opm'
     if not chips and 'opll' in usage['used_chips']:

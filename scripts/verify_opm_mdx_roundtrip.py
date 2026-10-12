@@ -34,7 +34,7 @@ def source_facts(path, *, include_pcm=False):
     # Reuse the native reader's version-aware clock/variant interpretation.
     trace = _OpmTrace(raw, struct.unpack_from('<I', raw, 8)[0])
     header=read_vgm_header(raw)
-    pcm_clock=header['okim6258_clock_raw'] & 0x3fffffff
+    pcm_clock=header['msm6258_clock_raw'] & 0x3fffffff
     result=dict(clock_hz=trace.clock_hz, chip_type=trace.chip_type, dual_chip=trace.dual_chip)
     if include_pcm:
         result.update(source_pcm_present=bool(pcm_clock), comparison_scope='OPM only; PCM is not compared')

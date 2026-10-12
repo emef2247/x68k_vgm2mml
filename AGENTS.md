@@ -2,7 +2,7 @@
 
 ## What this repo is
 - Convert X68000 OPM/YM2151 VGM into inspectable structured MDX MML; retain PSG/SCC/OPLL to MGSDRV compatibility.
-- Main native sources: OPM/YM2151 and scoped OKIM6258 PCM. Compatibility sources: PSG, YM2413/OPLL, and SCC.
+- Main native sources: OPM/YM2151 and scoped MSM6258 PCM. Compatibility sources: PSG, YM2413/OPLL, and SCC.
 - Main language: Python 3.
 - Primary working environment: WSL.
 - Goal: preserve observable VGM/chip behavior and make every important transformation inspectable, not merely produce compact or musically cleaner MML.
@@ -21,7 +21,7 @@
 - `py/opm.py`: immutable native OPM state/Segment types, Segment construction, and state/Segment CSV dumping.
 - `py/opm_conversion.py`: native OPM-to-MDX pipeline orchestration.
 - `py/opm_mdx.py`, `py/opm_mdx_music.py`: native OPM target projection and structured MDX rendering.
-- `py/okim6258.py`: backend-neutral PCM source evidence, encoded samples and playback spans.
+- `py/msm6258.py`: backend-neutral PCM source evidence, encoded samples and playback spans.
 - `py/pcm_mdx.py`: single-P PCM binding/projection, 16-track/E8 target layout and externally packed PDX byte verification.
 - `py/opm_target_state.py`: explicitly projected OPM state/write trajectories and interval CSVs for PSG/SCC targets.
 - `py/opm_performance.py`, `py/opm_target_vgm.py`: inferred PSG/SCC musical gates and inspectable OPM target VGM feeding the ordinary OPM converter.

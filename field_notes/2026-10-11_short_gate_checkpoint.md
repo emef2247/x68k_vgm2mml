@@ -32,7 +32,7 @@ Run from /mnt/i/wsl/repositories/emef2247/test/x68k_vgm2mml:
 cargo build --release --locked --manifest-path scripts/mdx_fixture_generator/Cargo.toml
 python scripts/export_mdx.py tests/fixtures/public/opm/from_fm \
   --outdir outputs/listen/opm/from_fm_8ms
-python scripts/export_mdx.py tests/fixtures/public/opm_oki6258 \
+python scripts/export_mdx.py tests/fixtures/public/opm_msm6258 \
   --outdir outputs/listen/opm_oki6258_8ms --no-vgm --pcm-policy best-effort
 ```
 
