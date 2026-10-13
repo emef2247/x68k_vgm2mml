@@ -86,7 +86,7 @@ class PcmMdxProjection:
                     pcm_intended_omissions=list(self.omitted_playbacks),
                     pcm_byte_preservation_scope=(
                         'transcoded MSM6258 target bytes stored unchanged in PDX; '
-                        'original Yamaha encoded bytes retained separately in native OPNA IR'
+                        'original source memory/encoded bytes retained separately in native source IR'
                         if projected else 'encoded playback samples stored in PDX; '
                         'all source supply operations are retained in source IR'),
                     pcm_consumption_scope=(
@@ -398,7 +398,7 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
                        for c in analysis.controls)
     projected_pcm = getattr(analysis, 'source_origin', None)
     assessment.add('sample', 'pass', 'sample_bytes_exact',
-                   'PDX binding retains transcoded MSM6258 target IR bytes; not original Yamaha ADPCM-B bytes'
+                   'PDX binding retains transcoded MSM6258 target IR bytes; not original source PCM bytes'
                    if projected_pcm else 'PDX binding retains encoded source sample bytes')
     assessment.add('reset', 'unverified', 'iocs_reset_unconfirmed',
                    'Physical decoder reset/continuation through the selected PCM extension is not yet confirmed',

@@ -101,7 +101,8 @@ def normalize_output(segments, original, *, source_events=None, pcm_analysis=Non
         if pcm_analysis.source_end_vgmticks != original.source_end_vgmticks:
             raise ValueError('OPM and PCM normalization require the same source end')
         omitted_pcm = [p.playback_id for p in pcm_analysis.playbacks
-                       if 0 < p.end_vgmticks - p.start_vgmticks <= bound]
+                       if getattr(pcm_analysis, 'normalization_omission_safe', True)
+                       and 0 < p.end_vgmticks - p.start_vgmticks <= bound]
         previous = None
         for p in pcm_analysis.playbacks:
             if p.playback_id in omitted_pcm:

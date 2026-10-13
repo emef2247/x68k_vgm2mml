@@ -105,4 +105,11 @@ unsupported stream semantics and their source evidence remain explicit.
 See `docs/pcm_pdx.md` for current eligibility and tool limitations and
 `docs/pcm_roundtrip_validation.md` for the independent validation design.
 
+SegaPCM uses a separate runtime IR, then an explicit stereo-to-mono MSM6258
+bridge. Original ROM/control evidence, native unclipped stereo, runtime gates
+and target ADPCM chunks are different representations. Chunk boundaries and
+independent target-decoder assumptions are not source supply/reset facts.
+Short packaging tails survive normalization; sample lengths follow the final
+shared clock. See `docs/segapcm_segments.md` for artifacts and known losses.
+
 

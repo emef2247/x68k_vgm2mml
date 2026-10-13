@@ -908,6 +908,9 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
               pcm_metadata: dict | None = None,
               opna_metadata: dict | None = None,
               opna_pcm_metadata: dict | None = None,
+              segapcm_metadata: dict | None = None,
+              segapcm_trace_out: list | None = None,
+              dump_segapcm_segments: bool = False,
               dump_opna_segments: bool = False,
               dump_opm_segments: bool = False, loop_count: int = 1) -> tuple[str, str, str, str, str, str, str, str]:
     """
@@ -933,6 +936,9 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
     Segment dumps currently reconstruct FM only; other domains are diagnosed.
     Optional opna_pcm_metadata receives independent native ADPCM-B memory and
     playback analysis; it does not convert that codec into MSM6258 bytes.
+    Optional segapcm_metadata or dump_segapcm_segments writes native SegaPCM
+    raw/ROM evidence and write-observed control intervals, without emulating
+    runtime sample addresses or projecting PCM into PDX.
     """
     from vgm_io import read_vgm_bytes
     raw = read_vgm_bytes(vgm_path)
@@ -962,6 +968,8 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
     opll = _OpllState()
     opm = _OpmTrace(raw, vgm_version)
     opna = _OpnaTrace(header)
+    from segapcm import SegaPcmTrace
+    segapcm = SegaPcmTrace(header)
     from vgm_timing import command_times
     source_times = []
     replay_start_event_id = None
@@ -992,6 +1000,12 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
             opm.write(event_id, event, raw[pos], raw[pos + 1], int(cmd == 0xA4))
         elif cmd in (0x56, 0x57, 0xA6, 0xA7):
             opna.write(event_id, event, raw[pos], raw[pos + 1], cmd & 1, int(cmd >= 0xA6))
+        elif cmd == 0xC0:
+            segapcm.write(event_id, event, int.from_bytes(raw[pos:pos + 2], 'little'), raw[pos + 2])
+        elif cmd == 0x67 and raw[pos + 1] == 0x80:
+            length_raw = int.from_bytes(raw[pos + 2:pos + 6], 'little')
+            size = length_raw & 0x7fffffff
+            segapcm.rom_block(event_id, event, length_raw, raw[pos + 6:pos + 6 + size])
         elif cmd == 0x67 and raw[pos + 1] == 0x81:
             size = int.from_bytes(raw[pos + 2:pos + 6], 'little') & 0x7fffffff
             opna.auxiliary(event_id, event, raw[pos:pos + 6 + size], 'adpcm_b_data_block')
@@ -1077,6 +1091,12 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
                             key_counts=opm_counts)
 
     opna.output(output_dir, base_name, event.vgmticks, opna_metadata, dump_opna_segments)
+    if segapcm_trace_out is not None:
+        segapcm_trace_out.append(segapcm)
+    if segapcm_metadata is not None or dump_segapcm_segments:
+        segapcm_summary = segapcm.dump(output_dir, base_name, event.vgmticks)
+        if segapcm_metadata is not None:
+            segapcm_metadata.update(segapcm_summary)
     if opna_pcm_metadata is not None:
         from opna_adpcm import analyze as analyze_adpcm
         adpcm = analyze_adpcm(raw, loop_count=loop_count)
@@ -1095,10 +1115,12 @@ if __name__ == '__main__':
     opm_metadata = {}
     opna_metadata = {}
     opna_pcm_metadata = {}
+    segapcm_metadata = {}
     p_log, s_log, p_trace, s_trace, o_log, o_trace, o_voice, o_regs = parse_vgm(
         sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None,
         opm_metadata=opm_metadata, dump_opm_segments=True,
-        opna_metadata=opna_metadata, opna_pcm_metadata=opna_pcm_metadata, dump_opna_segments=True)
+        opna_metadata=opna_metadata, opna_pcm_metadata=opna_pcm_metadata, dump_opna_segments=True,
+        segapcm_metadata=segapcm_metadata)
     print(f"PSG log CSV:       {p_log}")
     print(f"SCC log CSV:       {s_log}")
     print(f"SCC trace CSV:     {s_trace}")
@@ -1106,6 +1128,10 @@ if __name__ == '__main__':
     print(f"OPLL trace CSV:    {o_trace}")
     print(f"OPLL voice CSV:    {o_voice}")
     print(f"OPLL regs CSV:     {o_regs}")
+    if segapcm_metadata.get('actual_usage'):
+        print(f"SegaPCM state CSV: {segapcm_metadata['state_csv_path']}")
+        print(f"SegaPCM Segments:  {segapcm_metadata['segments_csv_path']}")
+        print(f"SegaPCM analysis:  {segapcm_metadata['analysis_json_path']}")
     if opna_pcm_metadata.get('dump_summary'):
         print(f"OPNA ADPCM IR:     {opna_pcm_metadata['dump_summary']['analysis.json']}")
     if opm_metadata['csv_path']:

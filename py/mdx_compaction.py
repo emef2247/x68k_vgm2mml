@@ -94,6 +94,11 @@ def compact(text, track, *, durations=True):
             depth -= 1
         if re.fullmatch(r'r%\d+', token):
             duration = int(token[2:])
+            consumed = 1
+            if token == 'r%128':
+                while index + consumed < len(retained) and retained[index + consumed][1] == token:
+                    consumed += 1
+                duration *= consumed
             blocks, tail = divmod(duration, 128)
             # MDX's rest encoder emits one byte per 128 ticks. A finite loop
             # costs six bytes, so at least eight equal chunks yield a saving.
@@ -106,13 +111,18 @@ def compact(text, track, *, durations=True):
                     blocks -= count
                 remaining = blocks * 128 + tail
                 if remaining:
-                    parts.append(f'r%{remaining}')
+                    if remaining <= 256:
+                        parts.append(f'r%{remaining}')
+                    else:
+                        parts.extend(['r%128'] * blocks)
+                        if tail:
+                            parts.append(f'r%{tail}')
                 replacement = ' '.join(parts)
                 output.append(replacement)
                 decisions.append(dict(track=track, token_index=position, action='rest_chunks',
-                                      before=token, after=replacement,
+                                      before=' '.join(t for _, t in retained[index:index+consumed]), after=replacement,
                                       reason='same ordered 128-tick rest chunks', bytes_saved=saved))
-                index += 1
+                index += consumed
                 continue
         if re.fullmatch(r'(?:[a-g][+#-]?|n\d+,)(?:%256|1)', token):
             stop = index

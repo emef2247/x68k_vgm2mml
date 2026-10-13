@@ -99,17 +99,27 @@ def run_listening_batch(source, output, *, core, options):
             target = _bounded(folder / (stem + extension), output)
             if target.exists() and str(target.relative_to(output)).replace('\\', '/') not in owned.get('published', {}):
                 raise ValueError(f'Refusing to overwrite unowned listening artifact: {target}')
-        if staged.exists() and _digest(staged) != owned.get('staged_sha256', owned.get('source_sha256')):
-            raise ValueError(f'Refusing to replace unowned or modified staged source: {staged}')
-        planned.append((path, key, stem, folder, staged, owned))
+        expected_staged = owned.get('staged_sha256', owned.get('source_sha256'))
+        reuse_staged = False
+        if staged.exists() and _digest(staged) != expected_staged:
+            # A stop between copyfile and manifest save can leave an identical,
+            # unregistered input. Adopt it without overwriting any bytes.
+            if expected_staged is not None or _digest(staged) != _digest(path):
+                raise ValueError(f'Refusing to replace unowned or modified staged source: {staged}')
+            reuse_staged = True
+        planned.append((path, key, stem, folder, staged, owned, reuse_staged))
     output.mkdir(parents=True, exist_ok=True)
     rows = []
     entries = dict(previous)
-    for path, key, stem, folder, staged, owned in planned:
+    for path, key, stem, folder, staged, owned, reuse_staged in planned:
         folder.mkdir(parents=True, exist_ok=True)
         staged.parent.mkdir(parents=True, exist_ok=True)
         source_sha256 = _digest(path)
-        shutil.copyfile(path, staged)
+        if reuse_staged:
+            if not staged.is_file() or _digest(staged) != source_sha256:
+                raise ValueError(f'Staged source changed before ownership recovery: {staged}')
+        else:
+            shutil.copyfile(path, staged)
         if _digest(staged) != source_sha256:
             raise ValueError('Staged source bytes changed unexpectedly')
         # Staging ownership is recoverable even if core setup raises before returning a row.

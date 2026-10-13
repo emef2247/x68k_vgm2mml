@@ -142,6 +142,8 @@ def build_parser():
     fidelity.add_argument('--pcm-policy', choices=['strict', 'best-effort'],
                         help='Native PCM target policy: strict (default) blocks known loss; best-effort reports defined loss')
     diagnostic = parser.add_argument_group('Diagnostic and development options')
+    diagnostic.add_argument('--fm-only', action='store_true',
+                            help='OPM + SegaPCM diagnostic export: retain native SegaPCM evidence, omit it from MDX MML')
     diagnostic.add_argument('--dump-passes', action='store_true',
                             help='Keep source/state/Segment CSVs and target analysis passes')
     diagnostic.add_argument('--debug', action='store_true',
@@ -278,7 +280,16 @@ def main():
                                     else ', '.join(usage['used_chips'])))
             route = 'mgs-compatibility'
         report['chip_projection'] = route
+        if args.fm_only and (args.target != 'mdx' or route != 'opm-segapcm-source'
+                             or 'opm' not in usage['used_chips']):
+            raise ValueError('--fm-only requires an OPM + SegaPCM input and --target mdx')
+        if args.fm_only:
+            report['chip_projection'] = 'opm-segapcm-fm-only'
+            report['excluded_sources'] = [dict(chip='segapcm', reason='Explicit --fm-only diagnostic export')]
+        elif route == 'opm-segapcm-source':
+            report['chip_projection'] = 'opm-segapcm-pdx'
         pcm_applicable = (route == 'opna-fm-to-opm'
+                          or route == 'opm-segapcm-source' and not args.fm_only
                           or route == 'native-opm-pcm' and 'pcm' in usage['used_chips'])
         report['pcm_options'] = dict(applicable=pcm_applicable, policy=args.pcm_policy or 'strict',
                                     generator_configured=bool(args.pcm_generator))
@@ -286,7 +297,7 @@ def main():
             raise ValueError('--target opm-additive requires the additive PSG model')
         if route == 'psg-scc-to-opm' and (args.notation == 'legacy' or args.track_layout != 'channels'):
             raise ValueError('PSG/SCC OPM projection supports structured/registers notation and channel tracks')
-        if route in ('native-opm-pcm', 'opna-fm-to-opm') and any(v is not None for v in (args.psg_model, args.psg_gain, args.scc_gain)):
+        if route in ('native-opm-pcm', 'opna-fm-to-opm', 'opm-segapcm-source') and any(v is not None for v in (args.psg_model, args.psg_gain, args.scc_gain)):
             raise ValueError('PSG/SCC projection options do not apply to native MDX')
         report['status'] = 'resolved'
         record_report()
@@ -376,7 +387,9 @@ def main():
                                 gd3_language=args.gd3_language, normalize_lengths=args.normalize_lengths,
                                 pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'strict',
                                 pitch_policy=args.opm_pitch_policy or 'clamp',
-                                normalization_ms=args.normalization_ms)
+                                normalization_ms=args.normalization_ms,
+                                segapcm_source=route == 'opm-segapcm-source',
+                                segapcm_pcm=route == 'opm-segapcm-source' and not args.fm_only)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()
@@ -384,6 +397,8 @@ def main():
         report.update(status='generated', pcm_policy=args.pcm_policy or 'strict',
                       pitch_policy=args.opm_pitch_policy or 'clamp')
         record_report()
+        if args.fm_only:
+            print('SegaPCM omitted from target (--fm-only); native evidence retained. No PDX generated.')
         print(f'MDX MML: {mml}')
         pcm_report = os.path.join(song_dir, base_name + '.pcm.timing.json')
         if os.path.isfile(pcm_report):

@@ -24,6 +24,8 @@ def read_vgm_header(raw):
             return 0
         return int.from_bytes(raw[off:off + size], 'little')
     return dict(version=version, data_start=start,
+                segapcm_clock_raw=field(0x38, 4, 0x151),
+                segapcm_interface_raw=field(0x3c, 4, 0x151),
                 opna_clock_raw=field(0x48, 4, 0x151),
                 opna_ssg_flags=field(0x7b, 1, 0x151),
                 extra_header_offset=field(0xbc, 4, 0x170),

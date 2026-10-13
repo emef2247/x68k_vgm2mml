@@ -27,6 +27,13 @@ Raw Key-On/Off requests, operator edges and encoded MDX NOTE/hold counts are
 different measurements. Do not combine them into an unsupported fidelity
 percentage; explicitly label independent comparisons not yet performed.
 
+MDX target MML splits each long note/rest into durations of at most256 ticks.
+Notes tie across split boundaries to preserve one gate; rests preserve total
+elapsed time. Dotted notation does not bypass this limit (1. is288 ticks,
+1.. is336 on the192-tick whole-note grid). Duration compaction must not
+reintroduce an overlong remainder. This is target syntax, not normalization
+or modification of native Segment timing.
+
 ---
 
 # 1. Project Goal
@@ -57,6 +64,14 @@ source-selection request. Used unsupported chips, combinations and streams
 must be diagnosed rather than silently omitted. Existing inactive compatibility
 initialization handling must remain explicit in the source inventory.
 
+Mixed OPM/SegaPCM can stop at native write-observed State/control Segments.
+Configuration enable and programmed address are not emulated audible spans or
+runtime address. Sparse ordered ROM generations belong to source evidence.
+Explicit `--fm-only` may project the OPM portion for diagnostic MDX playback,
+retaining all native evidence and reporting SegaPCM exclusion. This does not
+establish SegaPCM-to-PDX support, and best-effort PCM policy must not silently
+enable such exclusion. SegaPCM controls do not constrain FM normalization.
+
 OPNA FM/SSG projection reserves OPM channels for the whole song, with FM
 priority over SSG. Any FM key activity retains its channel through release
 tails and output gating. SSG uses the existing PSG FM model in remaining
@@ -70,6 +85,11 @@ does not establish ownership of an adjacent MDX/PDX reference. Remove previous
 PCM binaries only when their generated assessment, saved path and SHA-256 match.
 Preserve other binaries, distinguish them from current artifacts, and require a
 separate output directory if typed PCM generation would overwrite them.
+
+Listening export can recover an unregistered staged source left by interruption
+only when its bytes match the current input, without overwriting that file.
+Modified registered staging and unowned differing files/publications remain
+protected; missing ownership records are not permission to delete outputs.
 
 Existing PSG/SCC/OPLL → MGSDRV MML functionality inherited from
 `msx_vgm2mml` is retained as a **proven compatibility path**. It should
@@ -1057,6 +1077,17 @@ fallback multiplier 65 at 8 ms scales with the configured threshold, capped
 at 255. It is an output policy, not a chip specification or a
 guarantee of minimum interrupt period. Unsupported PCM remains unsupported
 even when its playback is short. Native MMDSP behavior requires listening.
+
+### Derived PCM packaging and shared clock (2026-10-13)
+
+SegaPCM observed State/control Segments remain unchanged. Runtime address,
+natural-stop gates and mixed waveform are a separate explicitly assumed source
+interpretation. Stereo folding, resampling and ADPCM encoding are target stages,
+with source-linked mapping and losses. Packaging boundaries are not Key-On/Off
+gates; never prune a short packaging tail as a short source note. Encode each
+original audio interval against the final shared FM/PCM clock duration, retaining
+source bounds and target sample-count error. Replaying a recorded loop waveform
+freezes its phase; report that limit instead of claiming native loop equivalence.
 
 ### Native OPM clock correction at the target boundary (2026-10-11)
 
