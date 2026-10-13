@@ -293,7 +293,7 @@ MDX側の主なオプションは次のとおりです。
 
 ここでいう **有限反復** は、VGMヘッダーに記録された **曲ループ** とは別です。
 
-VGMヘッダーの曲ループについては、「VGMの曲全体ループ」で説明したとおり出力できます。
+VGMヘッダーの曲ループについては、「VGMの曲全体ループ」で説明したとおり出力できます。詳細は[docs/vgm_loop.md](docs/vgm_loop.md)を参照してください。
 
 有限反復は、構造化されたMML表記において同一パターンを圧縮するための機能です。
 
@@ -437,6 +437,7 @@ VGM
 - `py/` : 音源解析、中間表現、ターゲット生成
 - `scripts/` : 一括出力、診断、往復検証、fixture生成、比較用ツール
 - [docs/project_knowledge.md](docs/project_knowledge.md): 変換の原則と制約
+
 ## ライセンス
 
 Copyright (c) 2026 emef2247.
@@ -451,13 +452,13 @@ Licensed under the [MIT License](LICENSE).
 
 | プロジェクト | 本リポジトリでの用途 |
 |---|---|
-| [MUCOMVGM](https://github.com/wingghost/MUCOMVGM) | テスト用MUC→VGM生成、およびOPNA FM制御状態の往復検証 |
 | MXC | MML→MDXコンパイル |
 | [run68x](https://github.com/kg68k/run68x) | MXCなどHuman68kプログラムの実行 |
 | [mmlx](https://github.com/h1romas4/chipstream/tree/main/crates/mmlx) | 明示選択時のMML→MDXコンパイル、およびPCM経路のFM部分 |
 | [soundlog](https://github.com/h1romas4/chipstream/tree/main/crates/soundlog) | FMのMDX→VGM、PDX構築・PCM参照検査 |
 | [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv) | PSG→OPMの音色・音量対応、およびOPNA FM→OPMのレジスタ対応方式 |
 | [mdxtools](https://github.com/vampirefrog/mdxtools) | MDX／PDXの独立検査と逆コンパイル |
+| [MUCOMVGM](https://github.com/wingghost/MUCOMVGM) | テスト用MUC→VGM生成、およびOPNA FM制御状態の往復検証 |
 
 OPNA FM→OPMおよびPSG／SSG→OPMは、vgm-convの対応方式を参考にPython側へ実装しています。通常変換で外部のvgm-convコマンドやライブラリを必要とするわけではありません。
 

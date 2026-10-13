@@ -5,52 +5,6 @@ project. The project source is MIT-licensed; each third-party component keeps
 its own terms. Tool installation by `scripts/setup_tools.sh` is a local fetch
 and build, not a redistribution of tool executables in this repository.
 
-## MUCOMVGM 0.0.5
-
-Project: [wingghost/MUCOMVGM](https://github.com/wingghost/MUCOMVGM)
-
-Author: WING. Release: [Ver.0.0.5](https://github.com/wingghost/MUCOMVGM/releases/tag/Ver.0.0.5),
-revision `827a97c6c63e0df1ce74c8cee7dcc93cd6a00a22`.
-
-Use: separately executed `mucomvgm.exe` compiles MUCOM88-format MML to YM2608
-VGM for local test-fixture preparation, native OPNA reader/State/Segment
-validation and the diagnostic FM
-control-state roundtrip. This is not the X68000 converter's normal output.
-The Studio GUI is a separate wrapper and is not required by this project.
-This compiler is distinct from the official MUCOM88 Windows CLI.
-
-The local portable archive `mucomvgm.zip` has SHA256
-`6e5fc2e5fa845b77487f9755fe855bb7a3544df070fbd7518e988028dc312021`.
-The release's `LICENSE.txt` and the pinned source
-[LICENSE.txt](https://github.com/wingghost/MUCOMVGM/blob/827a97c6c63e0df1ce74c8cee7dcc93cd6a00a22/LICENSE.txt)
-were checked. License: MIT. No compiler executable or upstream implementation
-is bundled in this repository. Retain its copyright and permission notice when
-redistributing the software or substantial portions of it.
-
-```text
-MIT License
-
-Copyright (c) 2026 WING
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-```
-
 ## vgm-conv
 
 Project: [digital-sound-antiques/vgm-conv](https://github.com/digital-sound-antiques/vgm-conv)
@@ -241,3 +195,49 @@ an exhaustive binary-distribution license bundle. The inspected lockfile
 contains permissive MIT/Apache-2.0 alternatives and, for `unicode-ident`, an
 additional Unicode-3.0 requirement. Preserve applicable upstream license and
 copyright texts before distributing such a binary.
+
+## MUCOMVGM 0.0.5
+
+Project: [wingghost/MUCOMVGM](https://github.com/wingghost/MUCOMVGM)
+
+Author: WING. Release: [Ver.0.0.5](https://github.com/wingghost/MUCOMVGM/releases/tag/Ver.0.0.5),
+revision `827a97c6c63e0df1ce74c8cee7dcc93cd6a00a22`.
+
+Use: separately executed `mucomvgm.exe` compiles MUCOM88-format MML to YM2608
+VGM for local test-fixture preparation, native OPNA reader/State/Segment
+validation and the diagnostic FM
+control-state roundtrip. This is not the X68000 converter's normal output.
+The Studio GUI is a separate wrapper and is not required by this project.
+This compiler is distinct from the official MUCOM88 Windows CLI.
+
+The local portable archive `mucomvgm.zip` has SHA256
+`6e5fc2e5fa845b77487f9755fe855bb7a3544df070fbd7518e988028dc312021`.
+The release's `LICENSE.txt` and the pinned source
+[LICENSE.txt](https://github.com/wingghost/MUCOMVGM/blob/827a97c6c63e0df1ce74c8cee7dcc93cd6a00a22/LICENSE.txt)
+were checked. License: MIT. No compiler executable or upstream implementation
+is bundled in this repository. Retain its copyright and permission notice when
+redistributing the software or substantial portions of it.
+
+```text
+MIT License
+
+Copyright (c) 2026 WING
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
