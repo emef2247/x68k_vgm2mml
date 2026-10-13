@@ -115,7 +115,7 @@ class SegaPcmSourceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 inspect_source(source)
 
-    def test_cli_fm_equivalence_and_source_only(self):
+    def test_cli_fm_equivalence_and_failed_target_retains_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             plain, mixed = root / 'plain.vgm', root / 'mixed.vgm'
@@ -126,10 +126,13 @@ class SegaPcmSourceTests(unittest.TestCase):
                                          '--outdir', str(out), '--title', 'authored', *options],
                                         capture_output=True, text=True)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            run(mixed, root / 'source')
+            result = subprocess.run([sys.executable, str(ROOT / 'vgm2mml.py'), str(mixed),
+                                     '--outdir', str(root / 'source')], capture_output=True, text=True)
+            self.assertNotEqual(result.returncode, 0)
             report = json.loads((root / 'source/mixed.conversion.json').read_text())
-            self.assertEqual(report['status'], 'source_analyzed')
+            self.assertEqual(report['status'], 'blocked')
             self.assertFalse(list((root / 'source').glob('*.mml')))
+            self.assertTrue((root / 'source/mixed.segapcm.segments.csv').is_file())
             run(plain, root / 'plain')
             run(mixed, root / 'mixed', '--fm-only')
             a = (root / 'plain/plain.mdx.mml').read_text()

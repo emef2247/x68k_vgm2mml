@@ -1078,6 +1078,17 @@ at 255. It is an output policy, not a chip specification or a
 guarantee of minimum interrupt period. Unsupported PCM remains unsupported
 even when its playback is short. Native MMDSP behavior requires listening.
 
+### Derived PCM packaging and shared clock (2026-10-13)
+
+SegaPCM observed State/control Segments remain unchanged. Runtime address,
+natural-stop gates and mixed waveform are a separate explicitly assumed source
+interpretation. Stereo folding, resampling and ADPCM encoding are target stages,
+with source-linked mapping and losses. Packaging boundaries are not Key-On/Off
+gates; never prune a short packaging tail as a short source note. Encode each
+original audio interval against the final shared FM/PCM clock duration, retaining
+source bounds and target sample-count error. Replaying a recorded loop waveform
+freezes its phase; report that limit instead of claiming native loop equivalence.
+
 ### Native OPM clock correction at the target boundary (2026-10-11)
 
 One positive-clock YM2151 instance may target 4MHz MDX. Preserve native

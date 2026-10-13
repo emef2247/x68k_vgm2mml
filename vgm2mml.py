@@ -285,8 +285,11 @@ def main():
             raise ValueError('--fm-only requires an OPM + SegaPCM input and --target mdx')
         if args.fm_only:
             report['chip_projection'] = 'opm-segapcm-fm-only'
-            report['excluded_sources'] = [dict(chip='segapcm', reason='Explicit --fm-only diagnostic export; SegaPCM to PDX is not implemented')]
+            report['excluded_sources'] = [dict(chip='segapcm', reason='Explicit --fm-only diagnostic export')]
+        elif route == 'opm-segapcm-source':
+            report['chip_projection'] = 'opm-segapcm-pdx'
         pcm_applicable = (route == 'opna-fm-to-opm'
+                          or route == 'opm-segapcm-source' and not args.fm_only
                           or route == 'native-opm-pcm' and 'pcm' in usage['used_chips'])
         report['pcm_options'] = dict(applicable=pcm_applicable, policy=args.pcm_policy or 'strict',
                                     generator_configured=bool(args.pcm_generator))
@@ -306,23 +309,6 @@ def main():
         report.update(status='blocked', reason=str(error))
         record_report()
         parser.error(str(error))
-
-    if route == 'opm-segapcm-source' and not args.fm_only:
-        opm_metadata, segapcm_metadata = {}, {}
-        try:
-            parse_vgm(vgm_path, song_dir, include_vgmticks=True, dump_loop=True,
-                      opm_metadata=opm_metadata, dump_opm_segments=True,
-                      segapcm_metadata=segapcm_metadata)
-        except (OSError, ValueError) as error:
-            report.update(status='blocked', reason=str(error))
-            record_report()
-            parser.error(str(error))
-        report.update(status='source_analyzed', opm=opm_metadata,
-                      segapcm=segapcm_metadata, target_projection_implemented=False)
-        record_report()
-        print('Native OPM/SegaPCM State and Segments generated; no target MML/MDX/PDX.')
-        print('To test OPM-only MDX playback, use --fm-only; SegaPCM will be explicitly omitted.')
-        return
 
     if route == 'opna-fm-to-opm':
         from opna_opm import convert
@@ -402,7 +388,8 @@ def main():
                                 pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'strict',
                                 pitch_policy=args.opm_pitch_policy or 'clamp',
                                 normalization_ms=args.normalization_ms,
-                                segapcm_source=route == 'opm-segapcm-source')
+                                segapcm_source=route == 'opm-segapcm-source',
+                                segapcm_pcm=route == 'opm-segapcm-source' and not args.fm_only)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()

@@ -909,6 +909,7 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
               opna_metadata: dict | None = None,
               opna_pcm_metadata: dict | None = None,
               segapcm_metadata: dict | None = None,
+              segapcm_trace_out: list | None = None,
               dump_segapcm_segments: bool = False,
               dump_opna_segments: bool = False,
               dump_opm_segments: bool = False, loop_count: int = 1) -> tuple[str, str, str, str, str, str, str, str]:
@@ -1090,6 +1091,8 @@ def parse_vgm(vgm_path: str, output_dir: str | None = None, *,
                             key_counts=opm_counts)
 
     opna.output(output_dir, base_name, event.vgmticks, opna_metadata, dump_opna_segments)
+    if segapcm_trace_out is not None:
+        segapcm_trace_out.append(segapcm)
     if segapcm_metadata is not None or dump_segapcm_segments:
         segapcm_summary = segapcm.dump(output_dir, base_name, event.vgmticks)
         if segapcm_metadata is not None:

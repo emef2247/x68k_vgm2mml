@@ -174,7 +174,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
                 conversion = json.loads(conversion_path.read_text(encoding='utf-8'))
                 if conversion.get('status') == 'source_analyzed':
                     stage = 'target_projection'
-                    raise RuntimeError('SegaPCM to PDX is not implemented; native source analysis retained. '
+                    raise RuntimeError('Native source analysis retained without target output. '
                                        'Use --fm-only to compile the OPM portion for diagnostic playback.')
             if not artifacts[0].is_file() or not artifacts[0].stat().st_size:
                 raise RuntimeError('Converter produced no nonempty MML')

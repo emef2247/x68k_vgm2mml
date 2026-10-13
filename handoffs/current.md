@@ -1,4 +1,56 @@
-# Current checkpoint: SegaPCM source and OPM-only MDX (2026-10-13)
+# Current checkpoint: SegaPCM to PDX (2026-10-13)
+
+User finite-output retry resolves two preceding song-loop validation failures,
+but reports PCM inaudible in one generated song while FM plays. Read-only
+inspection finds nonzero native/decoded PCM, complete PDX samples,16-track/E8
+MDX with active P notes and matching PDX name. Copied MDX/PDX hashes also equal
+the generated pair. Runtime PCM output versus relative loudness remains
+unresolved; do not attribute it to missing extension or declare playback fixed.
+Asked user to test the existing authored SEGAONE pair; await that result.
+No private reconversion/recompile or changes to currently running exports.
+Details: field_notes/2026-10-13_segapcm_pcm_inaudible_triage.md.
+
+Latest user full-PCM regression: four failures reach typed FM/PCM song-loop
+validation (outer command-boundary resolution or shared loop start/end mismatch),
+despite L being emitted on every FM track. Nine others hit the180-second outer
+conversion budget. Saved artifacts distinguish unfinished source runtime,
+initial PCM bridge and final shared-clock re-encoding. Python per-frame mixing
+and16-candidate per-sample ADPCM encoding are likely costs; no runtime profile
+or private rerun was taken. This is diagnosis only; exact loop discrepancy and
+performance fixes remain pending. Default timeout unchanged. Details external:
+field_notes/2026-10-13_segapcm_pdx_regression_triage.md.
+
+The user authorized SegaPCM PDX implementation after the FM-only regression.
+Default mixed OPM/SegaPCM now reconstructs native playback, then projects mono
+F4/15625Hz MSM6258 chunks to the existing single-P/16-track MDX/PDX path.
+Use --pcm-policy best-effort; strict blocks the explicit transcoding losses.
+--fm-only retains the preceding comparison route without rendering SegaPCM.
+
+New modules: py/segapcm_playback.py and py/segapcm_pcm.py. Original observed
+State/control Segments remain intact. Native stereo waveform, inferred runtime
+gates/events and target mapping CSV/JSON are emitted separately. Active voices
+are mixed, chunks split at8seconds/L/EOF, short packaging tails are protected
+from whole-note omission, and final sample counts follow the shared MDX clock.
+ROM coverage, stereo folding, clipping, resampling, independent decoder resets,
+requantization and fixed recorded-loop phase are explicit diagnostics.
+
+Working-tree changes only; no stage/commit/push/branch switch. User owns private
+regression and listening. No private inputs were converted or compiled.
+14 focused authored SegaPCM checks passed. Three tiny authored public fixtures
+generated MDX/PDX/MML/TXT successfully under outputs/segapcm_pdx_check. Inspected
+native gate CSVs, target sample mappings, loop L and exact PDX payload equality.
+One-shot source stop is1.048576seconds; all three selected16.64ms/tick and
+aligned target duration errors were0F4 samples. Native playback remains untested.
+Focused review found a stale fractional address after natural stop; it now
+clears before restart, matching the referenced playback model. Added and passed
+an authored natural-stop/restart check. No further review blockers identified.
+
+Next allowed action: user regression/listening with full PCM output; address
+reported defects. Do not optimize compiler capacity, modify default timeout180,
+or run private regression without a new request. Existing FM target offset
+limits remain unchanged. Field notes remain external and may name local_only.
+
+# Previous checkpoint: SegaPCM source and OPM-only MDX (2026-10-13)
 
 User requests native OPM+SegaPCM source support, then an explicit FM-only MDX
 checkpoint before starting SegaPCM->PDX. Source collector reads C0/type80 in
@@ -47,6 +99,11 @@ now completes conversion within the existing budget but exceeds a track-start
 offset limit; extending timeout cannot fix that diagnostic. README TROUBLE
 SHOOTING includes --no-song-loop and its finite-output semantics. Default
 timeout remains180 pending the user's follow-up decision. No private reruns.
+User now explicitly retains default timeout180. Read-only investigation of the
+remaining finite-output failure confirms cumulative encoded register data before
+the failing track already exceeds its16-bit start-offset range. This is target
+capacity, not timeout/PCM projection or a malformed loop. Details are external;
+optimizing-compiler integration remains deferred. Stop for user next action.
 
 User command:
 python scripts/export_mdx.py <input-directory> --outdir outputs/listen/segapcm_fm --fm-only --no-vgm

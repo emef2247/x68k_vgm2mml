@@ -25,7 +25,7 @@ def _record_pcm_assessment(assessment, outdir, stem, *, requires_pdx, retained=(
     assessment.dump(outdir, stem)
 
 
-def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None, normalization_source_times=None, normalization_ms=8, pitch_policy='clamp', song_loop=True, replayed_song_loop=False, pcm_analysis_override=None, source_passes_outdir=None, segapcm_source=False):
+def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None, normalization_source_times=None, normalization_ms=8, pitch_policy='clamp', song_loop=True, replayed_song_loop=False, pcm_analysis_override=None, source_passes_outdir=None, segapcm_source=False, segapcm_pcm=False):
     source, outdir = Path(source), Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     requested_normalization = normalize_lengths
@@ -58,15 +58,32 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
     metadata = {}
     pcm_metadata = {}
     source_loop = {}
+    sega_traces = []
     with TemporaryDirectory(prefix='opm-mdx-') as temporary:
         analysis_dir = Path(source_passes_outdir or outdir) if dump_passes or segapcm_source else Path(temporary)
         parse_vgm(str(source), str(analysis_dir), opm_metadata=metadata,
                   pcm_metadata=pcm_metadata,
                   segapcm_metadata={} if segapcm_source else None,
+                  segapcm_trace_out=sega_traces if segapcm_pcm else None,
                   include_vgmticks=segapcm_source,
                   loop_metadata=source_loop, dump_loop=dump_passes or segapcm_source,
                   loop_count=2 if song_loop and not replayed_song_loop else 1)
         pcm_analysis = pcm_analysis_override if pcm_analysis_override is not None else pcm_metadata['analysis']
+        if segapcm_pcm:
+            if pcm_analysis_override is not None:
+                raise ValueError('SegaPCM projection cannot replace another PCM override')
+            from segapcm_playback import render as render_segapcm
+            from segapcm_pcm import project as project_segapcm
+            from vgm_io import read_vgm_bytes
+            sega_loop = (source_loop['replay_start_samples']
+                         if song_loop and source_loop.get('status') == 'valid' else None)
+            native_pcm = render_segapcm(sega_traces[0], metadata['source_end_vgmticks'],
+                                       loop_start=sega_loop)
+            native_pcm.dump(outdir, source.stem)
+            pcm_analysis = project_segapcm(native_pcm, source_raw=read_vgm_bytes(source),
+                                          loop_start=sega_loop,
+                                          loop_count=source_loop.get('loop_count', 1))
+            pcm_analysis.dump(outdir, source.stem)
         has_pcm = bool(pcm_analysis.playbacks or pcm_analysis.samples or pcm_analysis.transfers
                        or pcm_analysis.raw_commands or pcm_analysis.blocks)
         if pcm_analysis.source_end_vgmticks != metadata['source_end_vgmticks']:
@@ -100,7 +117,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         if notation == 'legacy':
             raise ValueError('Declared song loops require structured or registers notation; use --no-song-loop for legacy')
     song_options = dict(song_loop_start=loop_start, song_loop_event_id=loop_event_id)
-    if pcm_analysis_override is not None and pcm_analysis.source_loop_vgmticks != loop_start:
+    if (pcm_analysis_override is not None or segapcm_pcm) and pcm_analysis.source_loop_vgmticks != loop_start:
         raise ValueError('Projected FM and PCM must share the same replayed song-loop boundary')
     normalization_loop = dict(source_loop)
     if loop_start is not None:
@@ -202,6 +219,9 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
     pcm_plan = None
     pcm_assessment = None
     if has_pcm:
+        if hasattr(pcm_analysis, 'align_to_clock'):
+            pcm_analysis = pcm_analysis.align_to_clock(projection.mdx_tick, multiplier)
+            pcm_analysis.dump(outdir, source.stem)
         from pcm_mdx import project, write_pdx
         from pcm_assessment import ProjectionError
         try:
