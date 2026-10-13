@@ -6,6 +6,8 @@ VGMを検査可能な中間表現へ変換し、その中間表現を経由し�
 
 出力の時間精度は `--normalization-ms`（既定8ms）で調整できます。値を小さくすると細かな発音イベントを保持し、大きくすると短い発音の省略と時刻の近似を広く許容します。元のSegment・PCM IRは保持します。
 
+生成するMDX用MMLは、1命令の音価が256クロックを超えないよう分割します。長い音符はタイでつないで再発音を避け、休符は総クロック数を保って分割します。これはMXCの音長上限への対応であり、時間正規化や音程の変更ではありません。
+
 Python 3.10以降を使用します。
 
 ## 通常変換
@@ -23,6 +25,7 @@ VGMの実際のコマンドから使用音源を判定し、OPM／PCM、OPNA FM�
 | 入力 | 主な出力・変換経路 |
 |------|------|
 | OPM（YM2151） | OPMの状態・SegmentからMDX用MMLを生成 |
+| OPM + SegaPCM | Native State／制御Segmentを保存。`--fm-only` でOPM部だけをMDX用MML／MDXへ出力（SegaPCM音声は省略、PDX未対応） |
 | OPNA（YM2608）のFM | Native SegmentからOPM（4MHz）へ投影し、既存OPM経路でMDX用MMLを生成 |
 | OPNAのSSGトーン | 既存PSGのFM方式でOPMへ投影。曲全体でFMを優先し、残りのOPMチャンネルへ割り当て |
 | OPNAのADPCM-B（Delta-T） | 元のIRを保持し、MSM6258へ再圧縮して既存Pトラック／PDX経路へ接続（`best-effort`） |
@@ -30,6 +33,30 @@ VGMの実際のコマンドから使用音源を判定し、OPM／PCM、OPNA FM�
 | 対応するMSM6258 PCM（OPM併用を含む） | PCM IRとMDX用MMLを生成し、外部helperでMDX／PDXを生成 |
 
 OPMのみのMML生成にRustコンパイラは不要です。PCMを含む通常変換では外部helperのビルドが必要です。
+
+### SegaPCM入り入力のFM部を先に確認する
+
+SegaPCMはVGMのメモリ書き込み（C0）とROMブロック（80）を読み込み、16チャンネルのNative State／制御Segmentを保存します。これらは書き込みから分かる設定区間です。内部で進む再生アドレス、自然終了、実際に音が鳴る区間のエミュレーションはまだ含みません。SegaPCMからPDXへの変換は次の対応です。
+
+通常の変換コマンドでは解析結果のみを出力します。MDX側のFM再生を先に検証する場合は、PCMを除外することを明示する `--fm-only` を指定します。
+
+```bash
+# Native OPM／SegaPCMの解析のみ
+python vgm2mml.py input.vgm --outdir outputs/segapcm_source
+
+# FM部のMML生成（ループ・音程補正・時間正規化は既存OPM処理）
+python vgm2mml.py input.vgm --outdir outputs/segapcm_fm --fm-only --dump-passes
+
+# 試聴用MML／MDX／TXT生成。PDXは生成しない
+python scripts/export_mdx.py INPUT_DIRECTORY \
+  --outdir outputs/listen/segapcm_fm --fm-only --no-vgm
+```
+
+`--fm-only` はOPMとSegaPCMを併用する入力専用です。TXTとconversion JSONにSegaPCMの除外を明記します。`--pcm-policy best-effort` はこの除外の代わりにはなりません。未対応の別音源・ストリームや壊れたコマンドは引き続きエラーにします。
+
+この経路のNative CSV／ROM payload／解析JSONは `--dump-passes` がなくても保存します。exportスクリプトでは `_diagnostics` 以下に残し、試聴用の `tracks` へMML・MDX・TXTを配置します。保存したROM payloadは生成物であり、Gitへ追加しないでください。
+
+詳細は[docs/segapcm_segments.md](docs/segapcm_segments.md)を参照してください。FM部だけならPDXを必要としませんが、MDX生成成功と実機の再生・表示確認は別です。
 
 OPNA FM→OPMには [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv) のOPN→OPM方式を採用しています。音色・operator・キー・左右出力を対応付け、元の11bit FNUM/BLOCKから既存のKC/KF処理で4MHz向けの音程を生成します。外部の[vgm-conv](https://github.com/digital-sound-antiques/vgm-conv)コマンド実行は不要です。参照実装のISC表示は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md#vgm-conv) に保持しています。
 
@@ -146,6 +173,20 @@ python vgm2mml.py --help
 ```
 
 
+## TROUBLE SHOOTING
+
+`scripts/export_mdx.py` の実行結果が `compilation_failed` になる場合、既定のMXCから `--compiler mmlx` に切り替えると改善することがあります。
+
+```bash
+python scripts/export_mdx.py INPUT_DIRECTORY \
+  --outdir outputs/listen/mmlx \
+  --no-vgm --compiler mmlx
+```
+
+入力に必要なオプション（`--fm-only` や `--pcm-policy best-effort` など）は、元のコマンドと同じ指定を残してください。
+
+エラーの詳細は出力先の `results.csv` と各曲のTXTレポートで確認できます。MDX形式のトラックオフセット・ループ位置の制限や、プレイヤーのトラックバッファ不足は、コンパイラを変更しても残る場合があります。
+
 ## 構成
 
 - `vgm2mml.py` : 通常変換の入口
@@ -169,13 +210,13 @@ Licensed under the [MIT License](LICENSE).
 
 | プロジェクト | 本リポジトリでの用途 |
 |---|---|
-| [MUCOMVGM](https://github.com/wingghost/MUCOMVGM) | テスト用MUC→VGM生成、およびOPNA FM制御状態の往復検証 |
 | MXC | MML→MDXコンパイル |
 | [run68x](https://github.com/kg68k/run68x) | MXCなどHuman68kプログラムの実行 |
 | [mmlx](https://github.com/h1romas4/chipstream/tree/main/crates/mmlx) | 明示選択時のMML→MDXコンパイル、およびPCM経路のFM部分 |
 | [soundlog](https://github.com/h1romas4/chipstream/tree/main/crates/soundlog) | FMのMDX→VGM、PDX構築・PCM参照検査 |
 | [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv) | PSG→OPMの音色・音量対応、およびOPNA FM→OPMのレジスタ対応方式 |
 | [mdxtools](https://github.com/vampirefrog/mdxtools) | MDX／PDXの独立検査と逆コンパイル |
+| [MUCOMVGM](https://github.com/wingghost/MUCOMVGM) | テスト用MUC→VGM生成、およびOPNA FM制御状態の往復検証 |
 
 OPNA FM→OPMおよびPSG／SSG→OPMは、[vgm-conv](https://github.com/digital-sound-antiques/vgm-conv) の対応方式を参考にPython側へ実装しています。通常変換で外部のvgm-convコマンドやライブラリを必要とするわけではありません。
 
