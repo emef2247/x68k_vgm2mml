@@ -437,72 +437,37 @@ VGM
 - `py/` : 音源解析、中間表現、ターゲット生成
 - `scripts/` : 一括出力、診断、往復検証、fixture生成、比較用ツール
 - [docs/project_knowledge.md](docs/project_knowledge.md): 変換の原則と制約
-
 ## ライセンス
 
 Copyright (c) 2026 emef2247.
 
-Licensed under the MIT License.
+Licensed under the [MIT License](LICENSE).
 
-テスト用VGM生成・外部検証に使用するMUCOMVGMもMIT Licenseで、著作権表示は以下です。
-
-```text
-Copyright (c) 2026 WING
-```
-
-使用版のライセンス全文と確認元は
-
-`THIRD_PARTY_NOTICES.md#mucomvgm-005`
-
-に保持しています。
-
-MUCOMVGM本体はリポジトリへ同梱せず、再配布する場合は同ライセンスの著作権表示および許諾文を含めてください。
+本プロジェクトで参照・利用する第三者コンポーネントのライセンスおよび著作権表示については、[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)を参照してください。
 
 ## 謝辞
 
-本プロジェクトのMDX／VGM出力および往復検証では、以下のツールを利用しています。
+本プロジェクトの変換・検証・比較では、以下のツールやプロジェクトを参考または利用しています。開発者・メンテナー・貢献者の皆様に感謝します。
 
-開発者・メンテナー・貢献者の皆様に感謝します。
+| プロジェクト | 本リポジトリでの用途 |
+|---|---|
+| [MUCOMVGM](https://github.com/wingghost/MUCOMVGM) | テスト用MUC→VGM生成、およびOPNA FM制御状態の往復検証 |
+| MXC | MML→MDXコンパイル |
+| [run68x](https://github.com/kg68k/run68x) | MXCなどHuman68kプログラムの実行 |
+| [mmlx](https://github.com/h1romas4/chipstream/tree/main/crates/mmlx) | 明示選択時のMML→MDXコンパイル、およびPCM経路のFM部分 |
+| [soundlog](https://github.com/h1romas4/chipstream/tree/main/crates/soundlog) | FMのMDX→VGM、PDX構築・PCM参照検査 |
+| [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv) | PSG→OPMの音色・音量対応、およびOPNA FM→OPMのレジスタ対応方式 |
+| [mdxtools](https://github.com/vampirefrog/mdxtools) | MDX／PDXの独立検査と逆コンパイル |
 
-| プロジェクト | 本リポジトリでの用途 | 確認した利用条件 |
-|------|------|------|
-| MUCOMVGM v0.0.5（WING） | テスト用MUC→VGM生成、およびOPNA FM制御状態の往復検証 | MIT |
-| MXC v1.01（MFS soft, milk） | MML→MDXコンパイル | フリーウェア・配布自由 |
-| run68x | MXCなどHuman68kプログラムの実行 | GPL v2以降 |
-| mmlx 0.2.0 | 明示選択時のMML→MDXコンパイル、およびPCM経路のFM部分 | MIT |
-| soundlog 0.15.0 | FMのMDX→VGM、PDX構築・PCM参照検査 | MIT |
-| vgm-conv | PSG→OPMの音色・音量対応、およびOPNA FM→OPMのレジスタ対応方式 | ISC |
-| mdxtools（任意導入） | MDX／PDXの独立検査と逆コンパイル | GPL v3 |
+OPNA FM→OPMおよびPSG／SSG→OPMは、vgm-convの対応方式を参考にPython側へ実装しています。通常変換で外部のvgm-convコマンドやライブラリを必要とするわけではありません。
 
-OPNA FM→OPMおよび PSG／SSG→OPM は、vgm-convの対応方式を参照してPython側に実装しています。
+使用した第三者コンポーネントのバージョン、参照元、著作権表示、ライセンス条件、および再配布時の注意事項は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) に記録しています。
 
-通常変換時に外部のvgm-convコマンドを実行するわけではなく、そのライブラリも不要です。
+セットアップで取得するMXC・run68x・mdxtoolsはローカルの外部ツールであり、リポジトリや試聴用出力には同梱しません。これらを別途再配布する場合は、それぞれのライセンス条件に従ってください。
 
-参照した対応方式のISC著作権表示・許諾文は `THIRD_PARTY_NOTICES.md` に保持しています。
+Rust helperのバイナリを配布する場合は、直接利用する依存ライブラリに加えて、その推移的依存関係のライセンス表示についても確認してください。
 
-各ツールの使用版・確認元・著作権表示・配布時の扱いは `THIRD_PARTY_NOTICES.md` に記録しています。
-
-vgm-convのISC全文、およびMUCOMVGM／mmlx／soundlogのMIT全文も保持しています。
-
-本プロジェクトのMITライセンス表記とあわせて、これらの表示も配布物へ含めてください。
-
-セットアップで取得する
-
-- MXC
-- run68x
-- mdxtools
-
-はローカルの外部ツールであり、リポジトリや試聴用出力へは同梱しません。
-
-これらを別途再配布する場合は、それぞれのライセンス条件に従ってください。
-
-Rust helperのバイナリを配布する場合は、直接利用している mmlx／soundlog に加え、推移的依存ライブラリのライセンス表示も必要です。
-
-外部コンパイラや再生ツールは用途に応じて別途用意してください。
-
-本プロジェクトが主に行うのはMMLの生成です。
-
-ただし、生成したMMLの確からしさを検証するため、MML以降のコンパイラや再生ツールを利用するスクリプトを同梱しています。
+外部コンパイラや再生ツールは、用途に応じて別途用意してください。基本的に本プロジェクトが行うのはMMLの生成です。検証や比較のために、MML以降のコンパイルや再生を行う補助スクリプトを同梱しています。
 
 
 
