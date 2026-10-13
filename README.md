@@ -187,6 +187,16 @@ python scripts/export_mdx.py INPUT_DIRECTORY \
 
 エラーの詳細は出力先の `results.csv` と各曲のTXTレポートで確認できます。MDX形式のトラックオフセット・ループ位置の制限や、プレイヤーのトラックバッファ不足は、コンパイラを変更しても残る場合があります。
 
+`loop start value ... cannot be represented in MDX` などの曲ループ位置のエラーには、`--no-song-loop` を追加して有限1周の出力を試してください。ループ展開を省くことでデータ量が減るため、トラックオフセットの上限超過も解消する場合があります。
+
+```bash
+python scripts/export_mdx.py INPUT_DIRECTORY \
+  --outdir outputs/listen/finite \
+  --no-vgm --compiler mmlx --no-song-loop
+```
+
+この指定では曲全体の無限ループが無効になります。MML内の有限反復 `[ ... ]n` による圧縮は維持します。有限1周でもMDXのサイズ制限を超える場合は、エラーが残ります。
+
 ## 構成
 
 - `vgm2mml.py` : 通常変換の入口

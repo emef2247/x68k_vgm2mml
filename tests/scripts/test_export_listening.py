@@ -39,6 +39,45 @@ def core(source, out, **kwargs):
 
 
 class ExportListeningTests(unittest.TestCase):
+    def test_identical_unregistered_staging_is_adopted_without_overwrite(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            original = root / 'a.vgm'
+            raw = fixture(original)
+            out = root / 'out'
+            staged = out / '_source_inputs/a.vgm'
+            staged.parent.mkdir(parents=True)
+            staged.write_bytes(raw)
+            from shutil import copyfile
+            def checked_copy(source, target):
+                self.assertNotEqual(Path(target), staged)
+                return copyfile(source, target)
+            with patch('export_listening.shutil.copyfile', side_effect=checked_copy):
+                result = run_listening_batch(original, out, core=core, options={})[0]
+            self.assertEqual(result['status'], 'success')
+            self.assertEqual(staged.read_bytes(), raw)
+            entry = json.loads((out / 'listening_manifest.json').read_text())['entries']['a.vgm']
+            self.assertEqual(entry['staged_sha256'], entry['source_sha256'])
+
+    def test_different_unregistered_and_modified_registered_staging_stay_protected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            original = root / 'a.vgm'
+            raw = fixture(original)
+            out = root / 'out'
+            staged = out / '_source_inputs/a.vgm'
+            staged.parent.mkdir(parents=True)
+            staged.write_bytes(b'user content')
+            with self.assertRaisesRegex(ValueError, 'unowned or modified staged source'):
+                run_listening_batch(original, out, core=core, options={})
+            self.assertEqual(staged.read_bytes(), b'user content')
+            staged.write_bytes(raw)
+            run_listening_batch(original, out, core=core, options={})
+            staged.write_bytes(raw + b'changed')
+            original.write_bytes(staged.read_bytes())
+            with self.assertRaisesRegex(ValueError, 'unowned or modified staged source'):
+                run_listening_batch(original, out, core=core, options={})
+
     def test_existing_portable_stems_are_preserved_and_reserved_names_are_hashed(self):
         for name in ('BOSCON06', 'CLOCK', 'GRA1_01', 'lower'):
             self.assertEqual(safe_stem(name + '.vgm'), name)

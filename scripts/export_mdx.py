@@ -71,14 +71,14 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
               max_ticks=None, psg_model=None, psg_gain=None, scc_gain=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mxc', mxc=None, run68=None,
               normalize_lengths=None, normalization_ms=8, no_vgm=False, song_loop=True, listening_layout=False, _title=None,
-              _report_source=None, _display_name=None):
+              _report_source=None, _display_name=None, fm_only=False):
     if listening_layout:
         from export_listening import run_listening_batch
         return run_listening_batch(source, output, core=run_batch, options=dict(
             target=target, generator=generator, timeout=timeout, max_ticks=max_ticks,
             psg_model=psg_model, psg_gain=psg_gain, scc_gain=scc_gain,
             opm_pitch_policy=opm_pitch_policy, pcm_policy=pcm_policy, compiler=compiler,
-            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, no_vgm=no_vgm, song_loop=song_loop))
+            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, no_vgm=no_vgm, song_loop=song_loop, fm_only=fm_only))
     source, output = Path(source).resolve(), Path(output).resolve()
     from conversion_config import normalization_samples
     normalization_samples(normalization_ms)
@@ -114,6 +114,8 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
     if not generator.is_file():
         raise ValueError('Build scripts/mdx_fixture_generator or specify --generator')
     options = []
+    if fm_only:
+        options.append('--fm-only')
     options.extend(['--normalization-ms', str(normalization_ms)])
     if normalize_lengths is not None:
         options.append('--normalize-lengths' if normalize_lengths else '--no-normalize-lengths')
@@ -167,6 +169,13 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
                                  encoding='utf-8', errors='replace', timeout=timeout)
             if run.returncode:
                 raise RuntimeError(run.stdout + run.stderr or f'Converter exited with {run.returncode}')
+            conversion_path = folder / (path.stem + '.conversion.json')
+            if conversion_path.is_file():
+                conversion = json.loads(conversion_path.read_text(encoding='utf-8'))
+                if conversion.get('status') == 'source_analyzed':
+                    stage = 'target_projection'
+                    raise RuntimeError('SegaPCM to PDX is not implemented; native source analysis retained. '
+                                       'Use --fm-only to compile the OPM portion for diagnostic playback.')
             if not artifacts[0].is_file() or not artifacts[0].stat().st_size:
                 raise RuntimeError('Converter produced no nonempty MML')
             stage = 'generation'
@@ -296,6 +305,8 @@ def main():
     parser.add_argument('--no-song-loop', action='store_true', help='Export one finite source pass, without the declared VGM song loop')
     parser.add_argument('--no-vgm', action='store_true',
                         help='Export MML, MDX and optional PDX without replay VGM generation')
+    parser.add_argument('--fm-only', action='store_true',
+                        help='Diagnostic OPM + SegaPCM export: explicitly omit SegaPCM from MDX; retain source evidence')
     parser.add_argument('--psg-model', choices=('fm', 'additive'))
     parser.add_argument('--psg-gain', type=float)
     parser.add_argument('--scc-gain', type=float)
@@ -310,7 +321,7 @@ def main():
                          psg_gain=args.psg_gain, scc_gain=args.scc_gain,
                           opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy,
                           normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, no_vgm=args.no_vgm,
-                          listening_layout=True, song_loop=not args.no_song_loop)
+                          listening_layout=True, song_loop=not args.no_song_loop, fm_only=args.fm_only)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     success = sum(row['status'] == 'success' for row in rows)

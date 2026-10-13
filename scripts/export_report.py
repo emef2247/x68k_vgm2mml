@@ -305,6 +305,8 @@ def write_export_report(source, folder, stem, row):
             lines.append(f'Blocked: +{len(reasons) - 3} other reasons; see assessment JSON')
     else:
         lines.append('PCM assessment: not available / no PCM projection')
+    for exclusion in conversion.get('excluded_sources', []):
+        lines.append(f'Target omission: {exclusion["chip"]}; {exclusion["reason"]}')
     if row.get('detail') or unavailable:
         lines.extend(['', 'Diagnostics', ''])
     if row.get('detail'):

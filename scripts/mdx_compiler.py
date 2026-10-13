@@ -97,7 +97,16 @@ def _parts(text, in_comment):
 def prepare_mxc(text):
     """Render lossless syntax adaptations for the verified MXC v1.01 limits."""
     def rest(match):
-        ticks = int(match.group(1))
+        number, dots = int(match.group(2)), len(match.group(3))
+        if match.group(1) == '%':
+            numerator, denominator = number, 1
+        else:
+            numerator, denominator = 192, number
+        numerator *= (1 << (dots + 1)) - 1
+        denominator *= 1 << dots
+        if denominator == 0 or numerator % denominator:
+            return match.group(0)
+        ticks = numerator // denominator
         if ticks <= 256:
             return match.group(0)
         count, tail = divmod(ticks, 128)
@@ -121,7 +130,7 @@ def prepare_mxc(text):
             for index, (code, value) in enumerate(parts):
                 if code:
                     value = re.sub(r'[ \t]+&', '&', value)
-                    value = re.sub(r'(?<![A-Za-z0-9_])r%(\d+)(?![\d.])', rest, value)
+                    value = re.sub(r'(?<![A-Za-z0-9_])r(%?)(\d+)(\.*)(?![\d.])', rest, value)
                     def octave_token(token):
                         nonlocal octave
                         command = token.group(0)

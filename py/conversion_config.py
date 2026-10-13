@@ -41,7 +41,7 @@ def inspect_source(source):
         item = dict(command=f'{cmd:#04x}', address=pos, source_samples=event.vgmticks)
         chip = {0x54: 'opm', 0xa4: 'opm', 0x56: 'opna', 0x57: 'opna',
                 0xa6: 'opna', 0xa7: 'opna', 0xa0: 'psg', 0xd2: 'scc',
-                0x51: 'opll', 0xb7: 'pcm'}.get(cmd)
+                0x51: 'opll', 0xb7: 'pcm', 0xc0: 'segapcm'}.get(cmd)
         if chip:
             chips.add(chip)
             first.setdefault(chip, item)
@@ -87,6 +87,9 @@ def inspect_source(source):
             elif kind == 0x81:
                 chips.add('opna')
                 first.setdefault('opna', item)
+            elif kind == 0x80:
+                chips.add('segapcm')
+                first.setdefault('segapcm', item)
         elif 0x90 <= cmd <= 0x95:
             stream_id = raw[pos + 1]
             if stream_id == 255:
@@ -112,7 +115,8 @@ def inspect_source(source):
     opll_clock = int.from_bytes(raw[0x10:0x14], 'little') if header['version'] >= 0x110 else 0
     declarations = dict(opm=opm_clock, opna=header['opna_clock_raw'],
                         opll=opll_clock, psg=header['ay_clock_raw'],
-                        scc=header['scc_clock_raw'], pcm=header['msm6258_clock_raw'])
+                        scc=header['scc_clock_raw'], pcm=header['msm6258_clock_raw'],
+                        segapcm=header['segapcm_clock_raw'])
     has_song_loop = bool(int.from_bytes(raw[0x1c:0x20], 'little'))
     initialization = {}
     if chips & {'opm', 'opna'} and 'psg' in chips and psg_silent and psg_volumes == [0, 0, 0]:
@@ -127,7 +131,9 @@ def inspect_source(source):
     elif chips & {'opm', 'opna'} and 'scc' in chips and scc_silent and not has_song_loop:
         initialization['scc'] = dict(command_count=counts['0xd2'],
             reason='Finite silent SCC setup: reset volume/enable zero; every positive-duration enabled nonzero-volume interval has explicitly all-zero waveform RAM; source commands retained')
-    for chip in chips - {'pcm'} - initialization.keys():
+    # SegaPCM currently stops at native evidence; its declaration issues are
+    # retained by that analyzer rather than preventing raw capture.
+    for chip in chips - {'pcm', 'segapcm'} - initialization.keys():
         if not declarations[chip]:
             unsupported.append(dict(first[chip], reason=f'Used {chip.upper()} commands have no clock declaration'))
     return dict(used_chips=sorted(chips), declared_clocks=declarations,
@@ -148,6 +154,8 @@ def select_mdx_route(usage, *, compatibility_target=None):
         if not chips or not chips <= {'psg', 'scc'}:
             raise ValueError('Compatibility --target opm/opm-additive requires PSG/SCC source commands')
         return 'psg-scc-to-opm'
+    if 'segapcm' in chips and chips <= {'opm', 'segapcm'}:
+        return 'opm-segapcm-source'
     if chips and chips <= {'opm', 'pcm'}:
         return 'native-opm-pcm'
     if chips == {'opna'}:

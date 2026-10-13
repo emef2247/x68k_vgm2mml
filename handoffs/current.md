@@ -1,4 +1,60 @@
-# Current checkpoint: OPNA FM/SSG/PCM to MDX/PDX (2026-10-12)
+# Current checkpoint: SegaPCM source and OPM-only MDX (2026-10-13)
+
+User requests native OPM+SegaPCM source support, then an explicit FM-only MDX
+checkpoint before starting SegaPCM->PDX. Source collector reads C0/type80 in
+the shared traversal and saves immutable raw/State/control Segment/ROM history
+with exact timing/loop provenance. Runtime address/natural stop/audio gates
+are unmodeled. Default mixed CLI produces source_analyzed only; --fm-only
+retains native evidence and uses existing OPM target projection/compilation,
+reporting SegaPCM omission in JSON/TXT. No SegaPCM PDX work has started.
+
+Implementation is in the working tree only. No commit, staging, push or branch
+change is authorized. User owns private regression/listening. Minimal authored
+checks passed (5 new source/CLI/export tests and26 existing exporter tests).
+One authored mixed input generated MML/MDX/TXT via native MXC/run68 without
+PDX. Equivalent OPM-only and mixed FM-only inputs produced identical MML with
+declared loops. Native CSV, sparse ROM payload and TXT omission were inspected
+under ignored outputs/segapcm_source_check. No private source conversion or
+native playback was run.
+New notes are external: ../my-external-intelligence/x68k_vgm2mml/field_notes/.
+
+Exporter interruption recovery: an unregistered _source_inputs file may be
+adopted without overwrite only when identical to the current input. Registered
+modified staging and unowned differing staging/publications remain protected.
+
+User FM-only regressions expose MXC duration/capacity failures and runtime
+buffer/display issues. Target duration rendering now splits over256-tick
+rests as well as tied notes, preserving source timing and safe compaction.
+MXC adaptation also splits dotted long rests in older scores. All38 focused
+duration/compaction/compiler checks passed. Two authored native MXC builds
+(newly split score and older dotted rests) each preserved960 encoded ticks.
+--timeout is wall-clock stage budget, not song duration/timer.
+No private reconversion or SegaPCM PDX work is authorized at this checkpoint.
+External private field notes may name local_only fixtures per the user's
+2026-10-13 instruction. Public documents still omit private identifiers.
+Detailed regression findings: external field_notes/2026-10-13_segapcm_fm_regression.md;
+an ignored human-readable copy is outputs/opm_segapcm/fm_regression_summary_2026-10-13.txt.
+Latest user mmlx export improves the mixed FM-only corpus. Remaining compiler
+errors explicitly report track-offset and loop-position representation limits;
+the conversion timeout remains separate. Existing results/logs were inspected
+read-only, without private reruns. README TROUBLE SHOOTING now recommends
+--compiler mmlx for compilation_failed, without documenting timeout values.
+Subsequent user retry with a600-second budget completed the previously timed-out
+conversion and exposed another song-loop offset limit. Finite output using
+--no-song-loop is the next user regression; its success is not yet verified.
+Latest finite-output user regression resolves two previous failures. One source
+now completes conversion within the existing budget but exceeds a track-start
+offset limit; extending timeout cannot fix that diagnostic. README TROUBLE
+SHOOTING includes --no-song-loop and its finite-output semantics. Default
+timeout remains180 pending the user's follow-up decision. No private reruns.
+
+User command:
+python scripts/export_mdx.py <input-directory> --outdir outputs/listen/segapcm_fm --fm-only --no-vgm
+
+Next allowed action: stop and report this checkpoint.
+Await user MDX/FM regression before implementing SegaPCM->PDX or other targets.
+
+# Previous checkpoint: OPNA FM/SSG/PCM to MDX/PDX (2026-10-12)
 
 Branch: codex/opna_to_opm. User confirmed the preceding FM/PCM MDX/PDX plays,
 then requested SSG via the existing PSG FM method. The user accepts the same

@@ -17,14 +17,15 @@ def duration_spelling(duration):
 
 
 def timed(name, duration, *, held=False):
-    """Use whole-note chunks for long notes, with ties preserving one attack."""
+    """Split long target durations; note ties preserve one attack."""
     if not isinstance(duration, int) or duration < 0:
         raise ValueError('MDX duration must be a nonnegative integer')
     pieces = []
+    split_rest = name == 'r' and duration > 256
     while duration:
         # A note command encodes at most 256 ticks. Whole-note chunks make
         # longer durations readable without asking the compiler to split them.
-        count = min(duration, 65535 if name == 'r' else
+        count = min(duration, 128 if split_rest else 256 if name == 'r' else
                     192 if duration > 256 or (duration > 192 and duration_spelling(duration).startswith('%'))
                     else 256)
         duration -= count

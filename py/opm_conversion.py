@@ -25,7 +25,7 @@ def _record_pcm_assessment(assessment, outdir, stem, *, requires_pdx, retained=(
     assessment.dump(outdir, stem)
 
 
-def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None, normalization_source_times=None, normalization_ms=8, pitch_policy='clamp', song_loop=True, replayed_song_loop=False, pcm_analysis_override=None, source_passes_outdir=None):
+def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None, normalization_source_times=None, normalization_ms=8, pitch_policy='clamp', song_loop=True, replayed_song_loop=False, pcm_analysis_override=None, source_passes_outdir=None, segapcm_source=False):
     source, outdir = Path(source), Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     requested_normalization = normalize_lengths
@@ -59,10 +59,12 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
     pcm_metadata = {}
     source_loop = {}
     with TemporaryDirectory(prefix='opm-mdx-') as temporary:
-        analysis_dir = Path(source_passes_outdir or outdir) if dump_passes else Path(temporary)
+        analysis_dir = Path(source_passes_outdir or outdir) if dump_passes or segapcm_source else Path(temporary)
         parse_vgm(str(source), str(analysis_dir), opm_metadata=metadata,
                   pcm_metadata=pcm_metadata,
-                  loop_metadata=source_loop, dump_loop=dump_passes,
+                  segapcm_metadata={} if segapcm_source else None,
+                  include_vgmticks=segapcm_source,
+                  loop_metadata=source_loop, dump_loop=dump_passes or segapcm_source,
                   loop_count=2 if song_loop and not replayed_song_loop else 1)
         pcm_analysis = pcm_analysis_override if pcm_analysis_override is not None else pcm_metadata['analysis']
         has_pcm = bool(pcm_analysis.playbacks or pcm_analysis.samples or pcm_analysis.transfers
@@ -83,7 +85,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             raise ValueError('Input declares no supported OPM stream')
         analysis = (build_segments(metadata['csv_path'], end_vgmticks=metadata['source_end_vgmticks'])
                     if metadata['csv_path'] else OpmAnalysis((), (), pcm_analysis.source_end_vgmticks, False))
-        if dump_passes:
+        if dump_passes or segapcm_source:
             dump_analysis(analysis, state_csv=analysis_dir/(source.stem+'_trace.opm.csv'),
                           segments_csv=analysis_dir/(source.stem+'.opm.segments.csv'))
     loop_start = None
