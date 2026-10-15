@@ -1,3 +1,105 @@
+# Force README clarification (2026-10-16)
+
+User regression is ongoing. Expanded README Troubleshooting with an export
+--force example, omitted/approximated feature and part diagnostics, preserved
+source IR, and separate best-effort/compiler limitations. Documentation only;
+no conversions or tests, no stage/commit/push.
+PCM quality controls and capacity/rate estimates were discussed, not implemented.
+Current derived PDX waveform uses mono 15625 Hz, fixed eight-second packaging;
+lower rates reduce bytes but do not alone resolve the 96-sample binding limit.
+Do not equate the separate MUCOM 256 KiB payload limit with a PDX total limit.
+
+# Shared PSG/SSG force omissions (2026-10-16)
+
+Latest user requests unsupported hardware envelopes, noise and channel shortages
+be force omissions with clear skipped output. OPNA already covered these; this
+checkpoint also wires standalone PSG/SCC MDX --force through common PSG target
+projection. SSG now delegates its unsupported-interval decision to that same
+function rather than maintaining a separate muting policy. No noise/envelope
+synthesis was added.
+
+Registry summaries now name parts (PSG1/SSG3/FM3/PCM/shared). Existing OPNA
+FM-priority capacity policy is unchanged; force lists omitted SSG parts clearly.
+Standalone PSG force keeps native pass dumps and .psg_force skipped-register
+CSV/JSON, with empty event IDs where source Segments lack such metadata.
+Both CLI paths, batch output and TXT consume the same summary.
+Four minimal authored checks passed: PSG source preservation/release-restart,
+PSG CLI force/strict retry, explicit SSG3 capacity label, and existing SSG source
+preservation check. One authored canonical PSG run saved and inspected native
+noise/EG Segment CSV, forced registry, MML and TXT under outputs/psg_force_check.
+No private regression/listening/MDX compilation.
+
+Working-tree changes only; no stage/commit/push/branch changes. User owns
+regression. Compiler fallback, new noise/EG synthesis and OPM-to-OPNA remain
+outside this checkpoint. Details in docs/opna_force.md and external
+field_notes/2026-10-16_shared_psg_ssg_force.md.
+
+# Force partial-output checkpoint (2026-10-16)
+
+Latest user authorizes --force for unsupported OPNA HW effects broadly, with
+readable skipped-register listing (canonical CLI and each batch result), and PCM capacity omissions. Compiler-limit
+fallback is explicitly deferred by latest user choice. Source corruption,
+unresolved evidence, unsupported input routes and compiler failures still fail.
+
+Implemented native source-preserving unknown-effect omission, CH3/CSM/FM SSG-EG
+output gates with ordinary keys preserved, known-unsupported DELTA whole-part
+omission, and common PDX capacity selection. Keep first-use whole samples up to96
+slots/verified65535-byte scope; skip excess references as rests preserving end/L.
+Normalization-omitted notes do not consume slots. All-PCM-omitted output has no
+empty PDX or false artifact paths. Final PDX counts are capacity-selected.
+See docs/opna_force.md and external
+field_notes/2026-10-16_force_partial_hw_and_pcm_capacity.md.
+
+Saved before verification. Six force +six PCM-HW omission checks passed.
+Capacity's seven initial authored checks and one added normalization-slot check
+passed. One authored canonical MML/CSV/JSON/TXT run inspected under
+outputs/opna_force_check. No private regression, listening or MDX compilation.
+Focused review fixes (null PDX, actual sample count, normalization capacity) are
+applied. Existing unrelated earlier worktree changes are preserved.
+
+No staging, commit, push or branch changes. User handles private regression.
+Next allowed action: user retries SNATCH07 with --force and existing PCM/compiler
+flags. Do not resume compiler fallback, OPM-to-OPNA or preview-VGM automatically.
+
+# Scoped OPNA force checkpoint (2026-10-15)
+
+User approved --force before further bidirectional FM policy work. Added scoped
+OPNA-to-MDX SSG noise/hardware-envelope interval omission, CLI/export forwarding,
+unchanged native SSG dump and per-interval CSV/JSON/TXT loss reporting.
+Only the target view is muted; ordinary tone intervals, timing and PCM IR remain.
+Unknown FM/CH3/CSM/streams, PCM capacity and compiler failures still block.
+See docs/opna_force.md. Existing earlier worktree changes are retained.
+
+Working-tree edits only; no staging, commit, push or branch change.
+User owns private regression/listening. Do not run private conversions or a broad
+regression. Three new authored checks passed (including unchanged source evidence,
+silent target intervals with release/restart edges, dump serialization, and CSM
+still rejected; forced success followed by strict rejection clears stale
+omission CSV/JSON). One authored canonical CLI generated MML, native SSG CSV,
+omission CSV/JSON, target performance CSV and TXT under outputs/opna_force_check.
+Inspected two omissions (noise and hardware envelope). No private conversion or
+MDX compilation; timeout180 is unchanged. Focused review identified stale omission
+reports on rejected retries; converter/frontend/export cleanup was added and the
+new retry check passed. No other review issues were identified.
+Next allowed action: user retries gh002 with --force and existing PCM options.
+Do not resume OPM-to-OPNA or the paused preview-VGM feature implicitly.
+
+# PCM interoperability checkpoint (2026-10-15)
+
+Shared musical planner, integer-domain allocator and native ADPCM-B epoch
+interpretation were backported from mucom88 without changing MDX clock policy.
+Continuous DELTA level/pan/rate/pause now feed a nominal waveform and shared
+MSM6258 target engine; original independent DELTA and Sega adapters remain.
+See docs/pcm_interoperability.md. OPM-to-OPNA has been considered but is not
+implemented; proposed first scope is six used FM channels, explicit pitch and
+operator maps, with DT2/noise/LFO gaps reported rather than silently dropped.
+
+Working-tree changes only. User owns private regression/listening. Focused
+public checks and one authored DELTA canonical conversion were run; no private
+conversion, broad suite, staging, commit or push. Default timeout180 remains.
+Next action: user regression; address reported defects only when requested.
+Do not resume the paused VGM-output feature or integrate OPM projection implicitly.
+
 # Current checkpoint: SegaPCM to PDX (2026-10-13)
 
 User finite-output retry resolves two preceding song-loop validation failures,
