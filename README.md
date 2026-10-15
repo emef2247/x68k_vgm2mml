@@ -134,7 +134,7 @@ VGMヘッダーの曲ループについては、「VGMの曲全体ループ」�
 python vgm2mml.py --help
 ```
 
-## TROUBLE SHOOTING
+## トラブルシューティング
 
 `scripts/export_mdx.py` の実行結果が `compilation_failed` になる場合、既定のMXCから `--compiler mmlx` に切り替えると改善することがあります。
 
