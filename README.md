@@ -63,7 +63,7 @@ MMLの生成に成功したことは、元VGMとの音声一致を保証する�
 
 対応するMSM6258入力には、直接レジスタ書き込み、および対応する非圧縮Data Bank／有限DAC Streamがあります。PCMのみの入力も対象です。
 
-OPNAのADPCM-Bも対応範囲内でMML・PCM IRを生成できます。元のPCM IRと、出力先に合わせたPCM投影データは区別して保存します。
+OPNAのADPCM-Bも対応範囲内でMML・PCM IRを生成できます。元のPCM IRと、出力先に合わせたPCM投影データは区別して保存します。 保持中の音量・パン・速度変更を含む対応範囲と制約は[docs/pcm_interoperability.md](docs/pcm_interoperability.md)を参照してください。
 
 再圧縮による近似を許容する場合は `--pcm-policy best-effort` を指定してください。
 ```bash
@@ -120,6 +120,7 @@ MDX側の主なオプションは次のとおりです。
 | `--psg-model fm\|additive` | PSGからOPMへの音色投影モデル |
 | `--psg-gain` / `--scc-gain` | PSG／SCC投影時の音量調整 |
 | `--pcm-policy strict\|best-effort` | PCM投影で既知損失を許容するか |
+| `--force` | 未対応のPSG／SSG／OPNA機能と容量超過PCMを省略し続行（[docs/opna_force.md](docs/opna_force.md)） |
 | `--dump-passes` | 中間CSV・診断ファイルを保存 |
 
 ここでいう **有限反復** は、VGMヘッダーに記録された **曲ループ** とは別です。
@@ -135,6 +136,18 @@ python vgm2mml.py --help
 ```
 
 ## トラブルシューティング
+
+未対応のPSG／SSG／OPNA機能やPCM容量超過で変換が停止する場合は、`--force`で扱える部分の出力を試せます。未対応のノイズ・ハードウェアエンベロープなどの影響区間や、容量超過のPCMを省略して続行します。元のSegment・PCM IRは保持します。
+
+```bash
+python scripts/export_mdx.py INPUT_DIRECTORY \
+  --outdir outputs/listen/force \
+  --no-vgm --compiler mmlx --pcm-policy best-effort --force
+```
+
+各曲の処理後に、省略・近似した内容をパート、ポート、レジスタ、処理内容、件数、理由の一覧で表示します。チャンネル不足によるパートの省略も確認できます。詳細は各曲のTXTレポートと診断CSV・JSONに保存します。
+
+`--force`は完全な音の再現やMDX生成の成功を保証するオプションではありません。入力破損やコンパイラ制限では引き続き停止します。PCM再符号化などの既知損失を許容する`--pcm-policy best-effort`は別の指定です。適用範囲と診断ファイルの見方は[docs/opna_force.md](docs/opna_force.md)を参照してください。
 
 `scripts/export_mdx.py` の実行結果が `compilation_failed` になる場合、既定のMXCから `--compiler mmlx` に切り替えると改善することがあります。
 

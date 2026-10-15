@@ -13,37 +13,17 @@ FRAME_MULTIPLIER = 65  # 16.640 ms; a preferred fallback, not a minimum period.
 
 
 def bounded_ticks(times, protected, multiplier, bound):
-    """Choose ordered ticks in exact integer domains, preserving positive gates.
+    """Allocate exact MDX sample domains through the shared ordered solver."""
+    from ordered_timing import allocate_tick_domains
 
-    Edges form a DAG in source-time order: adjacent boundaries may coalesce,
-    protected start/end pairs must differ by at least one tick. Tighten latest
-    feasible ticks backwards, then select nearest feasible ticks forwards.
-    """
     numerator, denominator = 7056 * multiplier, 625
     ceil_div = lambda a: -(-a // numerator)
     lower = [max(0, ceil_div((t-bound)*denominator)) for t in times]
     upper = [ceil_div((t+bound+1)*denominator)-1 for t in times]
-    lower[0] = upper[0] = 0
-    index = {t: i for i, t in enumerate(times)}
-    outgoing = [[(i+1, 0)] if i+1 < len(times) else [] for i in range(len(times))]
-    incoming = [[] for _ in times]
-    for interval in protected:
-        a, b = interval['start_vgmticks'], interval['end_vgmticks']
-        if b > a:
-            outgoing[index[a]].append((index[b], 1))
-    for i in range(len(times)-1, -1, -1):
-        for j, delta in outgoing[i]:
-            upper[i] = min(upper[i], upper[j]-delta)
-            incoming[j].append((i, delta))
-        if lower[i] > upper[i]:
-            return None
-    chosen = []
-    for i, t in enumerate(times):
-        earliest = max([lower[i]] + [chosen[j]+delta for j, delta in incoming[i]])
-        if earliest > upper[i]:
-            return None
-        chosen.append(min(upper[i], max(earliest, mdx_tick(t, multiplier))))
-    return dict(zip(times, chosen))
+    if times:
+        lower[0] = upper[0] = 0
+    nearest = [mdx_tick(t, multiplier) for t in times]
+    return allocate_tick_domains(times, lower, upper, nearest, protected)
 
 
 def normalize_output(segments, original, *, source_events=None, pcm_analysis=None,

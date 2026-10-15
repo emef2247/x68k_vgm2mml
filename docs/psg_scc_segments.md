@@ -139,3 +139,13 @@ retention. Hardware playback, private fixtures, and WSL execution are not part
 of these checks. This refactor deliberately preserves existing note-boundary,
 waveform reconstruction, volume and timing heuristics; fixing their known or
 suspected limitations is separate work.
+
+
+### Explicit partial output
+
+`--force` permits omission of unsupported noise/hardware-envelope intervals
+through the shared PSG target projection; native source Segments and elapsed
+time stay intact. The skipped-parts list names the source part, including SSG
+parts excluded by the existing FM-priority channel allocation.
+This adds omission reporting, not noise/envelope synthesis.
+See [partial-output policy](opna_force.md).

@@ -77,7 +77,19 @@ priority over SSG. Any FM key activity retains its channel through release
 tails and output gating. SSG uses the existing PSG FM model in remaining
 channels; capacity exclusions retain native source evidence and explicit
 allocation diagnostics. Channel allocation is a target constraint and never
-rewrites source Segments. Native SSG prescaler clocks and source event/sample
+rewrites source Segments. Explicit --force permits partial target output:
+unsupported OPNA register effects are recorded and omitted, SSG intervals are
+muted, CH3/CSM/FM SSG-EG intervals are output-gated without invented key edges,
+and known unsupported DELTA controls can omit the PCM part. Original IR remains.
+PCM capacity selection is a separate first-use binding view: excess slots or
+samples beyond the verified byte scope become timed rests, preserving end/loop
+and reuses of retained samples. Raw writes, partial effects, approximations and
+muted intervals have distinct provenance and human-readable lists.
+PSG and OPNA SSG share the same force-only noise/hardware-envelope interval
+omission in the common PSG projection. Native source Segments and elapsed time
+remain intact; aggregate diagnostics name the source part as well as registers.
+Existing FM-priority capacity allocation remains unchanged.
+Compiler/source-validation failures remain failures; see docs/opna_force.md. Native SSG prescaler clocks and source event/sample
 order remain intact before the shared downstream MDX/PCM clock projection.
 
 Canonical FM conversion generates MML, not MDX/PDX binaries. A matching stem
