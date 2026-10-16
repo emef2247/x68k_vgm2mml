@@ -1,7 +1,7 @@
 # OPMクロックとMDXの音程補正
 
 MDXの再生先はX68000の4,000,000Hz YM2151です。入力VGMが異なる
-YM2151クロックを宣言していても、単一インスタンスならTargetで補正します。
+YM2151の正のクロックを宣言していても、単一インスタンスならTargetで補正します。
 Raw、State、Segmentのクロック、時刻、KC/KFは変更しません。
 
 ## 補正の位置と計算
@@ -69,3 +69,51 @@ DT1のHz単位のdetune、EGとkey scaling、LFO、ノイズ、チップタイ�
 再調整しません。音程レジスタが一致しても音色・変調・リリースまで
 音響的に等価とは限りません。PCMのrate／符号化バイトは変更しません。
 dual-chip／別チップ種は引き続き対象外です。
+
+
+## Protected interval tick allocation
+
+音程補正とは別に、`py/opm_output_normalization.py`は時間の正規化時に
+共有FM/PCMクロックへ境界を割り当てます。2026-10-11に導入された方式は、
+現在は共有ヘルパー`py/ordered_timing.py`の`allocate_tick_domains`を使います。
+ソースのState、Segment、PCM IRや元の時刻は変更しません。
+
+- 最寄りtickへの丸めで、保護対象の正の区間が潰れた場合だけ、同じ絶対境界
+  移動許容量内で順序付き割り当てを試します。許容量は
+  `floor(44100 * --normalization-ms / 1000)` source samplesで、既定は352です。
+- 各境界に、投影後の整数source-sample時刻が許容量内になる厳密な整数tick領域を
+  与えます。MDXラッパーは原点0をtick 0に固定します。隣接境界は非減少、
+  protected intervalの終端は始端より少なくとも1 tick後、という辺からなるDAGを
+  解きます。途中の通常制御境界が同じtickにまとまることは許されます。
+- 保護するのは曲全体、残存FMゲート、保持中の部分Key操作・再発音の区間、
+  許容量を超える休符、正の副作用パルス、残存PCMゲート、許容量を超えるPCM休符、
+  有効な曲ループ区間です。完了していない終端ゲートも残存ゲートです。
+  短いSegmentや未完了ゲートを、完結した短音として省略してはいけません。
+- 領域内に解がなければヘルパーは`None`を返し、その候補を不採用にします。
+  不正な入力配列・区間参照は`ValueError`です。割り当て後にも境界誤差、原点、
+  全体の順序、保護区間の正の長さを独立に再検査します。許容量を緩めて
+  強制採用したり、黙ってループや発音を落としたりはしません。
+- 他の候補も成立しなければ、元のstructured投影と共有クロックへ戻ります。
+  候補側の短音省略も採用しません。PCMの候補固有の失敗と、ソース自体の
+  eligibilityエラーは別です。後者が正規化で解消したことにはしません。
+
+採用した`boundary_ticks`は投影に格納し、FM、PCM、validator、pass dumpが
+同じ対応表を使います。`.mdx.normalization.json`は`boundary_allocation`、
+`adjusted_nearest_boundaries`、protected intervalや棄却候補を記録し、
+`.mdx.normalization.csv`で元時刻・候補tick・誤差を追跡できます。
+短音省略と候補選択の詳細は[音価と正規化](opm_note_lengths.md)を参照してください。
+
+## 実装確認と履歴の範囲
+
+この文書のKC/KF補正・pitch policyは`py/opm_pitch_projection.py`、時間割り当ては
+`py/opm_output_normalization.py`と`py/ordered_timing.py`の現行コードと照合しています。
+既存の`tests/scripts/test_opm_pitch_projection.py`は全notation/layout、未知初期値、
+clamp/error、リリース後の範囲外更新、source保持、ペア書き込みの検証を含みます。
+`tests/scripts/test_ordered_timing.py`は実現可能・不可能な制約、非隣接区間、原点を含む
+固定anchor、入力非変更、厳密なMDX領域を扱います。今回これらのテストは読取のみで、
+再実行していません。
+
+2026-10-11当時のrange-errorのみの方針は、現在の既定clampに先行する判断です。
+実装時の検証結果・私有曲の視聴・試行履歴は、外部ノート
+`field_notes/2026-10-11_opm_clock_projection.md`に残します。
+そこでの成功件数や視聴結果を、現在のコードや全ドライバの検証済み仕様とは扱いません。

@@ -39,7 +39,9 @@ interval. These are estimator heuristics, not YM2151 timing specifications.
 
 The fitted tempo/grid nominates one actual MDX timer multiplier, rounded from
 the fitted sample period per score step. Every target boundary then uses the
-existing nearest absolute MDX tick conversion on that timer. The source origin
+nearest absolute MDX tick conversion on that timer, with bounded ordered
+allocation when a protected interval would collapse (see
+[clock projection](opm_clock_projection.md#protected-interval-tick-allocation)). The source origin
 remains sample zero. The fitted phase and grid are recorded but are not used to
 snap individual attacks. MGSDRV gate inference, `q` generation and short-state
 pruning are specific to that compatibility target and are not applied to OPM.
@@ -69,7 +71,10 @@ The decision covers the whole sounding gate, never a short control slice in
 a longer note. Partial changes, repeated Key-On requests, unclosed gates and
 gates crossing a loop boundary are retained conservatively. PSG/SCC uses the
 original source-map timestamps before intermediate OPM rounding. Source
-Segments, State and PCM IR remain unchanged.
+Segments, State, PCM IR and original sample bytes remain unchanged, as does
+elapsed source song time. Omission is intentional output loss, not source
+cleanup. An unclosed terminal gate is a conservative survivor even if its
+remaining duration is only a few source samples.
 
 `py/opm_output_normalization.py` tries the fitted clock first, then multipliers
 65 down to 1. Multiplier 65 (16.640 ms) is a preferred fallback based on the
@@ -84,15 +89,21 @@ Surviving sounding gates, longer rests, side-effect pulses and loop spans remain
 and ordinary setter intervals may coalesce; both ordered Key-Off/Key-On
 requests remain present. Lost rest duration is reported separately from
 omitted notes. Absolute time is rounded without accumulating interval errors.
-An invalid loop or failed bound/protected interval check keeps the structured
-baseline. `--no-normalize-lengths` disables this policy. The earlier conservative
+An invalid declared loop, or exhaustion of candidates after failed boundary
+bounds/protected interval checks, keeps the structured baseline without
+adopting the candidate short-note omissions. `--no-normalize-lengths` disables this policy. The earlier conservative
 fitted-clock helper remains internally available for regression checks.
 For PCM, the candidate PCM projection and structured score are checked before
 writing binaries. A candidate-specific failure keeps the baseline clock for
 both OPM and PCM; source eligibility failures remain ordinary diagnosed errors.
 The selected multiplier drives FM tempo and PCM target commands together.
-Source PCM IR, encoded samples and their PDX payloads remain unchanged.
-Short PCM playback spans may be omitted only after source eligibility checks;
+Original source PCM IR and encoded samples remain unchanged. Native encoded
+MSM6258 payloads are retained; derived waveform PCM is instead resampled and
+encoded against the final shared clock. Its packaging chunks are not source
+gates and cannot be removed as short notes. See
+[derived PCM packaging](pcm_source_and_target.md#derived-pcm-packaging-and-shared-clock).
+Short PCM playback spans may be omitted only after source eligibility checks
+and when the analysis declares whole-playback omission safe;
 omission cannot make unsupported PCM representable. Rest-only PCM target
 plans are allowed after all short spans are omitted. Normalization JSON/CSV
 and `*.pcm_omitted_playbacks.csv` preserve the loss evidence.
@@ -180,3 +191,21 @@ Normalization therefore proves a bounded timing change, rather than exact
 source-time equivalence. The exact-formatting replay tests separately compare
 old step chunks and named durations, including held controls and nested ties.
 See [validation notes](../field_notes/2026-10-07_mdx_note_lengths.md).
+
+## Current implementation versus historical checkpoints
+
+The short-gate and preferred-fallback policy was introduced on 2026-10-11.
+The dated values above describe the current defaults as inspected in
+`py/conversion_config.py`, `py/opm_target_pruning.py` and
+`py/opm_output_normalization.py`; they are output-policy parameters, not chip
+specifications or a guarantee of a minimum driver interrupt period. A selected
+nominal clock does not measure driver load or certify MMDSP behavior; native
+listening is still required.
+
+Existing checks in `tests/scripts/test_opm_target_pruning.py` and
+`tests/scripts/test_opm_note_normalization.py` cover the policy. They were read,
+not rerun, during this documentation consolidation. The implementation-time
+experiments, earlier conservative behavior, test counts and listening results
+remain in the external notes `field_notes/2026-10-11_short_gate_checkpoint.md`
+and `field_notes/2026-10-10_shared_output_normalization.md`; an old checkpoint
+is not a fresh validation of the current implementation.
