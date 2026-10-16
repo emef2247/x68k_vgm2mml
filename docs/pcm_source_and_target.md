@@ -96,20 +96,70 @@ operands 1/2 have the opposite left/right meaning from MDX FM. Standard X68000
 PCM uses 4-bit encoding and 10-bit output; preserving bytes alone cannot
 represent a 12-bit decoder clamp. Keep unsupported source values inspectable
 and diagnose them in the target.
-The normalization default must not itself reject PCM input. Until PCM-aware
-correction is verified, keep the baseline shared OPM/PCM clock and record
-non-adoption separately from PCM loss/eligibility and runtime validation.
+The normalization default must not itself reject PCM input. Current projection
+tries PCM-aware shared-clock correction and checks the candidate before
+adoption; a candidate-specific failure falls back to the baseline when that
+baseline is usable. The earlier instruction to always keep the baseline until
+PCM-aware correction was verified describes the pre-2026-10-11 checkpoint, not
+the current unconditional behavior. Record non-adoption separately from PCM
+loss/eligibility and runtime validation.
 Data Bank/DAC Stream decoding is a separate change from frontend cleanup;
 unsupported stream semantics and their source evidence remain explicit.
 
 See `docs/pcm_pdx.md` for current eligibility and tool limitations and
 `docs/pcm_roundtrip_validation.md` for the independent validation design.
 
-SegaPCM uses a separate runtime IR, then an explicit stereo-to-mono MSM6258
-bridge. Original ROM/control evidence, native unclipped stereo, runtime gates
-and target ADPCM chunks are different representations. Chunk boundaries and
-independent target-decoder assumptions are not source supply/reset facts.
-Short packaging tails survive normalization; sample lengths follow the final
-shared clock. See `docs/segapcm_segments.md` for artifacts and known losses.
+## Derived PCM packaging and shared clock
+
+SegaPCM observed State/control Segments and original ROM bytes remain unchanged.
+Runtime address progression, natural-stop gates and the mixed unclipped stereo
+waveform are a separate source interpretation with explicitly named reset and
+runtime-model assumptions; they are not newly observed register facts.
+Stereo folding, clipping, resampling and MSM6258 ADPCM encoding belong to target
+projection. Preserve source-linked mappings and report those assumptions and
+losses separately. See [SegaPCM source/runtime artifacts](segapcm_segments.md).
+
+The union of active runtime gates is packaged into at-most-eight-second chunks,
+with splits at the MDX song-loop boundary and EOF. Fractional native gate bounds
+round outward by less than one 44100 Hz source sample. Packaging boundaries
+are not Key-On/Off gates, source byte supplies or observed decoder resets.
+The derived analysis declares `normalization_omission_safe=False`; a short
+packaging tail survives even if it falls below the configured whole-gate cutoff.
+Unsupported source PCM cannot become eligible by omitting a short playback.
+
+FM and PCM use one final MDX clock and common source end. Encode each original
+audio interval to its final scheduled gate duration, retaining original bounds,
+source event/gate identities, target ticks and target sample-count error. The
+current bridge uses F4/15625 Hz and the nearest positive even sample count
+(two samples per ADPCM byte), at least two samples. Its rounding error relative
+to the scheduled duration is at most one F4 sample (not one VGM source sample).
+If a positive chunk collapses under the selected clock, alignment raises an
+error rather than silently omitting the chunk. The current verified per-sample
+size guard also remains active. This derived target re-encoding may change the
+PDX payload; it does not mutate original ROM, source State/Segments or PCM IR.
+
+A recorded loop traversal becomes fixed target audio, freezing the recorded
+waveform and phase. Later source traversals may evolve differently. Report
+that limitation, along with stereo folding, resampling without antialias
+filtering, clipping/requantization and independent chunk-decoder assumptions;
+do not claim native loop or acoustic equivalence. Runtime decoder reset and
+physical playback remain unverified by artifact generation alone.
+
+### Current implementation and historical evidence
+
+The packaging/shared-clock policy dates from 2026-10-13. Its current code is
+split between the SegaPCM adapter `py/segapcm_pcm.py`, the shared waveform bridge
+`py/pcm_waveform_mdx.py`, and final-clock integration in `py/opm_conversion.py`.
+`*.segapcm_pcm_mapping.csv` and `*.segapcm_pcm_bridge.json` expose source bounds,
+final-clock alignment, target counts/errors and losses. Existing
+`tests/scripts/test_segapcm_pcm.py` checks short tails, unchanged source bounds,
+even counts, error bounds, collapsed chunks, clipping and payload deduplication.
+The test definitions were inspected, not rerun, during this documentation move.
+
+The dated experiment/test counts and listening status remain in the external
+`field_notes/2026-10-13_segapcm_pdx.md` and its regression follow-ups. They do not
+certify the current revision or every playback environment. The older statement
+that normalization leaves PDX payload bytes unchanged applies to retained
+native encoded PCM, not this derived waveform packaging route.
 
 
