@@ -17,6 +17,7 @@ class ProjectedPcmAnalysis(PcmAnalysis):
     target_evidence: tuple[dict, ...] = ()
     target_mapping: tuple[dict, ...] = ()
     source_origin: str = 'projected_msm6258_from_opna_adpcm_b'
+    pcm_profile: str = 'standard'
 
     def dump(self, outdir, stem):
         super().dump(outdir, stem)
@@ -26,7 +27,8 @@ class ProjectedPcmAnalysis(PcmAnalysis):
         outdir = Path(outdir)
         outdir.mkdir(parents=True, exist_ok=True)
         path = outdir / (stem + '.opna_pcm_bridge.json')
-        path.write_text(json.dumps(dict(source_origin=self.source_origin,
+        path.write_text(json.dumps(dict(source_origin=self.source_origin,pcm_profile=self.pcm_profile,
+            target_payload_bytes=sum(len(s.encoded_bytes) for s in self.samples),
             source_end_vgmticks=self.source_end_vgmticks, source_loop_vgmticks=self.source_loop_vgmticks,
             source_sha256=hashlib.sha256(self.source_raw).hexdigest(), loop_count=self.loop_count,
             source_supply_evidence='none; encoded bytes come from transcoded target IR',
@@ -37,7 +39,7 @@ class ProjectedPcmAnalysis(PcmAnalysis):
         return path
 
 
-def adapt(native, target, *, source_raw, loop_start=None):
+def adapt(native, target, *, source_raw, loop_start=None,pcm_profile='standard'):
     """Keep all playback candidates, including ineligible decoder epochs.
 
     Only byte-identical target payloads share a PDX slot. Native Yamaha bytes
@@ -125,7 +127,7 @@ def adapt(native, target, *, source_raw, loop_start=None):
     return ProjectedPcmAnalysis(
         source_end_vgmticks=target.source_end_vgmticks, samples=tuple(samples),
         playbacks=tuple(playbacks), controls=(), issues=(), transfers=TransferLog(b''),
-        raw_commands=(), source_raw=source_raw, clock_hz=target.clock_hz, options=4,
+        raw_commands=(), source_raw=source_raw,pcm_profile=pcm_profile, clock_hz=target.clock_hz, options=4,
         initialization='derived MSM6258 target IR; no observed native byte supply/reset claimed',
         source_loop_vgmticks=loop_start, blocks=(), loop_count=native.loop_count,
         target_evidence=tuple(evidence), target_mapping=tuple(mapping))

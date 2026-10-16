@@ -36,6 +36,8 @@ PSG／SSGは共通の発音・音量run解釈を使い、固定音量のnoise-on
 
 OPMのみのMML生成にRustコンパイラは不要です。現行のPCM経路では試聴用MDX／PDXの補助生成も同じ処理内で行うため、外部helperのビルドが必要です。準備方法は[docs/mdx_compiler_setup.md](docs/mdx_compiler_setup.md)を参照してください。
 
+PCMの出力容量を抑えたい場合は `--pcm-profile low` または `--pcm-profile ultra_low` と `--pcm-policy best-effort` を指定できます。標準設定は維持し、低レートの出力用PCMを生成します。[対応音源・容量と音質の関係](docs/pcm_profiles.md)を参照してください。
+
 ## VGMの曲全体ループ
 
 VGMヘッダーに指定されたループは、既定でMDX用MMLへ引き継ぎます。
@@ -122,6 +124,7 @@ MDX側の主なオプションは次のとおりです。
 | `--psg-model fm\|additive` | PSGからOPMへの音色投影モデル |
 | `--psg-gain` / `--scc-gain` | PSG／SCC投影時の音量調整 |
 | `--pcm-policy strict\|best-effort` | PCM投影で既知損失を許容するか |
+| `--pcm-profile standard\|low\|ultra_low` | PCM出力の容量・音質設定（既定standard）。[詳細](docs/pcm_profiles.md) |
 | `--force` | 未対応のPSG／SSG／OPNA機能と容量超過PCMを省略し続行（[docs/opna_force.md](docs/opna_force.md)） |
 | `--dump-passes` | 中間CSV・診断ファイルを保存 |
 
@@ -138,6 +141,8 @@ python vgm2mml.py --help
 ```
 
 ## トラブルシューティング
+
+`scripts/export_mdx.py`のタイムアウトは各入力・各処理段階につき既定600秒です。`--timeout 秒数`で変更できます。
 
 未対応のPSG／SSG／OPNA機能やPCM容量超過で変換が停止する場合は、`--force`で扱える部分の出力を試せます。未対応のノイズ・ハードウェアエンベロープなどの影響区間や、容量超過のPCMを省略して続行します。元のSegment・PCM IRは保持します。
 

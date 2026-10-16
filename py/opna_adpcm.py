@@ -503,13 +503,15 @@ class Msm6258Projection:
         return dump_target(self, outdir, stem)
 
 
-def project_msm6258(analysis, *, clock_hz=4000000):
+def project_msm6258(analysis, *, clock_hz=4000000,pcm_profile='standard'):
     """Project independent native spans into samples, retaining the source clock.
 
     Linear resampling, level baking and greedy ADPCM requantization are explicit
     approximations. No PDX allocation or MDX command scheduling occurs here.
     """
     from pcm_mdx import RATES
+    from pcm_profiles import get_profile
+    profile=get_profile(pcm_profile)
     if clock_hz != 4000000:
         raise ValueError('Initial MSM6258 target uses the X68000 4/8 MHz MXDRV platform profile')
     samples, playbacks = [], []
@@ -526,7 +528,8 @@ def project_msm6258(analysis, *, clock_hz=4000000):
         else:
             source = analysis.samples[segment.sample_id]
             source_rate = Fraction(segment.rate_num, segment.rate_den)
-            frequency_index = min(range(len(RATES)), key=lambda index: abs(RATES[index] - source_rate))
+            allowed=range(len(RATES)) if profile.name=='standard' else [i for i,r in enumerate(RATES) if r<=profile.rate]
+            frequency_index = min(allowed, key=lambda index: abs(RATES[index] - source_rate))
             target_rate = RATES[frequency_index]
             target_clock = 4000000 if frequency_index < 2 else 8000000
             divider = (1024, 768, 1024, 768, 512)[frequency_index]

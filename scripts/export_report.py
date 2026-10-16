@@ -267,6 +267,8 @@ def write_export_report(source, folder, stem, row):
         lines.extend(optional('Rejected clock diagnostics',
                      lambda: _rejected_clock_summary(normalization), []))
     lines.extend(['', 'PCM assessment', ''])
+    profile=conversion.get('pcm_options',{}).get('profile',timing.get('pcm_profile','standard'))
+    lines.append('PCM size profile: '+str(profile))
     if assessment:
         lines.extend([f'PCM policy: {assessment.get("policy", "unknown")}; '
                       f'projection {assessment.get("assessment_status", "unknown")}; '

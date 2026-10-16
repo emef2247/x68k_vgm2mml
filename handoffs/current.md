@@ -1,42 +1,45 @@
-# PSG/SSG musical units and scoped noise checkpoint (2026-10-16)
+# PCM profiles and batch timeout checkpoint (2026-10-17)
 
-User requested steps2/3 after confirming initial OPM->OPNA on real GFII inputs.
-Changes saved in x68k working tree only; no stage/commit/push/branch changes.
-Public mucom files are left untouched for user's pending commit/PR.
+Current user request: ultra_low (=quarter standard PCM rate) after low-profile
+regression still showed native ADPCM buffer errors. Both worktrees saved;
+no stage/commit/push/branch changes. User owns private regression and listening.
 
-py/psg_note_units adapts immutable PSG/SSG Segments to original-sample MSX
-extract_notes. Decay/steady volume stays within runs; rises, pitch writes and
-settings/shape changes infer note boundaries. opm_performance consumes note IDs
-and actual allocated track. SCC stays on audibility edges. Zero-length controls
-remain ordered, not false gates. Last observed PSG state carries to actual VGM
-EOF only in explicit interpretation view (source_interval_extensions and
-interpreted_vgmticks_end); original Segment bounds remain intact. This changes
-old PSG audibility-only onset policy; phase is not preserved. No MGSDRV target
-syntax/grid/envelope-bank rules were copied.
+--pcm-profile standard|low|ultra_low defaults to standard. Shared immutable
+py/pcm_profiles.py exactly matches MUCOM. x68k derived SegaPCM/live Delta uses
+F4/15625Hz/8sec, F2/7812.5Hz/16sec or F0/3906.25Hz/32sec. F0 requires4MHz/div1024;
+analysis, playback and bridge metadata use the selected clock, not fixed8MHz.
+Final shared MDX-clock alignment uses actual selected rate and nearest positive
+even sample count. Source State/Segments/PCM IR remain intact.
 
-Scoped FM-model noise-only support uses one fixed positive-duration source part
-on actual OPM7/C2, AL7, other operators muted. Canonical PSG F..H permutation;
-OPNA FM-first reservations unchanged, selected SSG noise owner gets7. reg0F is
-not channel-remapped. Tone mode restores AL/FB and all MUL/TL; finite EOF has
-NE0, song-loop EOF does not. HW-EG, mode3, additional owners, missing actual7,
-additive noise remain reject/force omissions. N0..30 closest nominal shift rate,
-source/effective clock/rate/error auditable. N31 exclusion conservative, not a
-settled hardware claim. Blank noise tone-Hz/cents: KC/KF is internal placeholder.
+Independent Delta and native MSM use capped nearest supported rates; ultra caps
+toF0. Native MSM original .pcm_* retained, target .pcm_low.pcm_* or
+.pcm_ultra_low.pcm_* separate. Profile JSON/mapping/losses record actual profile,
+source gates/IDs, rates, bytes and duration error. Already-in-range bytes retained
+without fake loss. Source reset/cadence/mode guards and96slots/65535bytes/sample
+verified scope/force capacity rules remain unchanged.
 
-Verification:15 focused authored checks passed (8 new,5 performance,1 allocation,
-1 force). Authored PSG/SSG CLI with --dump-passes generated MML and inspected
-source music, mapping, target Key/NE, rates and bounded EOF. Both finite examples
-have5 notes/rests and final Key-Off110250; MML722/571 bytes. Held-noise2pass test
-retains L, no artificial boundary Key or terminal NE disable. Outputs:
-outputs/diagnostics/psg_ssg_noise_20261016. No private conversions/listening.
-An earlier direct TestCase import accidentally collected9 existing authored SSG
-checks including one MDX/PDX helper case; helper ran successfully, and obsolete
-noise rejection expectation was updated. Collection is now restricted.
-Architect read-only review found no remaining blocker after zero-time owner and
-placeholder-Hz fixes and accepted bounded EOF carry as source-state interpretation.
+Both export_mdx/export_mucom batch signatures and CLI parser defaults now600s
+per input per stage. Explicit --timeout remains effective. Internal helper
+subprocess budgets are separate and unchanged. Canonical CLI has no new timeout.
+MUCOM MSM/Sega uses actual rounded Delta-N4615 for ultra (1499875/384Hz), not
+MDX F0 rules. Native OPNA ADPCM in MUCOM remains outside this profile scope.
 
-Docs: docs/psg_musical_noise.md and short README link; existing PSG/SSG/force docs
-updated. Details in external field_notes/2026-10-16_psg_ssg_units_scoped_noise.md.
-Next: user's real regression/listening. Do not broaden noise scope or weaken
-checks for compiler capacity without evidence. Eventual source/helper sync back
-to mucom/MSX is separate from applying MUCOM target syntax here.
+Checks after saving: x68k7 focused authored checks passed, including standard/
+low behavior, ultra quarter payload/F0/clock/dumps/alignment, native/independent/
+live Delta source preservation, parser and batch default600/explicit17 forwarding.
+MUCOM3 focused authored checks passed. Public authored SEGAONE canonical ultra
+with --dump-passes generated MML+helper MDX/PDX at
+outputs/diagnostics/pcm_ultra_low_20261017. Inspected bridge4M/div1024/F0,
+rate3906.25, MML P F0, payload2048bytes confirmed in PDX table; standard prior8190,
+low4095. Native artifacts retained. No private conversions or native listening.
+
+Inverse-rate chunk32sec keeps maximum waveform chunk about62500bytes like low/
+standard. Total bank size and slots can shrink; single-sample buffer requirement
+need not. No runtime-fit guarantee; linear interpolation has no AA filter.
+Read docs/pcm_profiles.md for scope, reports and loss. Next allowed action: user
+regression in a separate outdir with --pcm-profile ultra_low; no private batch
+reruns or broad scope expansion without user direction.
+
+External field_notes/2026-10-17_pcm_ultra_low_profile.md records user regression
+and new implementation. Prior low/noise history remains in2026-10-16 notes;
+do not resume paused VGM output or broaden PSG/noise/force here.

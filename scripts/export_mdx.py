@@ -67,21 +67,23 @@ def inspect_export_commands(generator, mdx, census, timeout):
         return f'MDX command statistics unavailable: {str(error).strip()[:180]}'
 
 
-def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
+def run_batch(source, output, *, target='mdx', generator=None, timeout=600,
               max_ticks=None, psg_model=None, psg_gain=None, scc_gain=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mxc', mxc=None, run68=None,
               normalize_lengths=None, normalization_ms=8, no_vgm=False, song_loop=True, listening_layout=False, _title=None,
-              _report_source=None, _display_name=None, fm_only=False, force=False):
+              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard'):
     if listening_layout:
         from export_listening import run_listening_batch
         return run_listening_batch(source, output, core=run_batch, options=dict(
             target=target, generator=generator, timeout=timeout, max_ticks=max_ticks,
             psg_model=psg_model, psg_gain=psg_gain, scc_gain=scc_gain,
             opm_pitch_policy=opm_pitch_policy, pcm_policy=pcm_policy, compiler=compiler,
-            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, no_vgm=no_vgm, song_loop=song_loop, fm_only=fm_only, force=force))
+            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, no_vgm=no_vgm, song_loop=song_loop, fm_only=fm_only, force=force,pcm_profile=pcm_profile))
     source, output = Path(source).resolve(), Path(output).resolve()
     from conversion_config import normalization_samples
     normalization_samples(normalization_ms)
+    from pcm_profiles import get_profile
+    get_profile(pcm_profile)
     if target not in ('mdx', 'opm', 'opm-additive'):
         raise ValueError('Target must be mdx, opm or opm-additive')
     if compiler not in ('mxc', 'mmlx'):
@@ -113,7 +115,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=180,
                      ('mdx-fixture-generator' + suffix)).resolve()
     if not generator.is_file():
         raise ValueError('Build scripts/mdx_fixture_generator or specify --generator')
-    options = []
+    options = ['--pcm-profile',pcm_profile]
     if force:
         options.append('--force')
     if fm_only:
@@ -320,7 +322,7 @@ def main():
     parser.add_argument('--run68', type=Path, help='run68 executable for native MXC')
     parser.add_argument('--generator', type=Path,
                         help='Rust replay helper and explicit mmlx/typed PCM compiler')
-    parser.add_argument('--timeout', type=positive, default=180, help='Seconds per stage per input')
+    parser.add_argument('--timeout', type=positive, default=600, help='Seconds per stage per input (default: 600)')
     parser.add_argument('--max-ticks', type=positive, help='Playback limit; default derived from source waits')
     parser.add_argument('--no-song-loop', action='store_true', help='Export one finite source pass, without the declared VGM song loop')
     parser.add_argument('--no-vgm', action='store_true',
@@ -335,6 +337,8 @@ def main():
     parser.add_argument('--opm-pitch-policy', choices=('clamp', 'error'))
     parser.add_argument('--pcm-policy', choices=('strict', 'best-effort'),
                         help='Native PCM projection policy; default strict')
+    parser.add_argument('--pcm-profile',choices=('standard','low','ultra_low'),default='standard',
+                        help='PCM output rate/size profile (default: standard)')
     args = parser.parse_args()
     try:
         rows = run_batch(args.input, args.outdir, target=args.target, generator=args.generator,
@@ -343,7 +347,7 @@ def main():
                          psg_gain=args.psg_gain, scc_gain=args.scc_gain,
                           opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy,
                           normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, no_vgm=args.no_vgm,
-                          listening_layout=True, song_loop=not args.no_song_loop, fm_only=args.fm_only, force=args.force)
+                          listening_layout=True, song_loop=not args.no_song_loop, fm_only=args.fm_only, force=args.force,pcm_profile=args.pcm_profile)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     success = sum(row['status'] == 'success' for row in rows)

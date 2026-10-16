@@ -141,6 +141,8 @@ def build_parser():
                         help='OPM pitch range policy: default native/FM=clamp, additive=error')
     fidelity.add_argument('--pcm-policy', choices=['strict', 'best-effort'],
                         help='Native PCM target policy: strict (default) blocks known loss; best-effort reports defined loss')
+    fidelity.add_argument('--pcm-profile',choices=('standard','low','ultra_low'),default='standard',
+                        help='PCM target size/quality profile; low/ultra_low cap derived playback rate near7.8/3.9kHz')
     diagnostic = parser.add_argument_group('Diagnostic and development options')
     diagnostic.add_argument('--force', action='store_true',
                             help='Partial MDX output: omit unsupported OPNA HW effects and excess PCM samples; list all losses')
@@ -204,6 +206,8 @@ def main():
         parser.error('MDX notation/track/loop options require --target mdx')
     if args.pcm_generator and args.target != 'mdx':
         parser.error('--pcm-generator requires --target mdx')
+    if args.pcm_profile!='standard' and args.target!='mdx':
+        parser.error('--pcm-profile low/ultra_low requires --target mdx')
     if args.pcm_policy is not None and args.target != 'mdx':
         parser.error('--pcm-policy requires --target mdx')
     if args.target == 'mdx' and args.track_layout == 'conductor' and args.notation != 'registers':
@@ -303,6 +307,7 @@ def main():
                           or route == 'opm-segapcm-source' and not args.fm_only
                           or route == 'native-opm-pcm' and 'pcm' in usage['used_chips'])
         report['pcm_options'] = dict(applicable=pcm_applicable, policy=args.pcm_policy or 'strict',
+                                    profile=args.pcm_profile,
                                     generator_configured=bool(args.pcm_generator))
         if compatibility_target == 'opm-additive' and args.psg_model not in (None, 'additive'):
             raise ValueError('--target opm-additive requires the additive PSG model')
@@ -329,7 +334,7 @@ def main():
                 loops=not args.no_loops, song_loop=not args.no_song_loop,
                 title=args.title if args.title is not None else title_from_gd3(vgm_path, base_name, args.gd3_language),
                 normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms,
-                pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'strict',
+                pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'strict',pcm_profile=args.pcm_profile,
                 pitch_policy=args.opm_pitch_policy or 'clamp', force=args.force)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
@@ -409,7 +414,7 @@ def main():
                                 track_layout=args.track_layout, notation=args.notation,
                                 loops=not args.no_loops, song_loop=not args.no_song_loop, title=args.title,
                                 gd3_language=args.gd3_language, normalize_lengths=args.normalize_lengths,
-                                pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'strict',
+                                pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'strict',pcm_profile=args.pcm_profile,
                                 pitch_policy=args.opm_pitch_policy or 'clamp',
                                 normalization_ms=args.normalization_ms,
                                 segapcm_source=route == 'opm-segapcm-source',

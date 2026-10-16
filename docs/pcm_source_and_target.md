@@ -1,5 +1,7 @@
 # Native PCM source evidence and target placement
 
+PCM出力の低容量設定は[PCM profiles](pcm_profiles.md)を参照。既定のsource／target境界は維持する。
+
 MSM6258 encoded sample identity uses codec plus exact supplied bytes. Decoder
 reset/continuation, rational nibble rate, raw pan and source timing belong to
 playback evidence, not sample identity. Hashes index candidates; actual bytes
@@ -119,7 +121,7 @@ Stereo folding, clipping, resampling and MSM6258 ADPCM encoding belong to target
 projection. Preserve source-linked mappings and report those assumptions and
 losses separately. See [SegaPCM source/runtime artifacts](segapcm_segments.md).
 
-The union of active runtime gates is packaged into at-most-eight-second chunks,
+The union of active runtime gates is packaged into at-most-eight-second chunks under the standard profile,
 with splits at the MDX song-loop boundary and EOF. Fractional native gate bounds
 round outward by less than one 44100 Hz source sample. Packaging boundaries
 are not Key-On/Off gates, source byte supplies or observed decoder resets.
@@ -130,7 +132,7 @@ Unsupported source PCM cannot become eligible by omitting a short playback.
 FM and PCM use one final MDX clock and common source end. Encode each original
 audio interval to its final scheduled gate duration, retaining original bounds,
 source event/gate identities, target ticks and target sample-count error. The
-current bridge uses F4/15625 Hz and the nearest positive even sample count
+standard bridge uses F4/15625 Hz and the nearest positive even sample count
 (two samples per ADPCM byte), at least two samples. Its rounding error relative
 to the scheduled duration is at most one F4 sample (not one VGM source sample).
 If a positive chunk collapses under the selected clock, alignment raises an

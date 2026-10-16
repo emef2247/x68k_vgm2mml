@@ -25,7 +25,7 @@ def _record_pcm_assessment(assessment, outdir, stem, *, requires_pdx, retained=(
     assessment.dump(outdir, stem)
 
 
-def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None, normalization_source_times=None, normalization_ms=8, pitch_policy='clamp', song_loop=True, replayed_song_loop=False, pcm_analysis_override=None, source_passes_outdir=None, segapcm_source=False, segapcm_pcm=False, force=False):
+def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None, normalization_source_times=None, normalization_ms=8, pitch_policy='clamp', song_loop=True, replayed_song_loop=False, pcm_analysis_override=None, source_passes_outdir=None, segapcm_source=False, segapcm_pcm=False, force=False,pcm_profile='standard'):
     source, outdir = Path(source), Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     requested_normalization = normalize_lengths
@@ -34,6 +34,8 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
     normalize_lengths = normalization_enabled(normalize_lengths, notation=notation)
     if pitch_policy not in ('clamp', 'error'):
         raise ValueError('OPM pitch policy must be clamp or error')
+    from pcm_profiles import get_profile
+    get_profile(pcm_profile)
     if pcm_policy not in ('strict', 'best-effort'):
         raise ValueError('PCM policy must be strict or best-effort')
     owned_binary = generated_binary_artifacts(outdir, source.stem)
@@ -43,6 +45,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
     artifacts = list(owned_binary)
     for suffix in ('.mdx.mml', '.pcm.timing.json', '.pcm.assessment.json', '.pcm.assessment.csv',
                    '.pcm.force_capacity.csv', '.pcm.force_capacity.json',
+                   '.pcm_profile.json', '.pcm_profile.mapping.csv',
                    '.mdx.normalization.json', '.mdx.normalization.csv', '.mdx.before.normalize.mml',
                    '.mdx.pitch.csv'):
         artifacts.append(outdir / (source.stem + suffix))
@@ -83,8 +86,13 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             native_pcm.dump(outdir, source.stem)
             pcm_analysis = project_segapcm(native_pcm, source_raw=read_vgm_bytes(source),
                                           loop_start=sega_loop,
-                                          loop_count=source_loop.get('loop_count', 1))
+                                          loop_count=source_loop.get('loop_count', 1),pcm_profile=pcm_profile)
             pcm_analysis.dump(outdir, source.stem)
+        if pcm_profile!='standard' and pcm_analysis.playbacks and pcm_analysis_override is None and not segapcm_pcm:
+            from pcm_msm_profile import project as profile_msm
+            pcm_analysis.dump(outdir,source.stem)
+            pcm_analysis=profile_msm(pcm_analysis,pcm_profile=pcm_profile)
+            pcm_analysis.dump(outdir,source.stem)
         has_pcm = bool(pcm_analysis.playbacks or pcm_analysis.samples or pcm_analysis.transfers
                        or pcm_analysis.raw_commands or pcm_analysis.blocks)
         if pcm_analysis.source_end_vgmticks != metadata['source_end_vgmticks']:
