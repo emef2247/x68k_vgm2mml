@@ -59,8 +59,8 @@ class OpnaSsgOpmTests(unittest.TestCase):
         self.assertEqual([r['source_ch'] for r in rows if r['status'] == 'dropped'], [2])
         projected, _, _ = project(ssg, ssg_map)
         self.assertEqual({r['target_ch'] for r in projected}, {3, 7})
-        with self.assertRaisesRegex(ValueError, 'noise/hardware EG'):
-            project(ssg, {2: 7})
+        noise, _, _ = project(ssg, {2: 7})
+        self.assertTrue(any(r['target_register']==15 and r['target_data']&128 for r in noise))
 
     def test_unused_fm_setup_cannot_overwrite_ssg_channel(self):
         fm, ssg = self.analyze(bytes.fromhex('56 31 71 56 28 01 56 29 80') + body((0,)))

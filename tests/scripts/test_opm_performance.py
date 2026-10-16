@@ -29,7 +29,7 @@ def baseline(rows, end=None):
 
 
 class PerformanceTests(unittest.TestCase):
-    def test_audibility_edges_only_and_setup_before_attack_release_before_mute(self):
+    def test_source_notes_and_setup_before_attack_release_before_mute(self):
         source = baseline([psg(volume=0), psg(vgmticks=441, vgmticks_end=882),
                            psg(vgmticks=882, vgmticks_end=1323, tone_period=190, volume=12),
                            psg(vgmticks=1323, vgmticks_end=1764, volume=0),
@@ -38,10 +38,10 @@ class PerformanceTests(unittest.TestCase):
         plan = build_performance(source)
         self.assertEqual(source, before)
         self.assertEqual([r['inferred_transition'] for r in plan.rows],
-                         ['rest', 'attack', 'continuation', 'release', 'attack'])
+                         ['rest', 'attack', 'retrigger', 'release', 'attack'])
         keys = [w for w in plan.writes if w.register == 8]
         self.assertEqual([(w.source_row, bool(w.data & 0x78), w.inferred_key) for w in keys],
-                         [(None, False, False), (1, True, True), (3, False, True),
+                         [(None, False, False), (1, True, True), (2, False, True), (2, True, True), (3, False, True),
                           (4, True, True), (None, False, True)])
         for row_index in (1, 4):
             writes = [w for w in plan.writes if w.source_row == row_index]
@@ -66,21 +66,21 @@ class PerformanceTests(unittest.TestCase):
         with self.assertRaises(FrozenInstanceError):
             plan.writes[0].data = 1
 
-    def test_zero_target_duration_and_same_sample_gate_edges_survive(self):
+    def test_zero_source_time_has_no_gate_but_positive_collapsed_gate_survives(self):
         source = baseline([psg(vgmticks_end=0), psg(volume=0, vgmticks_end=1),
                            psg(vgmticks=1, vgmticks_end=2),
                            psg(volume=0, vgmticks=2, vgmticks_end=441)])
         plan = build_performance(source)
         self.assertEqual([r['inferred_transition'] for r in plan.rows],
-                         ['attack', 'release', 'attack', 'release'])
+                         ['rest', 'rest', 'attack', 'release'])
         inferred = [w for w in plan.writes if w.inferred_key]
-        self.assertEqual([w.vgmticks for w in inferred], [0, 0, 1, 2])
-        self.assertEqual([w.mdx_tick for w in inferred], [0, 0, 0, 0])
-        self.assertEqual([bool(w.data & 0x78) for w in inferred], [True, False, True, False])
+        self.assertEqual([w.vgmticks for w in inferred], [1, 2])
+        self.assertEqual([w.mdx_tick for w in inferred], [0, 0])
+        self.assertEqual([bool(w.data & 0x78) for w in inferred], [True, False])
         trajectory = build_target_trajectory(plan.scheduled_writes(), end_tick=plan.end_tick,
                                              source_end_vgmticks=plan.source_end)
-        self.assertEqual(sum(bool(e.rising_mask) for e in trajectory.events), 2)
-        self.assertEqual(sum(bool(e.falling_mask) for e in trajectory.events), 2)
+        self.assertEqual(sum(bool(e.rising_mask) for e in trajectory.events), 1)
+        self.assertEqual(sum(bool(e.falling_mask) for e in trajectory.events), 1)
         self.assertTrue(all(not i.state.key_mask for i in trajectory.intervals))
 
     def test_silent_parts_create_no_oscillator_or_gate(self):

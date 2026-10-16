@@ -16,7 +16,14 @@ def allocate(fm, ssg):
                 if any(s.mode and (s.volume or s.envelope_enabled) for s in items)}
     fm_map = {ch: ch + (1 if ch >= 3 else 0) for ch in sorted(used_fm)}
     available = [ch for ch in range(8) if ch not in fm_map.values()]
-    ssg_map = dict(zip(sorted(used_ssg), available))
+    selected=sorted(used_ssg)[:len(available)]
+    from psg_opm_noise import candidates
+    noisy=[ch for ch in candidates(ssg.segments,end=ssg.source_end_vgmticks) if ch in selected]
+    owner=noisy[0] if noisy and 7 in available else None
+    ssg_map={}
+    if owner is not None:ssg_map[owner]=7
+    free=[ch for ch in available if ch not in ssg_map.values()]
+    ssg_map.update(zip((ch for ch in selected if ch!=owner),free))
     rows = []
     for domain, count, used, mapping in (('fm', 6, used_fm, fm_map),
                                          ('ssg', 3, used_ssg, ssg_map)):
@@ -55,7 +62,8 @@ def project(ssg, channel_map, *, loop_start=None, pitch_policy='clamp', force=Fa
     selected = {ch: ssg.segments[ch] for ch in channel_map}
     baseline = project_psg(selected, SccAnalysis({}, ()), psg_clock=ssg.clock_hz / 4,
         scc_clock=0, end_vgmticks=ssg.source_end_vgmticks,
-        psg_model='fm', pitch_policy=pitch_policy, force=force)
+        psg_model='fm', pitch_policy=pitch_policy, force=force,
+        noise_source_ch=next((ch for ch,target in channel_map.items() if target==7),None))
     omissions = []
     for loss in baseline.settings['forced_omissions']:
         segment = selected[loss['source_ch']][loss['source_row']]
@@ -84,7 +92,7 @@ def project(ssg, channel_map, *, loop_start=None, pitch_policy='clamp', force=Fa
     rows = []
     for write in performance.writes:
         target = channel_map[write.source_ch]
-        register = write.register if write.register == 8 else (write.register & ~7) | target
+        register = write.register if write.register in (8,15) else (write.register & ~7) | target
         data = (write.data & ~7) | target if register == 8 else write.data
         segment = selected[write.source_ch][write.source_row] if write.source_row is not None else None
         interpreted = (performance.rows[write.performance_row_id]

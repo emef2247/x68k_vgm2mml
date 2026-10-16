@@ -147,5 +147,7 @@ suspected limitations is separate work.
 through the shared PSG target projection; native source Segments and elapsed
 time stay intact. The skipped-parts list names the source part, including SSG
 parts excluded by the existing FM-priority channel allocation.
-This adds omission reporting, not noise/envelope synthesis.
+Fixed-level noise-only synthesis is now available within the
+[scoped single-owner policy](psg_musical_noise.md). Other noise/envelope
+intervals still use explicit rejection/force omission.
 See [partial-output policy](opna_force.md).
