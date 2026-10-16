@@ -242,7 +242,7 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
         plan.structured_context = StructuredContext(performance, analysis, projection, normalization)
         _mark_projected_evidence(folder, source, target, performance, projection, normalization)
         text = native_mml.read_text(encoding='utf-8')
-        text = '; PSG/SCC OPM target; PSG model=' + psg_model + '.\n; Musical onsets inferred from audibility; oscillator phase differs from the held baseline.\n' + text
+        text = '; PSG/SCC OPM target; PSG model=' + psg_model + '.\n; PSG onsets inferred from source note/volume runs; SCC from audibility. Oscillator phase differs from the held baseline.\n' + text
         mml.write_text(text, encoding='utf-8')
     else:
         if loop_start is not None:

@@ -1,7 +1,7 @@
 """Explicit musical gate inference over an unchanged PSG/SCC OPM projection.
 
-Audibility edges become target Key events. This intentionally changes oscillator
-phase at attacks; pitch and level changes within a sounding span keep its gate.
+PSG uses the shared source musical-note/volume-run interpretation; SCC retains
+audibility edges. Target Keys are inferred; oscillator phase is not preserved.
 """
 import csv
 from dataclasses import asdict, dataclass
@@ -105,7 +105,8 @@ def build_performance(baseline, *, terminate=True):
     parts = sorted({(r['source_chip'], r['source_ch']) for r in baseline.rows},
                    key=lambda part: part[1] + (5 if part[0] == 'psg' else 0))
     for chip, ch in parts:
-        target = ch + (5 if chip == 'psg' else 0)
+        target = ord(next(r['target_track'] for r in baseline.rows
+                          if (r['source_chip'],r['source_ch'])==(chip,ch)))-65
         detached = grouped.get((chip, ch, None), [])
         initial = [w for w in detached if not w.reason.startswith('terminal ')]
         terminal = [w for w in detached if w.reason.startswith('terminal ')]
@@ -113,20 +114,27 @@ def build_performance(baseline, *, terminate=True):
             if w.register != 8 or not w.data & 0x78:
                 copy(w, None)
         gate = False
+        previous_note=None
         for source in (r for r in baseline.rows if (r['source_chip'], r['source_ch']) == (chip, ch)):
             row_id, first = len(rows), len(writes)
             audible = bool(source['target_audible'])
+            if chip=='psg' and baseline.source_music is not None and source['vgmticks']==source.get('interpreted_vgmticks_end',source['vgmticks_end']):
+                audible=gate
             row_writes = grouped.get((chip, ch, source['source_row']), [])
             before = gate
-            if gate and not audible:
+            note=source.get('musical_note_id')
+            retrigger=bool(gate and audible and note is not None and previous_note is not None and note!=previous_note)
+            if gate and (not audible or retrigger):
                 key(chip, ch, source['source_row'], source['vgmticks'], target, False, row_id)
             for w in row_writes:
                 copy(w, row_id)
-            if audible and not gate:
+            if audible and (not gate or retrigger):
                 key(chip, ch, source['source_row'], source['vgmticks'], target, True, row_id)
             gate = audible
-            transition = ('attack' if audible else 'release') if before != audible else (
-                'continuation' if audible else 'rest')
+            if note is not None:previous_note=note
+            if retrigger:transition='retrigger'
+            elif before!=audible:transition='attack' if audible else 'release'
+            else:transition='continuation' if audible else 'rest'
             rows.append(dict(source, performance_row_id=row_id, gate_before=before, gate_after=gate,
                              inferred_transition=transition, state_origin='projected_opm',
                              key_origin='musical_attack_inferred', source_key_observed=False,
@@ -137,8 +145,8 @@ def build_performance(baseline, *, terminate=True):
         for w in terminal if terminate else ():
             if w.register != 8:
                 copy(w, None)
-    settings = dict(baseline.settings, sourcegate='inferred_from_audibility',
-                    onset_policy='audibility_edges', phase_preserved=False,
+    settings = dict(baseline.settings, sourcegate='inferred_from_source_musical_units',
+                    onset_policy='PSG MSX note/volume runs; SCC audibility edges', phase_preserved=False,
                     key_origin='musical_attack_inferred', source_key_observed=False)
     plan = PerformancePlan(tuple(writes), tuple(rows), baseline.source_end, settings)
     build_target_trajectory(plan.scheduled_writes(), end_tick=plan.end_tick,

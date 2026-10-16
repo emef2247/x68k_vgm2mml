@@ -1,7 +1,7 @@
 """PSG/SCC OPM target projections with selectable PSG tone models.
 
 No source Key events are invented: target oscillators stay keyed on and source
-amplitude/muting is projected separately. Noise and hardware EG are rejected.
+amplitude/muting is projected separately. Scoped noise-only output is approximated; hardware EG remains unsupported.
 This is a spectral approximation, not a native OPM interpretation of the input.
 """
 from dataclasses import asdict, dataclass
@@ -110,6 +110,8 @@ class AdditivePlan:
     settings: dict
     # Optional result of the separate musical projection and canonical OPM path.
     structured_context: object = None
+    source_music: object = None
+    source_music_segments: object = None
 
     @property
     def end_tick(self):
@@ -122,8 +124,8 @@ class AdditivePlan:
         title = title.replace('"', "'").replace('\r', ' ').replace('\n', ' ')
         lines = [f'#title "{title}"',
                  '; PSG/SCC OPM target; PSG model=' + self.settings.get('psg_model', 'additive') + '.',
-                 '; A..E=SCC1..5; F..H=PSG1..3. Held keys; raw controls retain trajectories.',
-                 '; No noise/hardware-envelope conversion; phase and chip mix are approximations.', 'A @t255']
+                 '; A..E=SCC1..5; PSG fixed map in target JSON; noise owns H. Held keys; raw controls retain trajectories.',
+                 '; Scoped noise-only support; hardware envelope unsupported; phase/mix approximate.', 'A @t255']
         for ch in sorted({w.target_ch for w in self.writes}):
             track = chr(65 + ch)
             tick = 0
@@ -151,6 +153,9 @@ class AdditivePlan:
                 writer = csv.DictWriter(f, fieldnames=list(rows[0]))
                 writer.writeheader()
                 writer.writerows(rows)
+        if self.source_music is not None:
+            from psg_note_units import dump
+            dump(self.source_music,self.source_music_segments,out/(stem+'.psg.music.csv'))
         csv_file('.opm_target.csv', self.rows)
         csv_file('.opm_writes.csv', [asdict(w) for w in self.writes])
         voice_rows = [asdict(v) for v in self.voices.values()]
@@ -164,7 +169,9 @@ class AdditivePlan:
         report = dict(self.settings, source_end_vgmticks=self.source_end,
                       end_mdx_tick=self.end_tick, returned_end_expected=projected_samples(self.end_tick),
                       target_writes=len(self.writes), source_rows=len(self.rows), voices=len(self.voices),
-                      musical_note_count_not_inferred=True, phase_matching=False,
+                      musical_note_count_not_inferred=True,
+                      source_musical_note_count=sum(not note.rest for notes in (self.source_music or {}).values() for note in notes),
+                      phase_matching=False,
                       gain_calibrated=False,
                       psg_volume_model=('fixed TL curve with 8-step headroom' if self.settings.get('psg_model') == 'fm'
                                         else 'approximate 3 dB per level'),
@@ -175,7 +182,7 @@ class AdditivePlan:
 
 
 def project(psg, scc, *, psg_clock, scc_clock, end_vgmticks, psg_gain=None,
-            scc_gain=.125, psg_model='additive', pitch_policy=None, force=False):
+            scc_gain=.125, psg_model='additive', pitch_policy=None, force=False, noise_source_ch='auto'):
     if psg_model not in ('fm', 'additive'):
         raise ValueError('PSG model must be fm or additive')
     pitch_policy = pitch_policy or ('clamp' if psg_model == 'fm' else 'error')
@@ -190,12 +197,30 @@ def project(psg, scc, *, psg_clock, scc_clock, end_vgmticks, psg_gain=None,
                         dict(psg_clock=psg_clock, scc_clock=scc_clock, target_clock=OPM_CLOCK,
                              psg_gain=psg_gain, scc_gain=scc_gain, psg_model=psg_model,
                              pitch_policy=pitch_policy, scc_model='additive', force_enabled=force, forced_omissions=[]))
+    from psg_note_units import interpret, membership, interval_end
+    plan.source_music=interpret(psg,end=end_vgmticks)
+    plan.source_music_segments=psg
+    note_membership=membership(plan.source_music)
+    from psg_opm_noise import NoiseVoice, candidates as noise_candidates, rate as noise_rate
+    candidates=noise_candidates(psg,end=end_vgmticks)
+    noise_owner=(candidates[0] if candidates and psg_model=='fm' else None) if noise_source_ch=='auto' else noise_source_ch
+    if psg_model!='fm':noise_owner=None
+    psg_map={ch:ch+5 for ch in range(3)}
+    if noise_owner is not None:
+        psg_map[2],psg_map[noise_owner]=psg_map[noise_owner],7
+    plan.settings.update(psg_channel_map=psg_map,noise_source_ch=noise_owner,
+        noise_policy='one fixed noise-only owner on OPM7; N0..30 nearest nominal shift rate',
+        noise_phase_matching=False,source_note_policy='MSX extract_notes in original samples',
+        source_interval_extensions=[dict(source_ch=ch,source_row=len(rows)-1,
+            original_end=rows[-1].vgmticks_end,interpreted_end=end_vgmticks,
+            reason='last observed state carried through remaining VGM wait')
+            for ch,rows in psg.items() if rows and rows[-1].vgmticks_end<end_vgmticks])
     for chip, channels, clock, gain in [('scc', scc.segments, scc_clock, scc_gain),
                                         ('psg', psg, psg_clock, psg_gain)]:
         for ch, segments in sorted(channels.items()):
             if not 0 <= ch < (5 if chip == 'scc' else 3):
                 raise ValueError('Unsupported source channel')
-            target = ch if chip == 'scc' else ch + 5
+            target = ch if chip == 'scc' else psg_map[ch]
             fm = chip == 'psg' and psg_model == 'fm'
             voice_profile = FmVoice() if fm else None
             control = (voice_profile.feedback << 3 | voice_profile.algorithm) if fm else 7
@@ -216,6 +241,7 @@ def project(psg, scc, *, psg_clock, scc_clock, end_vgmticks, psg_gain=None,
                                                 mdx_tick(sample), target, reg, data, reason))
             if used:
                 emit(8, target, 'initial key off', True)
+                if chip=='psg' and ch==noise_owner:emit(15,0,'initial noise disabled')
                 emit(0x20 + target, control, 'selected voice; outputs muted')
                 emit(0x38 + target, 0, 'disable channel LFO')
                 emit(0x28 + target, 0, 'initial pitch')
@@ -231,25 +257,33 @@ def project(psg, scc, *, psg_clock, scc_clock, end_vgmticks, psg_gain=None,
                 sample = s.vgmticks
                 if sample is None or s.vgmticks_end is None or not 0 <= sample <= s.vgmticks_end <= end_vgmticks:
                     raise ValueError('Segment needs valid native sample boundaries')
+                interpreted_end=interval_end(segments,row_id,end_vgmticks) if chip=='psg' else s.vgmticks_end
                 omission_reason = ''
                 if chip == 'psg' and s.mode and (s.volume or s.envelope_enabled):
-                    if s.envelope_enabled or s.mode in (2, 3):
+                    if s.envelope_enabled or s.mode==3 or (s.mode==2 and ch!=noise_owner and interpreted_end>sample):
                         if not force:
                             raise ValueError(f'PSG ch{ch} row{row_id}: noise/hardware EG not implemented')
                         reasons = []
                         if s.mode in (2, 3):
-                            reasons.append('psg_noise')
+                            reasons.append('psg_noise' if s.mode==3 or psg_model!='fm' else 'psg_noise_owner_conflict')
                         if s.envelope_enabled:
                             reasons.append('psg_hardware_envelope')
                         omission_reason = '+'.join(reasons)
                         plan.settings['forced_omissions'].append(dict(source_ch=ch, source_row=row_id,
-                            source_channel=ch+1, start_vgmticks=sample, end_vgmticks=s.vgmticks_end,
-                            reason=omission_reason))
+                            source_channel=ch+1, start_vgmticks=sample, end_vgmticks=interpreted_end,
+                            source_segment_end_vgmticks=s.vgmticks_end,reason=omission_reason))
                 active = bool(not omission_reason and s.volume and (s.enabled if chip == 'scc' else s.mode))
+                zero_noise=bool(chip=='psg' and s.mode==2 and interpreted_end==sample and ch!=noise_owner)
+                if zero_noise:active=False
                 segment_clock = getattr(s, 'source_clock_hz', clock)
-                freq = source_frequency(chip, segment_clock, s.tone_period) if active else 0.
-                approximation = '--force: ' + omission_reason + '; entire interval muted' if omission_reason else ''
-                if active and freq:
+                noise=bool(chip=='psg' and ch==noise_owner and s.mode==2 and active)
+                noise_n=noise_source_rate=noise_target_rate=noise_error=''
+                if noise:
+                    noise_n,noise_source_rate,noise_target_rate,noise_error=noise_rate(segment_clock,s.noise_period)
+                freq = source_frequency(chip, segment_clock, s.tone_period) if active and not noise else (440. if noise else 0.)
+                approximation = ('--force: ' + omission_reason + '; entire interval muted' if omission_reason else
+                                 'zero-source-duration noise state; no target oscillator' if zero_noise else '')
+                if active and freq and not noise:
                     try:
                         opm_pitch(freq)
                     except ValueError:
@@ -265,16 +299,21 @@ def project(psg, scc, *, psg_clock, scc_clock, end_vgmticks, psg_gain=None,
                 tls = ()
                 first = len(plan.writes)
                 if active and freq:
-                    voice = voice_profile if fm else (waveform_voice(s.waveform_hex) if chip == 'scc' else square_voice())
+                    control=7 if noise else ((voice_profile.feedback<<3 | voice_profile.algorithm) if fm else 7)
+                    if chip=='psg' and ch==noise_owner:
+                        emit(15,(128|noise_n) if noise else 0,'noise-only rate approximation' if noise else 'restore tone; noise disabled')
+                    voice = NoiseVoice() if noise else voice_profile if fm else (waveform_voice(s.waveform_hex) if chip == 'scc' else square_voice())
                     plan.voices.setdefault(voice.identity, voice)
                     active = fm or any(a > 1e-10 for a in voice.amplitudes)
                     if active:
                         kc, kf, actual = opm_pitch(freq, clamp=pitch_policy == 'clamp')
                         error = 1200 * math.log2(actual / freq)
                         level = s.volume / 15 if chip == 'scc' else 10 ** (-3 * (15 - s.volume) / 20)
-                        tls = ((27, 127, tone_tl(s.volume, gain), 127) if fm else
+                        tls = ((127,127,127,tone_tl(s.volume,gain)) if noise else
+                               (27, 127, tone_tl(s.volume, gain), 127) if fm else
                                tuple(carrier_tl(gain * level * a) for a in voice.amplitudes))
-                        emit(0x28 + target, kc, 'source pitch')
+                        if noise:approximation='noise-only nominal shift-rate approximation; phase/spectrum unverified'
+                        emit(0x28 + target, kc, 'noise carrier placeholder pitch' if noise else 'source pitch')
                         emit(0x30 + target, kf, 'source pitch')
                         for bank, (harmonic, tl) in enumerate(zip(voice.operator_muls if fm else voice.harmonics, tls)):
                             emit(0x40 + target + bank * 8, harmonic, 'FM multiplier' if fm else 'selected harmonic')
@@ -284,21 +323,32 @@ def project(psg, scc, *, psg_clock, scc_clock, end_vgmticks, psg_gain=None,
                     active = False
                 if not active and used:
                     emit(0x20 + target, control, 'source mute or nonoscillating source')
+                note=note_membership.get((ch,row_id)) if chip=='psg' else None
                 plan.rows.append(dict(source_chip=chip, source_ch=ch, source_row=row_id,
+                                      noise_period=getattr(s,'noise_period',''),
+                                      noise_effective_clock_hz=segment_clock if noise else '',
+                                      noise_n=noise_n,noise_source_rate_hz=noise_source_rate,
+                                      noise_target_rate_hz=noise_target_rate,noise_error_cents=noise_error,
+                                      musical_note_id=note[0] if note else None,
+                                      musical_note_start=note[1] if note else None,
+                                      musical_note_end=note[2] if note else None,
+                                      musical_note_rest=note[3] if note else None,
                                       vgmticks=sample, vgmticks_end=s.vgmticks_end,
+                                      interpreted_vgmticks_end=interpreted_end,
                                       mdx_tick=mdx_tick(sample), target_track=chr(65 + target),
                                       source_period=s.tone_period, source_volume=s.volume,
                                       source_waveform_id=getattr(s, 'waveform_id', ''),
                                       source_mode=getattr(s, 'mode', ''), target_audible=active,
                                       approximation=approximation,
                                       voice_id=voice.identity if voice else '',
-                                      voice_model='fm' if fm else 'additive',
-                                      target_algorithm=control & 7, target_feedback=control >> 3, frequency_hz=freq,
-                                      target_kc=kc, target_kf=kf, target_frequency_hz=actual,
-                                      pitch_error_cents=error, carrier_tl=json.dumps(tls),
+                                      voice_model='noise-only' if noise else 'fm' if fm else 'additive',
+                                      target_algorithm=control & 7, target_feedback=control >> 3, frequency_hz='' if noise else freq,
+                                      target_kc=kc, target_kf=kf, target_frequency_hz='' if noise else actual,
+                                      pitch_error_cents='' if noise else error, carrier_tl=json.dumps(tls),
                                       target_write_ids=json.dumps(list(range(first, len(plan.writes))))))
             if used:
                 sample, row_id = end_vgmticks, None
+                if chip=='psg' and ch==noise_owner:emit(15,0,'terminal noise disabled')
                 emit(0x20 + target, control, 'terminal mute at VGM end')
                 emit(8, target, 'terminal key off', True)
     return plan

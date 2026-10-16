@@ -40,7 +40,10 @@ Allocation is fixed for the whole song, before target writes are generated:
    operations, temporarily disabled outputs and later release tails. Register
    initialization alone does not reserve an OPM channel.
 2. Reserved FM parts keep the vgm-conv mapping: source0..5 -> OPM0,1,2,4,5,6.
-3. Used SSG parts take vacant OPM channels in ascending source/target order.
+3. Retain used SSG parts in ascending source order within the remaining capacity.
+   If a retained part has eligible positive-duration noise-only spans, reserve
+   OPM7 for the first such part. Other retained parts take ascending vacant channels.
+   Reserved native FM parts never move.
    A part is used if its mixer allows output and fixed volume is nonzero or
    hardware envelope mode is selected. This is conservative source usage,
    independent of later MDX short-note omission.
@@ -60,12 +63,15 @@ state and the capacity omission remain inspectable.
 ## PSG synthesis reuse and limits
 
 SSG uses `psg_scc_opm.project(..., psg_model='fm')` and `build_performance`:
-the existing AL4/FB7 voice, multiplier profile, fixed-level TL curve, nominal
-OPM pitch helper and audibility-edge gate inference. Pitch/level changes during
-an audible span keep the inferred gate. This is the same square-tone
+the existing AL4/FB7 tone voice, multiplier profile, fixed-level TL curve and
+nominal OPM pitch helper. Shared source-note/volume-run inference follows
+MSX extraction in exact source samples; decays stay within a note while rises,
+pitch writes and settings/shape changes may infer a new attack. This is the same square-tone
 approximation as ordinary PSG import, with unverified phase/gain equivalence.
-Noise and hardware envelopes on allocated parts retain the same explicit
-rejection as the existing PSG target; their source state is not discarded.
+One fixed-level noise-only source part can use actual OPM7/C2. Mixed tone/noise,
+additional noise owners, hardware envelopes or an unavailable actual7 remain
+explicit rejection/force omissions. Source state is retained. See
+[musical units and scoped noise](psg_musical_noise.md).
 
 FM and SSG writes merge by exact source samples, expanded source event IDs and
 within-event write order. The generic PSG quantized schedule is not serialized
@@ -96,5 +102,7 @@ for future MUCOM FM/SSG validation, which this X68000 target change does not run
 through the shared PSG target projection; native source Segments and elapsed
 time stay intact. The skipped-parts list names the source part, including SSG
 parts excluded by the existing FM-priority channel allocation.
-This adds omission reporting, not noise/envelope synthesis.
+Fixed-level noise-only synthesis is now available within the
+[scoped single-owner policy](psg_musical_noise.md). Other noise/envelope
+intervals still use explicit rejection/force omission.
 See [partial-output policy](opna_force.md).

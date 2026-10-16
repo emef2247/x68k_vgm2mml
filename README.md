@@ -20,6 +20,8 @@ python vgm2mml.py input.vgm --outdir OUTPUT
 
 VGMの実際のコマンドから使用音源を判定し、OPM／PCM、OPNA FM／SSG、または対応するPSG／SCC入力の経路を選択します。未対応の音源・組み合わせ・ストリームは診断情報として報告します。
 
+PSG／SSGは共通の発音・音量run解釈を使い、固定音量のnoise-onlyパート1本をOPMノイズへ近似できます。[対応範囲と中間結果](docs/psg_musical_noise.md)を参照してください。
+
 ### 入力と出力
 
 | 入力 | 主な出力 |
@@ -27,7 +29,7 @@ VGMの実際のコマンドから使用音源を判定し、OPM／PCM、OPNA FM�
 | OPM（YM2151） | OPMの状態・SegmentからMDX用MMLを生成 |
 | OPM + SegaPCM | OPMのMDX用MMLとSegaPCMの状態・制御Segment・PCM IR。PCMのターゲット投影には`best-effort`を指定 |
 | OPNA（YM2608）のFM | Native SegmentからMDX用MMLを生成 |
-| OPNAのSSGトーン | OPM向けに投影してMDX用MMLを生成 |
+| OPNAのSSGトーン／限定ノイズ | OPM向けに投影してMDX用MMLを生成 |
 | OPNAのADPCM-B（Delta-T） | 元のPCM IRと、MDX向けに投影したPCM IR・PCM参照を含むMML（`best-effort`） |
 | PSG／SCC | OPM向け音色・演奏情報へ投影してMDX用MMLを生成 |
 | 対応するMSM6258 PCM（OPM併用を含む） | PCM IRとPCM参照を含むMDX用MMLを生成 |

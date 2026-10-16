@@ -81,12 +81,17 @@ allocation/compression switches do not apply to this projection.
 
 ### Musical projection and the ordinary OPM pipeline
 
-Audibility rising/falling edges become inferred OPM Key-On/Off events. Pitch
-and level updates within a sounding interval remain continuations. This is a
+PSG/SSG use the shared source-sample MSX `extract_notes` interpretation.
+Decreasing/steady software levels remain runs; level rises, pitch writes and
+settings/shape boundaries infer new units. Zero-duration controls retain their
+order without alone inventing a Key. SCC retains audibility-edge inference.
+See [musical units and scoped noise](psg_musical_noise.md). This is a
 target interpretation: PSG/SCC do not supply native OPM Keys. The user selected
 musical articulation over preserving the previous held oscillator phase.
-No periodic retriggers are added for GUI animation. Noise and hardware EG remain
-unsupported; timbre, gain, pitch policy and source interpretation are unchanged.
+No periodic retriggers are added for GUI animation. The FM PSG model now
+supports one fixed-level noise-only owner on OPM7; mixed modes, additional
+noise owners and hardware EG remain explicit rejection/force omissions.
+Tone timbre, gain and pitch policy remain unchanged.
 
 With `--dump-passes`, `<stem>.opm_performance.csv`, `.writes.csv`, `.state.csv`,
 `.intervals.csv` and `.json` record inferred gates, baseline write membership,
@@ -108,6 +113,10 @@ verification uses the recorded correction bound and checks all known states,
 including muted intervals, exact Key command times/values and known state just
 before/after every Key. Ordinary MDX expansion may change non-Key write order;
 it is not raw-stream equality or source waveform equivalence.
+
+The dated results below describe the earlier audibility-only/noise-rejection
+implementation; they are not a current blanket noise-support statement.
+Current scope and authored evidence are in [the focused specification](psg_musical_noise.md).
 
 Public checks cover tonal inputs, silent-only projection and native OPM
 regressions. The 2026-10-09 private export audit generated 57/82 triples after
@@ -148,7 +157,9 @@ Active OPLL, unknown commands and unsupported SCC modes still fail explicitly.
 Shared version-bounded header reading accepts AY VGM 1.51+ and AY8910 flags
 0..3. Standard K051649 is supported; not every PSG/SSG or SCC variant is.
 
-A..E correspond to SCC1..5, F..H to PSG1..3. Silent-only parts need no oscillator.
+A..E correspond to SCC1..5. PSG1..3 normally use F..H; scoped noise reserves H
+and permutes these three fixed target assignments. Inspect `psg_channel_map`
+and each row target track. Silent-only parts need no oscillator.
 Source channel, row, native sample boundaries and target write IDs remain visible
 in the unified target CSV. Source CSVs remain integrated per chip.
 
