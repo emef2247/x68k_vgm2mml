@@ -129,7 +129,7 @@ def render(analysis, *, max_frames=MAX_FRAMES):
     return WaveformAnalysis(Fraction(44100), samples, tuple(gates), analysis.source_end_vgmticks, epochs)
 
 
-def project(analysis, *, source_raw, loop_start=None):
+def project(analysis, *, source_raw, loop_start=None,pcm_profile='standard'):
     """Create shared-clock target chunks while retaining the native waveform."""
     from pcm_waveform_mdx import project as project_waveform
     if hashlib.sha256(source_raw).hexdigest() != analysis.source_sha256:
@@ -147,4 +147,4 @@ def project(analysis, *, source_raw, loop_start=None):
     return project_waveform(native, source_raw=source_raw, loop_start=loop_start,
         loop_count=analysis.loop_count, source_origin='projected_msm6258_from_opna_adpcm_b_continuous',
         evidence_prefix='adpcm_b', artifact_prefix='opna_pcm',
-        source_description='Nominal continuous ADPCM-B waveform', source_evidence=evidence + observations)
+        source_description='Nominal continuous ADPCM-B waveform', source_evidence=evidence + observations,pcm_profile=pcm_profile)

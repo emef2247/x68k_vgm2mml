@@ -1,5 +1,9 @@
 # Native MSM6258 PCM and PDX
 
+Japanese original: [pcm_pdxJ.md](pcm_pdxJ.md).
+
+For smaller PCM output, see [PCM profiles](pcm_profiles.md). The existing source/target boundary is preserved.
+
 The project uses the name MSM6258 for this chip and its PCM IR. VGM keeps
 its existing command `0xB7`, DAC stream chip ID `0x17`, and header fields at
 `0x90`/`0x94`; the naming change does not alter those identifiers or encoded
@@ -245,6 +249,28 @@ generation independently of runtime validation. It never recompiles readable
 PCM MML as a substitute for a missing typed pair. Default replay and existing
 roundtrip tooling remain available. FM-only replay is unaffected. Use an X68000 player for the PCM pair; hardware,
 MMDSP GUI and waveform comparison remain separate validation work.
+
+## Song-loop addresses in typed PCM assembly
+
+The typed PCM helper resolves each FM song-loop marker `L` from the parsed MML
+prefix, preserving its initial octave/default-length state and finite repeats.
+The compiled prefix must equal the beginning of the full compiled track.
+Only one outer `L` per FM track is accepted; markers within finite repeats,
+unreachable markers and context-dependent changes across the marker are rejected.
+
+Pinned mmlx 0.2.0 uses a legacy offset adjustment when `L` starts with a note/rest
+and a later finite repeat exists. Its F1 destination can be two bytes past the
+source marker, including another valid command boundary. Typed assembly corrects
+only that verified discrepancy to the command-end-relative source `L` address;
+unexpected offsets remain errors. The relocation, track and byte address appear
+in `<stem>.pcm/mdx_build.log`. Source MML and native Segments are unchanged.
+
+After relocation, existing checks still require an outer command boundary,
+positive loop duration, signed 16-bit offset, shared FM/PCM loop tick and end,
+and identical serialized FM commands except for this explicit F1 correction.
+No loop is disabled or moved in time to fit. Native MDX offset/track-buffer
+capacity and PCM playback verification remain separate constraints. The helper's
+correction applies to `--compile-pcm`, not generic FM-only compilation.
 
 ## Evidence and remaining work
 

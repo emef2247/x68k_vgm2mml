@@ -12,12 +12,14 @@ from opm_mdx import projected_samples, mdx_tick
 from vgm_timing import command_times
 
 
-def write_target_vgm(plan, path, *, mapping_csv=None, song_loop_start=None):
+def write_target_vgm(plan, path, *, mapping_csv=None, song_loop_start=None, exact_source_times=False):
     from opm_target_state import build_target_trajectory
     writes = plan.scheduled_writes()
     build_target_trajectory(writes, end_tick=plan.end_tick,
                             source_end_vgmticks=plan.source_end)
-    end = projected_samples(plan.end_tick)
+    if exact_source_times:
+        writes=sorted(writes,key=lambda w:(w.vgmticks,w.target_ch,w.write_id))
+    end = plan.source_end if exact_source_times else projected_samples(plan.end_tick)
     clock = plan.settings['target_clock']
     if not 0 < clock < 0x40000000 or not 0 <= end <= 0xffffffff:
         raise ValueError('Projected OPM clock/duration exceeds the VGM field range')
@@ -29,7 +31,7 @@ def write_target_vgm(plan, path, *, mapping_csv=None, song_loop_start=None):
             commands.extend(b'\x61' + struct.pack('<H', count))
             gap -= count
 
-    loop_sample = (projected_samples(mdx_tick(song_loop_start))
+    loop_sample = (song_loop_start if exact_source_times else projected_samples(mdx_tick(song_loop_start))
                    if song_loop_start is not None else None)
     loop_address = None
     if loop_sample is not None and not 0 <= loop_sample < end:
@@ -37,6 +39,7 @@ def write_target_vgm(plan, path, *, mapping_csv=None, song_loop_start=None):
 
     def advance(sample):
         nonlocal cursor, loop_address
+        if sample<cursor:raise ValueError("Projected OPM writes move backwards in serialized time")
         if loop_sample is not None and loop_address is None and cursor <= loop_sample <= sample:
             wait(loop_sample - cursor)
             cursor = loop_sample
@@ -45,11 +48,11 @@ def write_target_vgm(plan, path, *, mapping_csv=None, song_loop_start=None):
         cursor = sample
 
     for write in writes:
-        sample = projected_samples(write.mdx_tick)
+        sample = write.vgmticks if exact_source_times else projected_samples(write.mdx_tick)
         advance(sample)
         row = asdict(write)
         row.update(state_origin='projected_opm', target_command_address=0x40 + len(commands),
-                   target_vgmticks=sample)
+                   target_vgmticks=sample,serialized_timing='original_source_samples' if exact_source_times else 'intermediate_mdx_lattice')
         rows.append(row)
         commands.extend((0x54, write.register, write.data))
         cursor = sample

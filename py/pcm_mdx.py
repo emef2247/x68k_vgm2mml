@@ -66,6 +66,8 @@ class PcmMdxProjection:
     omitted_playbacks: tuple[dict, ...] = ()
     source_origin: str = 'native_msm6258'
     force_capacity: object = None
+    pcm_profile: str = 'standard'
+    pcm_payload_bytes: int = 0
 
     @property
     def boundary_times(self):
@@ -74,7 +76,8 @@ class PcmMdxProjection:
 
     def summary(self):
         projected = self.source_origin != 'native_msm6258'
-        return dict(pcm_force_capacity=self.force_capacity.summary() if self.force_capacity else None,
+        return dict(pcm_profile=self.pcm_profile,pcm_payload_bytes=self.pcm_payload_bytes,
+                    pcm_force_capacity=self.force_capacity.summary() if self.force_capacity else None,
                     pcm_sample_count=len(self.bindings),
                     pcm_source_origin=self.source_origin,
                     pcm_playback_count=sum(u.kind == 'pcm_note' for u in self.units),
@@ -441,7 +444,9 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
     emit('end', start_tick=end)
     return PcmMdxProjection(bindings, tuple(units), tuple(rows), stem+'.pdx', sample_multiplier,
                             clock_rows, assessment, tuple(commands), tuple(omitted),
-                            getattr(analysis, 'source_origin', 'native_msm6258'), capacity)
+                            getattr(analysis, 'source_origin', 'native_msm6258'), capacity,
+                            getattr(analysis,'pcm_profile','standard'),
+                            sum(len(s.encoded_bytes) for s in binding_samples))
 
 
 def default_generator():

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from msm6258 import PcmAnalysis, PcmPlayback, PcmSample, TransferLog
 from opna_adpcm import encode_msm6258
+from pcm_profiles import get_profile
 
 
 TARGET_RATE = 15625
@@ -47,13 +48,14 @@ class ProjectedWaveformAnalysis(PcmAnalysis):
     native: object = field(default=None, repr=False, compare=False)
     chunks: tuple[tuple[int, int, tuple[int, ...]], ...] = ()
     aligned_sample_multiplier: int | None = None
+    pcm_profile: str = 'standard'
 
     def align_to_clock(self, tick_mapper, sample_multiplier):
         """Encode the original waveform to each final shared MDX gate duration.
 
         The source interval is unchanged. Its audio is stretched/compressed to
         the selected target gate; nearest even sample count differs by <= one
-        F4 sample. A collapsed positive interval is an error, never omission.
+        selected-rate sample. A collapsed positive interval is an error, never omission.
         """
         return _encode(self, tick_mapper, sample_multiplier)
 
@@ -66,14 +68,19 @@ class ProjectedWaveformAnalysis(PcmAnalysis):
             writer.writeheader()
             writer.writerows(self.target_mapping)
         rates = self.native.sample_rate
+        profile=get_profile(self.pcm_profile)
         path = out / (stem + '.' + self.artifact_prefix + '_bridge.json')
         path.write_text(json.dumps(dict(source_origin=self.source_origin,
             source_end_vgmticks=self.source_end_vgmticks,
             source_loop_vgmticks=self.source_loop_vgmticks, loop_count=self.loop_count,
             source_sha256=hashlib.sha256(self.source_raw).hexdigest(),
             native_rate_num=rates.numerator, native_rate_den=rates.denominator,
-            target_rate_hz=TARGET_RATE, target_clock_hz=8000000, target_divider=512,
-            mdx_frequency_index=4, target_pan=3, channel_mix='(left + right) / 2',
+            pcm_profile=profile.name,target_rate_hz=float(profile.rate),
+            target_rate_num=profile.rate.numerator,target_rate_den=profile.rate.denominator,
+            target_clock_hz=profile.mdx_clock_hz, target_divider=profile.mdx_divider,
+            target_payload_bytes=sum(len(s.encoded_bytes) for s in self.samples),
+            maximum_chunk_seconds=profile.chunk_seconds,
+            mdx_frequency_index=profile.mdx_frequency, target_pan=3, channel_mix='(left + right) / 2',
             source_supply_evidence='none; derived target ADPCM, not original source bytes',
             decoder_reset='independent PDX note assumption; physical runtime reset unverified',
             normalization_omission_safe=False,
@@ -86,8 +93,9 @@ class ProjectedWaveformAnalysis(PcmAnalysis):
 def project(native, *, source_raw, loop_start=None, loop_count=1,
             source_origin='projected_msm6258_from_waveform', evidence_prefix='pcm_waveform',
             artifact_prefix='pcm_waveform', source_description='derived stereo waveform',
-            source_evidence=(), encoder=encode_msm6258):
+            source_evidence=(), encoder=encode_msm6258,pcm_profile='standard'):
     """Package the union of native active gates, with exact loop/EOF boundaries."""
+    profile=get_profile(pcm_profile)
     end = native.source_end_vgmticks
     if loop_start is not None and not 0 <= loop_start < end:
         raise ValueError('PCM waveform loop boundary must be inside the source timeline')
@@ -106,7 +114,7 @@ def project(native, *, source_raw, loop_start=None, loop_count=1,
     gates_by_id = {gate.gate_id: gate for gate in native.gates}
     for start, stop, gate_ids in spans:
         while start < stop:
-            boundary = min(stop, start + CHUNK_TICKS)
+            boundary = min(stop, start + profile.chunk_seconds*44100)
             if loop_start is not None and start < loop_start < boundary:
                 boundary = loop_start
             overlap = tuple(gate_id for gate_id in gate_ids
@@ -116,16 +124,19 @@ def project(native, *, source_raw, loop_start=None, loop_count=1,
             start = boundary
     base = ProjectedWaveformAnalysis(source_end_vgmticks=end, samples=(), playbacks=(),
         controls=(), issues=(), transfers=TransferLog(b''), raw_commands=(),
-        source_raw=bytes(source_raw), clock_hz=8000000, options=4,
+        source_raw=bytes(source_raw), clock_hz=profile.mdx_clock_hz, options=4,
         initialization='derived mono MSM6258 target; no native byte supply/reset claimed',
         source_loop_vgmticks=loop_start, blocks=(), loop_count=loop_count,
         native=native, chunks=tuple(chunks), source_origin=source_origin,
         evidence_prefix=evidence_prefix, artifact_prefix=artifact_prefix,
-        source_description=source_description, source_evidence=tuple(source_evidence), encoder=encoder)
+        source_description=source_description, source_evidence=tuple(source_evidence), encoder=encoder,
+        pcm_profile=profile.name)
     return _encode(base)
 
 
 def _encode(base, tick_mapper=None, multiplier=None):
+    profile=get_profile(base.pcm_profile)
+    target_rate=profile.rate
     native = base.native
     stereo = native.samples
     frames = len(stereo) // 2
@@ -141,7 +152,7 @@ def _encode(base, tick_mapper=None, multiplier=None):
         loss('stereo_mono_mix', 'Derived stereo waveform is mixed to one centered mono PDX track'),
         loss('linear_resampling', 'Native mix is linearly resampled without antialias filtering',
              source_value=dict(rate_num=native.sample_rate.numerator, rate_den=native.sample_rate.denominator),
-             projected_value=TARGET_RATE),
+             projected_value=dict(pcm_profile=profile.name,rate_num=target_rate.numerator,rate_den=target_rate.denominator)),
         loss('independent_chunk_reset', 'Each target chunk assumes a fresh MSM6258 predictor; seams may be audible'),
         loss('msm6258_requantization', base.source_description + ' is requantized to 10-bit MSM6258 ADPCM'),
         loss('fractional_gate_packaging', 'Fractional native gate bounds are rounded outward by less than one source tick; native gates retained'),
@@ -152,13 +163,13 @@ def _encode(base, tick_mapper=None, multiplier=None):
             'The recorded traversal is frozen into PDX; later source loop traversals may carry different runtime phase'))
     for playback_id, (start, end, gate_ids) in enumerate(base.chunks):
         if tick_mapper is None:
-            wanted = Fraction((end - start) * TARGET_RATE, 44100)
+            wanted = Fraction((end - start) * target_rate, 44100)
             start_tick = end_tick = None
         else:
             start_tick, end_tick = tick_mapper(start), tick_mapper(end)
             if end_tick <= start_tick:
                 raise ValueError('Shared MDX clock collapses a positive PCM waveform target chunk')
-            wanted = Fraction((end_tick - start_tick) * multiplier * 256 * TARGET_RATE, 1000000)
+            wanted = Fraction((end_tick - start_tick) * multiplier * 256 * target_rate, 1000000)
         count = _even_count(wanted)
         if count // 2 > MAX_BYTES:
             raise ValueError('Aligned PCM waveform chunk exceeds the 65535-byte verified PDX scope')
@@ -203,13 +214,14 @@ def _encode(base, tick_mapper=None, multiplier=None):
                                  if event is not None}))
         playbacks.append(PcmPlayback(playback_id, 0, sample_id, start, end,
             min(event_ids, default=-1), max(event_ids, default=-1), 0, 0, 0,
-            8000000, 512, TARGET_RATE, 1, 0, False, True,
+            profile.mdx_clock_hz, profile.mdx_divider, target_rate.numerator, target_rate.denominator, 0, False, True,
             'projected_independent_pdx_decoder_assumption', 'projected_chunk_boundary',
             True, True, count, None, (), ()))
         mapping.append(dict(playback_id=playback_id, sample_id=sample_id,
             source_start_vgmticks=start, source_end_vgmticks=end, native_gate_ids=gate_ids,
             source_event_ids=event_ids, target_start_tick=start_tick, target_end_tick=end_tick,
             target_sample_count=count, encoded_bytes=len(encoded), padding_nibbles=0,
+            pcm_profile=profile.name,target_rate_num=target_rate.numerator,target_rate_den=target_rate.denominator,
             clipped_target_samples=counters['clipped'], stereo_difference_samples=counters['stereo_difference'],
             squared_error_sum=error, target_duration_error_samples=float(count - wanted)))
         if counters['clipped']:
@@ -217,11 +229,11 @@ def _encode(base, tick_mapper=None, multiplier=None):
                 playback_id=playback_id, source_value=counters['clipped']))
     if tick_mapper is not None:
         evidence.append(loss('audio_shared_clock_alignment',
-            'Original chunk audio is stretched to the final MDX gate; even-count rounding error is at most one F4 sample',
-            projected_value=dict(sample_multiplier=multiplier, target_rate_hz=TARGET_RATE)))
+            'Original chunk audio is stretched to the final MDX gate; even-count rounding error is at most one selected-rate sample',
+            projected_value=dict(sample_multiplier=multiplier, target_rate_hz=float(target_rate),pcm_profile=profile.name)))
     else:
         evidence.append(loss('target_rate_rounding',
-            'Initial target sample length uses nearest even F4 sample count; final shared-clock alignment follows'))
+            'Initial target sample length uses nearest even selected-rate sample count; final shared-clock alignment follows'))
     return replace(base, samples=tuple(samples), playbacks=tuple(playbacks),
                    target_mapping=tuple(mapping), target_evidence=tuple(evidence),
                    aligned_sample_multiplier=multiplier)

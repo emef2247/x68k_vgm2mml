@@ -1,11 +1,24 @@
-# MDX用MMLの音価分割
+# Note-duration splitting in MDX MML
 
-MDX用MMLの生成では、1命令の音価が256クロックを超えないよう、長い音符や休符を分割します。MXCで長い音価がエラーになることを避けるための、ターゲット表記上の処理です。
+Japanese original: [mdx_note_durationsJ.md](mdx_note_durationsJ.md).
 
-音符は分割した部分をタイ（`&`）でつなぎ、1回の発音として扱います。休符は分割した長さの合計を保ちます。分割によって元のSegment・PCM IR、総演奏時間、音程を変更しません。
+When generating MDX MML, long notes and rests are split so that no single command
+exceeds 256 clocks. This is a target-notation operation that avoids MXC errors
+for long durations.
 
-付点表記も実際のクロック数で判定します。全音符を192クロックとするMDXの表記では、`1.` は288クロック、`1..` は336クロックとなるため、そのまま1命令にはしません。
+Split notes are joined with ties (`&`) and treated as one sounding gate. Split
+rests retain their total duration. Splitting does not change the original
+Segments or PCM IR, total playback time, or pitch.
 
-共有の音価表記処理は `py/mdx_duration.py` にあります。読みやすい音符表記と明示的なクロック指定（`%`）を選び、分割後の各部分も上限を超えないようにします。PCMの型付き命令列でも長い音価を分割し、継続と再発音を区別します。詳細は[PCMの出力処理](pcm_pdx.md)を参照してください。
+Dotted notation is checked using its actual clock count. With the MDX notation's
+192-clock whole note, `1.` is 288 clocks and `1..` is 336 clocks, so neither is
+emitted as a single command.
 
-音価分割は時間正規化とは別です。`--normalization-ms` による短い発音の省略や時刻の近似を無効にしても、MDX用MMLの音価分割は行います。
+The shared duration formatter is in `py/mdx_duration.py`. It chooses readable
+note lengths or explicit clock lengths (`%`) and keeps every split piece within
+the limit. Typed PCM commands also split long durations, distinguishing
+continuation from retriggering. See [PCM output processing](pcm_pdx.md).
+
+Duration splitting is separate from timing normalization. MDX MML durations are
+still split when short-gate omission and timing approximation controlled by
+`--normalization-ms` are disabled.

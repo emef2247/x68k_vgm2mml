@@ -10,6 +10,14 @@ MDX用MMLでは長い音価を分割して表現します。詳細は[docs/mdx_n
 
 Python 3.10以降を使用します。
 
+## 生成されるMMLの確からしさ
+
+VGMには音符そのものではなく、音源への書き込みとその時刻が記録されています。したがって、VGMからMMLを生成する際には、発音・停止・音程・音量・音色の変化を解釈し、MMLで表現可能な時間単位へ変換しています。
+
+MMLの生成に成功したことは、元VGMとの音声一致を保証するものではありません。近似や省略が発生する場合があり、その内容は診断情報やレポートに記録されます。
+
+また、MMLの生成、MDX／PDXへのコンパイル、実際の再生環境での動作は、それぞれ異なる検証段階です。コンパイルに成功した場合でも、再生環境の制約によって正常に演奏できないことがあります。
+
 ## 通常変換
 
 ```bash
@@ -22,6 +30,12 @@ VGMの実際のコマンドから使用音源を判定し、OPM／PCM、OPNA FM�
 
 PSG／SSGは共通の発音・音量run解釈を使い、固定音量のnoise-onlyパート1本をOPMノイズへ近似できます。[対応範囲と中間結果](docs/psg_musical_noise.md)を参照してください。
 
+SCCはMSX側と共通の発音・SW音量run解釈を使い、元の波形をOPMのFM音色や加算合成へ投影します。既定の `fm-additive` では、FM音色を自動探索して加算合成との組み合わせを試みます。従来の `additive` に加え、2chを利用する `additive8`、`fm-fm` も選択できます。
+
+PSGは通常OPMへ変換しますが、連続PCMとして再構築し、X68000に搭載されたOKI MSM6258V向けのADPCMへ変換することもできます。
+
+それぞれの使い方と制約は「[SCCからOPMへの投影](#sccからopmへの投影)」「[PSGをPCMで再生する](#psgをpcmで再生する)」を参照してください。
+
 ### 入力と出力
 
 | 入力 | 主な出力 |
@@ -31,10 +45,12 @@ PSG／SSGは共通の発音・音量run解釈を使い、固定音量のnoise-on
 | OPNA（YM2608）のFM | Native SegmentからMDX用MMLを生成 |
 | OPNAのSSGトーン／限定ノイズ | OPM向けに投影してMDX用MMLを生成 |
 | OPNAのADPCM-B（Delta-T） | 元のPCM IRと、MDX向けに投影したPCM IR・PCM参照を含むMML（`best-effort`） |
-| PSG／SCC | OPM向け音色・演奏情報へ投影してMDX用MMLを生成 |
-| 対応するMSM6258 PCM（OPM併用を含む） | PCM IRとPCM参照を含むMDX用MMLを生成 |
+| PSG／SCC | OPM向け音色・演奏情報へ投影してMDX用MMLを生成。PSGはX68000 ADPCMへの投影も選択可能 |
+| 対応するMSM6258系PCM（OPM併用を含む） | PCM IRとPCM参照を含むMDX用MMLを生成 |
 
 OPMのみのMML生成にRustコンパイラは不要です。現行のPCM経路では試聴用MDX／PDXの補助生成も同じ処理内で行うため、外部helperのビルドが必要です。準備方法は[docs/mdx_compiler_setup.md](docs/mdx_compiler_setup.md)を参照してください。
+
+PCMの出力容量を抑えたい場合は `--pcm-profile low` または `--pcm-profile ultra_low` と `--pcm-policy best-effort` を指定できます。標準設定は維持し、低レートの出力用PCMを生成します。[対応音源・容量と音質の関係](docs/pcm_profiles.md)を参照してください。
 
 ## VGMの曲全体ループ
 
@@ -55,19 +71,114 @@ python scripts/export_mdx.py input.vgm \
 
 詳細は[docs/vgm_loop.md](docs/vgm_loop.md)を参照してください。
 
-## 生成されるMMLの確からしさ
+### SCCからOPMへの投影
 
-VGMには音符そのものではなく、音源への書き込みとその時刻が記録されています。したがって、VGMからMMLを生成する際には、発音・停止・音程・音量・音色の変化を解釈し、MMLで表現可能な時間単位へ変換しています。
+SCCはMSX側と共通の発音・SW音量run解釈を使用し、元のState・Segment・32-byte波形を保持したまま、OPM向けの音色・演奏情報へ投影します。
 
-MMLの生成に成功したことは、元VGMとの音声一致を保証するものではありません。近似や省略が発生する場合があり、その内容は診断情報やレポートに記録されます。
+既定の `fm-additive` では、SCCの32-byte波形に対してYM2151のFM音色を探索し、FMと加算合成を組み合わせた音色への近似を試みます。
+
+候補音色はYM2151エミュレーションによるスペクトル測定で評価し、従来の加算合成より誤差が小さい場合に採用します。必要なFM音色バンクは自動生成・キャッシュされます。
+
+利用できる主な音色モデルは次のとおりです。
+
+- `additive` : 1ch・4倍音加算
+- `additive8` : 2ch・最大8倍音加算
+- `fm-additive` : 1ch FM＋1ch加算（既定）
+- `fm-fm` : 2ch FM
+
+`additive8`、`fm-additive`、`fm-fm` は空いているOPM chを利用してSCC波形の近似精度向上を試みます。
+
+OPMのチャンネル数が不足する場合や、FM音色による改善が得られない場合は、従来の1ch加算合成へ戻ることがあります。
+
+SCCのみを比較試聴したい場合は、次のように実行できます。
+
+```bash
+python scripts/export_mdx.py INPUT_DIRECTORY \
+  --outdir outputs/listen/scc \
+  --scc-only \
+  --compiler mmlx \
+  --no-vgm
+```
+
+8倍音加算モデルを使用する例:
+
+```bash
+python scripts/export_mdx.py INPUT_DIRECTORY \
+  --outdir outputs/listen/scc_additive8 \
+  --scc-model additive8 \
+  --compiler mmlx \
+  --no-vgm
+```
+
+FM音色探索を使用する `fm-additive` および `fm-fm` には、WSL上のGCC・NumPyおよび外部YM2151 coreが必要です。`additive` と `additive8` では音色探索を行いません。
+
+SCC波形のFM音色への変換は近似であり、元のSCCと同一の音色を保証するものではありません。特に、基準音程でのスペクトル評価結果が、すべての音程や演奏条件での再現精度を保証するわけではありません。
+
+対応範囲、チャンネル割り当て、音色探索、中間結果については [docs/scc_fm_projection.md](docs/scc_fm_projection.md) を参照してください。
+
+### PSGをPCMで再生する
+
+PSGは通常、OPM向けの音色・演奏情報へ変換しますが、PCMとして再生する方法も選択できます。
+
+`--psg-output pcm` を指定すると、外部AY音源エミュレーションを利用して元のPSGレジスタ操作から連続した音声波形を生成し、X68000のADPCM音源（OKI MSM6258V）向けのデータへ変換します。
+
+この方法では、PSGのトーン、ノイズ、ハードウェアエンベロープをPCM波形として扱うことができます。
+
+元のState・Segmentは変更せず、再生用PCMを別途生成します。
+
+```bash
+python scripts/export_mdx.py INPUT_DIRECTORY \
+  --outdir outputs/listen/psg_pcm \
+  --psg-output pcm \
+  --pcm-policy best-effort \
+  --psg-gain 0.8 \
+  --no-vgm
+```
+
+主なオプションは次のとおりです。
+
+| オプション | 内容 |
+|------------|------|
+| `--psg-output pcm` | PSGの出力先をPCMへ変更。既定の `opm` では従来どおりOPM向けのMMLを生成 |
+| `--pcm-policy best-effort` | PCMへの再符号化やサンプリング周波数の変更に伴う近似を許容 |
+| `--psg-gain 0.8` | PCMへ変換するPSGの出力音量を調整。SCCなど他の音源との音量バランスに応じて変更可能 |
+
+PCM容量を抑えたい場合は、`--pcm-profile low` または `--pcm-profile ultra_low` も指定できます。
+
+```bash
+python scripts/export_mdx.py INPUT_DIRECTORY \
+  --outdir outputs/listen/psg_pcm_low \
+  --psg-output pcm \
+  --pcm-policy best-effort \
+  --pcm-profile low \
+  --psg-gain 0.8 \
+  --no-vgm
+```
+
+サンプリング周波数を下げることでPCM容量を削減できますが、高域成分が失われるため音質も低下します。詳細は[PCM出力プロファイル](docs/pcm_profiles.md)を参照してください。
+
+#### 再生上の制約
+
+PSGを連続PCMへ変換すると、演奏時間に応じてPCMデータ量が増加します。
+
+そのため、MML・PCM IRの生成やMDX／PDXへのコンパイルに成功しても、MADRVのトラックバッファ不足などにより再生できない場合があります。
+
+現時点では、グラディウス2の変換結果について、GRA2_02以外の曲でMADRVのトラックバッファ不足を確認しています。
+
+本ツールの主目的は、VGMから構造化されたMMLとPCM IRを生成することです。
+
+生成されたMMLをコンパイル可能な形で提供することを重視しており、再生環境に合わせたMMLの圧縮やPCM容量の最適化については、利用者が生成結果をもとに調整することも想定しています。
+
+変換方法、外部AY coreの準備、対応範囲、中間結果については [PSG→PCM](docs/psg_pcm.md) を参照してください。
 
 ## PCMを含むVGMからMML・PCM IRを生成する
 
-対応するMSM6258入力には、直接レジスタ書き込み、および対応する非圧縮Data Bank／有限DAC Streamがあります。PCMのみの入力も対象です。
+対応するMSM6258系入力には、直接レジスタ書き込み、および対応する非圧縮Data Bank／有限DAC Streamがあります。PCMのみの入力も対象です。
 
-OPNAのADPCM-Bも対応範囲内でMML・PCM IRを生成できます。元のPCM IRと、出力先に合わせたPCM投影データは区別して保存します。 保持中の音量・パン・速度変更を含む対応範囲と制約は[docs/pcm_interoperability.md](docs/pcm_interoperability.md)を参照してください。
+OPNAのADPCM-Bも対応範囲内でMML・PCM IRを生成できます。元のPCM IRと、出力先に合わせたPCM投影データは区別して保存します。保持中の音量・パン・速度変更を含む対応範囲と制約は[docs/pcm_interoperability.md](docs/pcm_interoperability.md)を参照してください。
 
 再圧縮による近似を許容する場合は `--pcm-policy best-effort` を指定してください。
+
 ```bash
 # OPNAのFM・ADPCM-Bから再生確認用MDX／PDXを出力
 python scripts/export_mdx.py input.vgm \
@@ -120,8 +231,14 @@ MDX側の主なオプションは次のとおりです。
 | `--normalization-ms MS` | 正規化前の短い発音の省略閾値と出力時刻の最大移動量 |
 | `--no-loops` | 有限反復の生成を無効化 |
 | `--psg-model fm\|additive` | PSGからOPMへの音色投影モデル |
+| `--scc-model additive\|additive8\|fm-additive\|fm-fm` | SCC音色モデル（既定fm-additive）。[詳細](docs/scc_fm_projection.md) |
+| `--scc-voice-bank FILE` | FM SCCモデルで使う探索済み音色JSON（省略時は自動生成） |
+| `--psg-only` / `--psg_only` | PSGだけを出力。元のSCC解析結果は保持 |
+| `--scc-only` / `--scc_only` | SCCだけを出力。元のPSG解析結果は保持 |
+| `--psg-output opm\|pcm` | PSGの出力先（既定opm）。PCMはbest-effortを指定。[詳細](docs/psg_pcm.md) |
 | `--psg-gain` / `--scc-gain` | PSG／SCC投影時の音量調整 |
 | `--pcm-policy strict\|best-effort` | PCM投影で既知損失を許容するか |
+| `--pcm-profile standard\|low\|ultra_low` | PCM出力の容量・音質設定（既定standard）。[詳細](docs/pcm_profiles.md) |
 | `--force` | 未対応のPSG／SSG／OPNA機能と容量超過PCMを省略し続行（[docs/opna_force.md](docs/opna_force.md)） |
 | `--dump-passes` | 中間CSV・診断ファイルを保存 |
 
@@ -138,6 +255,8 @@ python vgm2mml.py --help
 ```
 
 ## トラブルシューティング
+
+`scripts/export_mdx.py`のタイムアウトは各入力・各処理段階につき既定600秒です。`--timeout 秒数`で変更できます。
 
 未対応のPSG／SSG／OPNA機能やPCM容量超過で変換が停止する場合は、`--force`で扱える部分の出力を試せます。未対応のノイズ・ハードウェアエンベロープなどの影響区間や、容量超過のPCMを省略して続行します。元のSegment・PCM IRは保持します。
 

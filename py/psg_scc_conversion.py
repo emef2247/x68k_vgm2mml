@@ -77,7 +77,7 @@ def _read_generated_csv(path):
         csv.field_size_limit(previous_limit)
 
 
-def _source_normalization_check(performance, source_loop, projection, report, *, source_map=None):
+def _source_normalization_check(performance, source_loop, projection, report, *, source_map=None,exact_source_times=False,pcm_boundaries=()):
     from opm_mdx import mdx_tick, projected_samples
     if source_loop.get('loop_offset') and source_loop.get('status') != 'valid':
         return dict(accepted=False, reason='Original source loop boundary is not valid')
@@ -87,11 +87,16 @@ def _source_normalization_check(performance, source_loop, projection, report, *,
         times.update((row['vgmticks'], row['vgmticks_end']))
     if source_loop.get('status') == 'valid':
         times.update((source_loop['loop_start_samples'], source_loop['decoded_end_samples']))
+        if source_loop.get('replay_start_samples') is not None:
+            times.update((source_loop['replay_start_samples'],source_loop['playback_end_samples']))
+    times.update(pcm_boundaries)
     times = sorted(times)
+    def intermediate(time):
+        return time if exact_source_times else projected_samples(mdx_tick(time))
     # The intermediate OPM stream is emitted on the conventional MDX lattice.
-    ticks = [projection.mdx_tick(projected_samples(mdx_tick(time))) for time in times]
+    ticks = [projection.mdx_tick(intermediate(time)) for time in times]
     errors = [projection.projected_samples(tick) - time for time, tick in zip(times, ticks)]
-    bound = report['correction_bound_samples'] + 6
+    bound = report['correction_bound_samples'] + (0 if exact_source_times else 6)
     collapsed = sum(a == b for a, b in zip(ticks, ticks[1:]))
     worst = max(map(abs, errors), default=0)
     if report.get('short_note_policy') is not None:
@@ -113,7 +118,7 @@ def _source_normalization_check(performance, source_loop, projection, report, *,
             if w.register == 8 and w.write_id not in omitted:
                 key_times.setdefault(w.target_ch, []).append(w)
         def target_tick(time):
-            return projection.mdx_tick(projected_samples(mdx_tick(time)))
+            return projection.mdx_tick(intermediate(time))
         protected_collapsed = sum(a.vgmticks < b.vgmticks and
                                   (a.data & 0x78 or b.vgmticks-a.vgmticks > omission_bound) and
                                   target_tick(a.vgmticks) == target_tick(b.vgmticks)
@@ -138,7 +143,7 @@ def _source_normalization_check(performance, source_loop, projection, report, *,
                 source_to_final_timing_bound_samples=bound)
 
 
-def _mark_projected_evidence(folder, source, target, performance, projection, normalization):
+def _mark_projected_evidence(folder, source, target, performance, projection, normalization,*,exact_source_times=False,pcm_boundaries=()):
     """Label generated OPM evidence; original PSG/SCC CSVs remain unchanged."""
     mapping = folder / (source.stem + '.source_map.csv')
     columns, rows = _read_generated_csv(mapping)
@@ -156,6 +161,7 @@ def _mark_projected_evidence(folder, source, target, performance, projection, no
                                   else 'retained'))
         errors.append(row['source_to_final_error_samples'])
     errors.append(projection.end_projected_vgmticks-performance.source_end)
+    errors.extend(projection.projected_samples(projection.mdx_tick(t))-t for t in pcm_boundaries)
     for name in ('final_mdx_tick', 'final_projected_vgmticks', 'source_to_final_error_samples', 'output_action'):
         columns.append(name)
     with mapping.open('w', encoding='utf-8', newline='') as stream:
@@ -173,8 +179,10 @@ def _mark_projected_evidence(folder, source, target, performance, projection, no
             writer.writeheader()
             writer.writerows(dict(row, state_origin='projected_opm') for row in records)
     bound = (normalization['source_projection_check']['source_to_final_timing_bound_samples']
-             if normalization['adopted'] else 12)
-    provenance = dict(state_origin='projected_opm', source_vgm=str(source.resolve()),
+             if normalization['adopted'] else 6 if exact_source_times else 12)
+    provenance = dict(serialized_timing='original_source_samples' if exact_source_times else 'intermediate_mdx_lattice',
+                      rounded_performance_dumps_are_serialized_timing=not exact_source_times,
+                      state_origin='projected_opm', source_vgm=str(source.resolve()),
                       source_sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
                       projected_opm_vgm=str(target.resolve()),
                       projected_sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
@@ -192,7 +200,9 @@ def _mark_projected_evidence(folder, source, target, performance, projection, no
 
 
 def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model='fm', pitch_policy=None,
-             notation='structured', loops=True, normalize_lengths=None, projection_mode='musical', normalization_ms=8, song_loop=True, force=False):
+             notation='structured', loops=True, normalize_lengths=None, projection_mode='musical', normalization_ms=8, song_loop=True, force=False,
+             scc_model='additive',scc_voice_bank=None,source_selection='all',bank_outdir=None,psg_output='opm',pcm_policy='strict',pcm_profile='standard',pcm_generator=None):
+    if psg_output=='pcm' and notation!='structured':raise ValueError('PSG PCM requires structured notation')
     if notation not in ('structured', 'registers'):
         raise ValueError('PSG/SCC OPM notation must be structured or registers')
     source, out = Path(source), Path(out)
@@ -206,43 +216,67 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
     facts['end_vgmticks'] = source_loop.get('playback_end_samples', facts['end_vgmticks'])
     psg = build_psg(paths[2], str(out), stem=source.stem, dump_passes=True)
     scc = build_scc(paths[3], str(out), stem=source.stem, dump_passes=True)
+    bank_info=None
+    if scc_model.startswith('fm-') and scc_voice_bank is None and source_selection!='psg':
+        from scc_auto_bank import generate
+        scc_voice_bank,bank_info=generate(scc,out,source.stem,artifact_outdir=bank_outdir,scc_gain=scc_gain)
     plan = project(psg, scc, psg_clock=facts['psg_clock'], scc_clock=facts['scc_clock'],
                    end_vgmticks=facts['end_vgmticks'], psg_gain=psg_gain, scc_gain=scc_gain,
-                   psg_model=psg_model, pitch_policy=pitch_policy, force=force)
+                   psg_model=psg_model,pitch_policy=pitch_policy,force=force,scc_model=scc_model,scc_voice_bank=scc_voice_bank,source_selection=source_selection,psg_output=psg_output)
+    if bank_info is not None:plan.settings['scc_auto_bank']=bank_info
     if force:
         from psg_force import dump_decisions
         plan.settings['force_projection'] = dump_decisions(plan, psg, out, source.stem)
     plan.settings.update(ay_type=facts['ay_type'], ay_flags=facts['ay_flags'],
                           silent_opll_writes=facts['silent_opll_writes'], absent_scc_writes=facts['absent_scc_writes'],
                           projection_mode=projection_mode)
-    plan.dump(out, source.stem)
+    plan.dump(out,source.stem)
+    if scc_model!='additive' or scc_voice_bank is not None:
+        (out/(source.stem+'.scc.voice_projection.json')).write_text(
+            json.dumps(plan.settings['scc_voice_projection'],indent=2)+'\n',encoding='utf-8')
     mml = out / (source.stem + '.mdx.mml')
     title = title or source.stem + ' - PSG/SCC OPM (' + psg_model + ')'
     if projection_mode == 'musical':
         from opm_performance import build_performance
         from opm_target_vgm import write_target_vgm
         from opm_conversion import convert as convert_opm
+        pcm_bridge=None;pcm_times=()
+        if psg_output=='pcm':
+            from psg_playback import render as render_psg
+            from psg_pcm_mdx import project as project_psg_pcm
+            try:native=render_psg(read_vgm_bytes(source),loop_count=2 if song_loop else 1)
+            except RuntimeError as exc:raise ValueError(str(exc)) from exc
+            native.dump(out,source.stem)
+            if native.source_end_vgmticks!=facts['end_vgmticks']:raise ValueError('PSG runtime and source analysis end differ')
+            pcm_bridge=project_psg_pcm(native,source_raw=read_vgm_bytes(source),loop_start=loop_start,
+                loop_count=source_loop.get('loop_count',1),pcm_profile=pcm_profile,gain=psg_gain if psg_gain is not None else 1.)
+            pcm_bridge.dump(out,source.stem)
+            pcm_times=tuple(t for start,end,_ in pcm_bridge.chunks for t in (start,end))
+            plan.settings.update(psg_pcm=dict(profile=pcm_profile,playbacks=len(pcm_bridge.playbacks),samples=len(pcm_bridge.samples)),
+                serialized_timing='original_source_samples',rounded_performance_dumps_are_serialized_timing=False)
         performance = build_performance(plan, terminate=loop_start is None)
         performance.dump(out, source.stem)
         folder = out / 'projected_opm'
         folder.mkdir(exist_ok=True)
         target = write_target_vgm(performance, folder / (source.stem + '.vgm'),
-                                  mapping_csv=folder / (source.stem + '.source_map.csv'), song_loop_start=loop_start)
+                                  mapping_csv=folder / (source.stem + '.source_map.csv'), song_loop_start=loop_start,exact_source_times=psg_output=='pcm')
         _, source_map = _read_generated_csv(folder / (source.stem + '.source_map.csv'))
-        native_mml, analysis, projection = convert_opm(target, folder, dump_passes=True, title=title, loops=loops,
+        native_out=out if psg_output=='pcm' else folder
+        native_mml, analysis, projection = convert_opm(target, native_out, dump_passes=True, title=title, loops=loops,
+            source_passes_outdir=folder,pcm_analysis_override=pcm_bridge,pcm_policy=pcm_policy,pcm_profile=pcm_profile,pcm_generator=pcm_generator,force=force,
             song_loop=song_loop, replayed_song_loop=True,
             normalize_lengths=normalize_lengths, normalization_ms=normalization_ms,
             normalization_source_times={int(r['target_source_event_id']): int(r['vgmticks'])
                                         for r in source_map},
             normalization_validator=lambda candidate, report: _source_normalization_check(
-                performance, source_loop, candidate, report, source_map=source_map))
-        normalization_path = folder / (source.stem + '.mdx.normalization.json')
+                performance, source_loop, candidate, report, source_map=source_map,exact_source_times=psg_output=='pcm',pcm_boundaries=pcm_times))
+        normalization_path = native_out / (source.stem + '.mdx.normalization.json')
         normalization = json.loads(normalization_path.read_text(encoding='utf-8'))
-        shutil.copyfile(normalization_path, out / normalization_path.name)
+        if normalization_path.parent!=out:shutil.copyfile(normalization_path, out / normalization_path.name)
         plan.structured_context = StructuredContext(performance, analysis, projection, normalization)
-        _mark_projected_evidence(folder, source, target, performance, projection, normalization)
+        _mark_projected_evidence(folder, source, target, performance, projection, normalization,exact_source_times=psg_output=='pcm',pcm_boundaries=pcm_times)
         text = native_mml.read_text(encoding='utf-8')
-        text = '; PSG/SCC OPM target; PSG model=' + psg_model + '.\n; PSG onsets inferred from source note/volume runs; SCC from audibility. Oscillator phase differs from the held baseline.\n' + text
+        if psg_output!='pcm':text = '; PSG/SCC OPM target; PSG model=' + psg_model + '.\n; PSG/SCC onsets inferred from MSX source note/volume runs; SCC waveform boundaries retained. Oscillator phase differs from the held baseline.\n' + text
         mml.write_text(text, encoding='utf-8')
     else:
         if loop_start is not None:
@@ -258,7 +292,8 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
 
 
 def convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model='fm', pitch_policy=None,
-            dump_passes=True, notation='structured', loops=True, normalize_lengths=None, projection_mode=None, normalization_ms=8, song_loop=True, force=False):
+            dump_passes=True, notation='structured', loops=True, normalize_lengths=None, projection_mode=None, normalization_ms=8, song_loop=True, force=False,
+            scc_model='additive',scc_voice_bank=None,source_selection='all',bank_outdir=None,psg_output='opm',pcm_policy='strict',pcm_profile='standard',pcm_generator=None):
     """Keep native evidence on request; default standalone audit keeps all passes."""
     from conversion_config import normalization_enabled
     normalization_enabled(normalize_lengths, notation=notation)
@@ -270,23 +305,26 @@ def convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model=
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     for suffix in ('.mdx.mml', '.mdx.normalization.json',
+                   '.scc.voice_projection.json',
                    '.psg_force.skipped_registers.csv', '.psg_force.skipped_registers.json'):
         artifact = out / (Path(source).stem + suffix)
         if artifact.resolve() == Path(source).resolve():
             raise ValueError('Conversion output must not replace its source input')
         artifact.unlink(missing_ok=True)
-    if dump_passes or force:
+    if dump_passes or force or psg_output=='pcm':
         return _convert(source, out, psg_gain=psg_gain, scc_gain=scc_gain, title=title,
                         psg_model=psg_model, pitch_policy=pitch_policy, notation=notation, loops=loops,
-                        normalize_lengths=normalize_lengths, projection_mode=projection_mode, normalization_ms=normalization_ms, song_loop=song_loop, force=force)
+                        normalize_lengths=normalize_lengths, projection_mode=projection_mode, normalization_ms=normalization_ms,song_loop=song_loop,force=force,scc_model=scc_model,scc_voice_bank=scc_voice_bank,source_selection=source_selection,bank_outdir=bank_outdir or out,psg_output=psg_output,pcm_policy=pcm_policy,pcm_profile=pcm_profile,pcm_generator=pcm_generator)
     with tempfile.TemporaryDirectory(prefix='psg-scc-opm-') as temp:
         mml, plan = _convert(source, temp, psg_gain=psg_gain, scc_gain=scc_gain, title=title,
                         psg_model=psg_model, pitch_policy=pitch_policy, notation=notation, loops=loops,
-                        normalize_lengths=normalize_lengths, projection_mode=projection_mode, normalization_ms=normalization_ms, song_loop=song_loop, force=force)
+                        normalize_lengths=normalize_lengths, projection_mode=projection_mode, normalization_ms=normalization_ms,song_loop=song_loop,force=force,scc_model=scc_model,scc_voice_bank=scc_voice_bank,source_selection=source_selection,bank_outdir=bank_outdir or out,psg_output=psg_output,pcm_policy=pcm_policy,pcm_profile=pcm_profile,pcm_generator=pcm_generator)
         result = out / mml.name
         shutil.copyfile(mml, result)
         normalization = mml.with_name(Path(source).stem + '.mdx.normalization.json')
-        shutil.copyfile(normalization, out / normalization.name)
+        shutil.copyfile(normalization,out/normalization.name)
+        voice_report=mml.with_name(Path(source).stem+'.scc.voice_projection.json')
+        if voice_report.is_file():shutil.copyfile(voice_report,out/voice_report.name)
     return result, plan
 
 

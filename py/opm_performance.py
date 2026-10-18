@@ -1,7 +1,6 @@
 """Explicit musical gate inference over an unchanged PSG/SCC OPM projection.
 
-PSG uses the shared source musical-note/volume-run interpretation; SCC retains
-audibility edges. Target Keys are inferred; oscillator phase is not preserved.
+PSG/SCC use the shared MSX source musical-note/volume-run interpretation. Target Keys are inferred; oscillator phase is not preserved.
 """
 import csv
 from dataclasses import asdict, dataclass
@@ -89,7 +88,7 @@ def build_performance(baseline, *, terminate=True):
     writes, rows = [], []
     grouped = {}
     for w in baseline.writes:
-        grouped.setdefault((w.source_chip, w.source_ch, w.source_row), []).append(w)
+        grouped.setdefault((w.source_chip,w.source_ch,w.source_row,w.target_ch),[]).append(w)
 
     def copy(w, row_id):
         writes.append(PerformanceWrite(len(writes), w.source_chip, w.source_ch, w.source_row,
@@ -102,12 +101,9 @@ def build_performance(baseline, *, terminate=True):
                       'inferred musical attack' if active else 'inferred musical release',
                       None, row_id, True))
 
-    parts = sorted({(r['source_chip'], r['source_ch']) for r in baseline.rows},
-                   key=lambda part: part[1] + (5 if part[0] == 'psg' else 0))
-    for chip, ch in parts:
-        target = ord(next(r['target_track'] for r in baseline.rows
-                          if (r['source_chip'],r['source_ch'])==(chip,ch)))-65
-        detached = grouped.get((chip, ch, None), [])
+    parts=sorted({(r['source_chip'],r['source_ch'],ord(r['target_track'])-65) for r in baseline.rows},key=lambda part:part[2])
+    for chip,ch,target in parts:
+        detached=grouped.get((chip,ch,None,target),[])
         initial = [w for w in detached if not w.reason.startswith('terminal ')]
         terminal = [w for w in detached if w.reason.startswith('terminal ')]
         for w in initial:
@@ -115,12 +111,12 @@ def build_performance(baseline, *, terminate=True):
                 copy(w, None)
         gate = False
         previous_note=None
-        for source in (r for r in baseline.rows if (r['source_chip'], r['source_ch']) == (chip, ch)):
+        for source in (r for r in baseline.rows if (r['source_chip'],r['source_ch'],ord(r['target_track'])-65)==(chip,ch,target)):
             row_id, first = len(rows), len(writes)
             audible = bool(source['target_audible'])
-            if chip=='psg' and baseline.source_music is not None and source['vgmticks']==source.get('interpreted_vgmticks_end',source['vgmticks_end']):
+            if source['vgmticks']==source.get('interpreted_vgmticks_end',source['vgmticks_end']):
                 audible=gate
-            row_writes = grouped.get((chip, ch, source['source_row']), [])
+            row_writes = grouped.get((chip,ch,source['source_row'],target),[])
             before = gate
             note=source.get('musical_note_id')
             retrigger=bool(gate and audible and note is not None and previous_note is not None and note!=previous_note)
@@ -146,7 +142,7 @@ def build_performance(baseline, *, terminate=True):
             if w.register != 8:
                 copy(w, None)
     settings = dict(baseline.settings, sourcegate='inferred_from_source_musical_units',
-                    onset_policy='PSG MSX note/volume runs; SCC audibility edges', phase_preserved=False,
+                    onset_policy='PSG/SCC MSX note/volume runs; source pitch/wave/rise boundaries retained', phase_preserved=False,
                     key_origin='musical_attack_inferred', source_key_observed=False)
     plan = PerformancePlan(tuple(writes), tuple(rows), baseline.source_end, settings)
     build_target_trajectory(plan.scheduled_writes(), end_tick=plan.end_tick,

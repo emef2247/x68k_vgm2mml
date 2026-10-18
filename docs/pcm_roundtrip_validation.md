@@ -1,167 +1,169 @@
-# PCM往復検証と独立基準
+# PCM round-trip validation and an independent reference
 
-2026-10-09の検討結果。これは検証の設計であり、PCM往復検証の実装・成功報告ではない。
+Japanese original: [pcm_roundtrip_validationJ.md](pcm_roundtrip_validationJ.md).
 
-2026-10-10追記：通常のPCM付きMDX生成は、試聴で確認できた16トラック＋E8のPCM拡張経路へ変更した。
-下記の標準9トラック／PCM1基準は独立検証候補として残すが、現在の出力を検証するには
-PCM拡張の版と実行経路も固定した別profileが必要になる。6件の演奏・停止成功は個別の試聴結果であり、
-A/B/C往復成功やreset・消費ニブル数・途中panの保証へは拡大しない。
-現在の生成条件とCLIは [pcm_pdx.md](pcm_pdx.md)、調査根拠は
-[field note](../field_notes/2026-10-09_pcm_mxdrv_roundtrip_review.md) を参照する。
+Findings from 2026-10-09. This is a validation design, not an implementation or success report for PCM round-trip validation.
 
-## 目的と問題の分類
+2026-10-10 addendum: Normal MDX generation with PCM now uses the 16-track + E8 PCM extension route confirmed by listening.
+The standard 9-track/PCM1 reference below remains a candidate for independent validation, but validating current output
+requires a separate profile that also fixes the PCM extension version and execution route. The six successful playback/stop
+cases are individual listening results; they do not establish successful A/B/C round trips or guarantee reset behavior,
+consumed nibble counts, or mid-playback pan. See [pcm_pdx.md](pcm_pdx.md) for current generation conditions and CLI,
+and the [field note](../field_notes/2026-10-09_pcm_mxdrv_roundtrip_review.md) for the investigation evidence.
 
-目標は `VGM -> PCM IR -> MDX+PDX -> VGM` の意味論的な往復である。
-OPMは既存の音楽的な生成経路を利用する。PCMは符号化sampleと再生情報をIRに保持し、
-MDXのPCM命令とPDXへ投影する。PCMのMMLテキストは任意の可読出力であり、必須の中間形式ではない。
-PCM直接MDX出力とstrict／best-effortの投影評価は実装済み。独立再生基準とA/B/C比較は未実装である。
+## Goals and problem categories
 
-| 層 | 問題 | PCM MMLを省略した場合 |
+The goal is a semantic round trip: `VGM -> PCM IR -> MDX+PDX -> VGM`.
+OPM uses the existing musical generation route. PCM retains encoded samples and playback information in the IR,
+then projects them into MDX PCM commands and PDX. PCM MML text is optional readable output, not a mandatory intermediate format.
+Direct PCM MDX output and strict/best-effort projection assessment are implemented. An independent playback reference and A/B/C comparisons are not implemented.
+
+| Layer | Problem | If PCM MML is omitted |
 |---|---|---|
-| MML/コンパイラ | 記法、数値sample音符、tieの配置、Pだけでも16trackを選ぶmmlxの挙動 | テキスト変換・コンパイラ由来の問題を回避できる |
-| MDX実行環境の表現可能性 | F7の保持、FC pan、ED rateが標準MXDRVでいつ何に作用するか | 残る。直接MDXを書いても命令の意味は変わらない |
-| MDX+PDX再生変換器 | カーソル消失、停止未出力、固定rate/pan、decoder状態の誤再構成 | 残る。MMLを通さない元MDXでも検証する |
+| MML/compiler | Notation, numeric sample notes, tie placement, and mmlx selecting 16 tracks even for P alone | Avoids problems originating in text conversion or the compiler |
+| MDX runtime expressibility | When and what F7 hold, FC pan, and ED rate affect in standard MXDRV | Remains. Writing MDX directly does not change command semantics |
+| MDX+PDX playback converter | Lost cursor, missing stop output, fixed rate/pan, incorrectly reconstructed decoder state | Remains. Also validate original MDX that has not passed through MML |
 
-報告済みのtie問題をすべてMML由来とは分類しない。soundlogのnon-Note命令でのraw cursor消失は、
-MDX実行時の問題である。F7/KeyOffDisable、FC/pan、ED/FはMDXバイナリ命令でもある。
-標準環境で途中panが実効出力に反映されない場合、再生変換器を即時反映へ変更しても正解にはならない。
-その差は対象への投影で既知の意味損失として診断する。常に変換を拒否するとは限らず、
-strictとbest-effortで成果物の生成方針を分ける。
+Do not classify all reported tie problems as originating in MML. soundlog losing its raw cursor on non-Note commands
+is an MDX runtime problem. F7/KeyOffDisable, FC/pan, and ED/F are also MDX binary commands.
+If mid-playback pan does not affect effective output in the standard environment, changing the playback converter to apply it
+immediately is not correct. Diagnose that difference as a known semantic loss in target projection. Conversion need not always
+be rejected; strict and best-effort use different artifact-generation policies.
 
-今回確認したMXDRV 2.06+17 Rel.X5-Sの通常PCM1経路では、FCとEDはtrack状態への保存であり、
-次の新規ADPCMOUTで適用される。保持中にFCを挿入してもIOCSへ即時pan変更を発行しない。
-以前のtie+途中pan出力は、この版で元VGMの即時pan変更を再現する根拠にならない。
-現行投影はstrictで拒否し、best-effortで開始panを保持して損失区間を記録する。
+In the ordinary PCM1 route of MXDRV 2.06+17 Rel.X5-S examined here, FC and ED save track state and take effect at the next
+new ADPCMOUT. Inserting FC during a hold does not issue an immediate pan change to IOCS.
+Earlier tie + mid-playback pan output is not evidence that this version reproduces the original VGM's immediate pan changes.
+Current projection rejects this in strict mode; best-effort retains the starting pan and records the loss interval.
 
-有限bank `0x04`のstream展開は、固定したlibvgm profileに基づく転送列として実装・検証した。
-これはdecoderの消費や標準MXDRVの実行を検証したことではなく、`consumed_nibbles=None`は維持する。
-未対応の圧縮bank／stream modeも明示的に診断する。詳細は [PCM/PDX](pcm_pdx.md) を参照する。
+Stream expansion for finite bank `0x04` was implemented and validated as a transfer sequence based on a fixed libvgm profile.
+This does not validate decoder consumption or execution by standard MXDRV; `consumed_nibbles=None` is retained.
+Unsupported compressed banks/stream modes are also diagnosed explicitly. See [PCM/PDX](pcm_pdx.md) for details.
 
-## strict / best-effortと四種類の判定
+## strict / best-effort and four assessment outcomes
 
-ユーザーの追加方針として、targetで完全に表現できないことを一律の変換拒否にしない。
-loss/eligibilityはMDX target projectionがsource IR、target profile、確認済みの規則から判定する。
-PCM IRの元pan、rate、reset/continuation、時刻、bytesは変更しない。
-source段階の観測不能・解釈未確定はsource evidenceとして残し、target仕様上の損失と混同しない。
+An additional user policy is that inability to represent something perfectly on the target must not automatically reject all conversion.
+MDX target projection determines loss/eligibility from the source IR, target profile, and verified rules.
+Do not change the original pan, rate, reset/continuation, times, or bytes in the PCM IR.
+Retain source-level unobservability and unresolved interpretation as source evidence; do not conflate them with losses imposed by target specifications.
 
-| 項目の判定 | 意味 |
+| Item outcome | Meaning |
 |---|---|
-| `pass` | 指定scope/profileで本来一致すべき意味が、必要な根拠・検証を含め一致した |
-| `lossy` (`known loss`) | target制約と選択した近似により、どの意味がどう失われるかを特定できる |
-| `unverified` | IOCS、source解釈、観測不足、未実行の検証等により、挙動や一致をまだ判断できない |
-| `fail` | 本来一致すべき箇所の不一致、選択した近似の実装不良、無効な成果物等が確認された |
+| `pass` | Semantics that should match in the specified scope/profile do match, including the necessary evidence and validation |
+| `lossy` (`known loss`) | Target constraints and the selected approximation identify which semantics are lost and how |
+| `unverified` | Behavior or agreement cannot yet be judged because of IOCS, source interpretation, insufficient observations, unperformed validation, etc. |
+| `fail` | A mismatch where agreement is required, a defective implementation of the selected approximation, an invalid artifact, etc. has been confirmed |
 
-判定scopeを必ず記録する。target eligibilityの`pass`は、PCM runtime往復の`pass`ではない。
-生成・parse・static reference検査の成功も、runtime判定へ昇格させない。
-strictの方針によって生成を止めた既知lossは`lossy`の診断であり、再生実装の`fail`ではない。
-この場合の`lossy`は予定された投影のassessmentで、生成物の実行検証結果ではない。
-`artifact_status=blocked`、`validation_run=not_run`を併記し、runtime判定は未検証として残す。
+Always record the assessment scope. A target eligibility `pass` is not a PCM runtime round-trip `pass`.
+Do not promote successful generation, parsing, or static reference checks to runtime outcomes either.
+A known loss that blocks generation under strict policy is a `lossy` diagnosis, not a playback implementation `fail`.
+Here, `lossy` assesses the planned projection, not execution validation of a generated artifact.
+Also record `artifact_status=blocked` and `validation_run=not_run`, leaving the runtime outcome unverified.
 
-| 変換policy | 成果物の扱い |
+| Conversion policy | Artifact handling |
 |---|---|
-| `strict` | 既知の意味損失を伴う投影を出力しない。source evidenceと理由を保存する |
-| `best-effort` | ユーザーが明示的に選択した場合、定義済みの近似とloss診断を付けて、生成可能なMDX+PDXを出力する |
+| `strict` | Do not output a projection with known semantic loss. Retain source evidence and the reason |
+| `best-effort` | When explicitly selected by the user, output generatable MDX+PDX with defined approximations and loss diagnostics |
 
-strictは「既知lossを許容しない」というpolicyであり、独立環境で認証済みという意味ではない。
-具体的で内部整合したtarget planを作れるがIOCS等が未確認なら、成果物を生成しても`unverified`とする。
-不明なdecoder消費等のためtarget plan自体を定められない場合は、best-effortでも生成を保留できる。
-best-effortは未知の挙動、壊れたPDX、欠損参照、未実装のsource解析を無条件に無視するモードではない。
-近似を定義できない場合や出力不能の場合は、その理由とscopeを記録する。
+strict means “do not allow known loss”; it does not mean certification in an independent environment.
+If a concrete, internally consistent target plan can be made but IOCS or other details remain unverified, the result stays `unverified` even if artifacts are generated.
+If unknown decoder consumption or similar issues prevent defining the target plan itself, generation may be deferred even in best-effort mode.
+best-effort does not unconditionally ignore unknown behavior, broken PDX, missing references, or unimplemented source analysis.
+If an approximation cannot be defined or output cannot be generated, record the reason and scope.
 
-現行CLIは `--pcm-policy strict|best-effort`、既定strictである。
-変換できた場合は終了0、生成を止めた場合は非0とし、`*.pcm.assessment.json`／CSVに四種類の判定を保存する。
-batchの処理statusと意味的な評価は別の列とする。PCM replay unavailableは引き続き残る。
+The current CLI is `--pcm-policy strict|best-effort`, defaulting to strict.
+Successful conversion exits with 0; blocked generation exits nonzero. The four assessment outcomes are saved in `*.pcm.assessment.json`/CSV.
+Batch processing status and semantic assessment use separate columns. PCM replay unavailable remains in place.
 
-成果物の生成状態と意味論的な判定は別に保存する。
-reportの設計項目は`policy`、`target_profile`、`artifact_status` (generated/blocked/error)、
-項目別assessment、`known_losses`、`unverified_items`、`unexpected_mismatches`、
-判定scopeと検証の実行状態。生成できたことだけで`pass`にしない。
-総合validation statusは、実際の失敗があれば`fail`、必要項目に未確認があれば`unverified`、
-残りが確認済みで既知lossがあれば`lossy`、必要項目が全て一致すれば`pass`とする。
-未確認のため総合が`unverified`でも、既知loss一覧を隠さない。未実行の比較を`pass`にしない。
+Store artifact-generation status separately from semantic outcomes.
+The report design includes `policy`, `target_profile`, `artifact_status` (generated/blocked/error),
+per-item assessments, `known_losses`, `unverified_items`, `unexpected_mismatches`,
+assessment scope, and validation execution status. Generation alone must not yield `pass`.
+The overall validation status is `fail` if there is an actual failure; `unverified` if any required item is unverified;
+`lossy` if everything else is verified and known losses remain; and `pass` if all required items match.
+Do not hide known losses when unverified items make the overall result `unverified`. Do not mark unperformed comparisons `pass`.
 
-### 途中panのbest-effort投影
+### Best-effort projection of mid-playback pan
 
-指定した通常PCM1 profileで途中panが適用されないことが確認された場合、
-新規発音時のpanを保持し、保持中の変更をtargetへ適用しない近似を候補にする。
-次の新規発音では、その時点のsource panを明示する。
-pan変更を模倣するための人工的な再発音やdecoder resetは追加しない。
-source側のpan trajectoryはIRにそのまま残し、target planと診断を別に出す。
+When mid-playback pan is confirmed not to apply in the specified ordinary PCM1 profile,
+a candidate approximation retains pan from the new note start and does not apply changes during the hold to the target.
+Explicitly set the source pan current at the next new note start.
+Do not add artificial retriggers or decoder resets to imitate pan changes.
+Retain the source pan trajectory unchanged in the IR; emit the target plan and diagnostics separately.
 
-診断には少なくとも次を含める。
+Diagnostics must include at least:
 
-- loss code/cause (`target_constraint`)、確認したprofileと証拠、選択したfallback規則。
-- source playback/event ID、元の時刻と影響区間、source値とprojected値。
-- 失われたpan変更・mute区間、およびそれによる可聴性の違い。
-- 保持するsample/cursor/timing等の項目と、別途未確認のreset/消費等の項目。
+- Loss code/cause (`target_constraint`), the verified profile and evidence, and the selected fallback rule.
+- Source playback/event ID, original times and affected intervals, and source/projected values.
+- Lost pan changes/mute intervals and the resulting differences in audibility.
+- Preserved items such as sample/cursor/timing, and separately unverified items such as reset/consumption.
 
-「pan命令を落とした」という説明だけでなく、どの区間がどう再生される予定かを記録する。
-known lossの診断はtarget planに基づく。runtime確認が未了なら、その確認不足も併記する。
-sample length等の他の制約には別のfallback規則と検証が必要で、無条件の切捨てはしない。
+Record how each interval is planned to play, rather than merely saying “pan commands were dropped.”
+Known-loss diagnostics are based on the target plan. If runtime confirmation is pending, record that lack of confirmation too.
+Other constraints such as sample length require separate fallback rules and validation; do not truncate unconditionally.
 
-## 再生状態を分ける
+## Separate playback states
 
-次の状態は同じものではない。
+The following states are distinct:
 
-1. MDXのnote、gate/keyoff要求、F7、休符、pan/rate/bank指定。
-2. MXDRVのsample選択、保持状態、IOCS呼出し、ドライバtick。
-3. IOCS/DMAの転送範囲、カーソル、終了・中断・再開、rate/pan設定。
-4. チップのPLAY/STOP、データ入力、ニブル位相、decoder状態、実効rate/pan。
-5. VGMのdata bank、stream開始・停止・位置・書込み頻度。
+1. MDX notes, gate/keyoff requests, F7, rests, and pan/rate/bank settings.
+2. MXDRV sample selection, hold state, IOCS calls, and driver ticks.
+3. IOCS/DMA transfer ranges, cursors, completion/interruption/resumption, and rate/pan settings.
+4. Chip PLAY/STOP, data input, nibble phase, decoder state, and effective rate/pan.
+5. VGM data banks, stream start/stop/position, and write frequency.
 
-VGM `0x94`はstream停止であり、チップのSTOPを直接意味しない。`0x95`もチップPLAYやresetではない。
-`0x92`は書込み頻度であり、4-bit ADPCMのニブル消費rateとは別である。
-sample先頭へのカーソル移動、noteの再要求、decoder resetも別々に記録する。
-STOP/PLAYに伴うresetは選んだチップモデルで確認し、noteごとのresetを推測で追加しない。
+VGM `0x94` stops a stream; it does not directly mean chip STOP. `0x95` is not chip PLAY or reset either.
+`0x92` is write frequency, distinct from the nibble consumption rate of 4-bit ADPCM.
+Record cursor movement to the sample start, note re-requests, and decoder reset separately too.
+Verify STOP/PLAY-related reset in the selected chip model; do not add a reset per note by inference.
 
-## 不足しているもの
+## Missing pieces
 
-| 対象 | 必要な実装・根拠 | 現在の不足 |
+| Subject | Required implementation/evidence | Current gap |
 |---|---|---|
-| 開始・保持 | F7、gate、key-on delay、同一/異なるsample、休符の実行規則 | raw cursorと論理holdの寿命がsoundlogで一致しない |
-| sample/cursor | PDX範囲、転送位置、ニブル位相、EOF、途中打切り、次sampleへの切替 | 供給bytesは保存済みだが実消費数は未確定 |
-| PDX length/bank | containerの格納能力と選んだnative版の読み出し能力を別に検証 | 調べたPCM1経路はlength末尾16-bitを使用。packerの24-bit上限はnative再生保証ではない |
-| 終了・中断・再開 | MXDRVからIOCSへの要求とDMA/チップの実効動作 | stream停止、DMA終了、チップSTOP、keyoffの対応を独立確認していない |
-| reset/continuation | 予測器とstep、カーソル、PLAY状態を分けた状態遷移 | 元VGMのreset関係を再現できず、標準IOCS基準も未確定 |
-| rate | ED設定が反映される時点、OPM CT出力/PPI/divider、正確な有理数rate | F番号だけの比較では不足。書込み頻度と消費rateを分ける必要がある |
-| pan | FCの要求値と、IOCS/PPIによる実効反映時刻、muteとdecoder継続 | 現行tie+panの途中変更は実効再生未検証 |
-| 時間 | 全trackのtempo/timer、同期・gate・delay、DMAとdecoder clock、同時刻順序 | MDX境界の量子化検査だけでは転送・消費を保証しない |
-| VGM出力 | block IDとPDX slotの対応、stream/直接write、チップ制御の整合 | Leonardo版は固定rate/panと停止stub。soundlogも基準未認証 |
-| VGM入力 | streamの実データ書込み展開、直接writeとの順序、供給と消費の状態 | 現在stream/bankは生保存と拒否のみ |
+| Start/hold | Execution rules for F7, gate, key-on delay, same/different samples, and rests | raw cursor and logical hold lifetimes do not match in soundlog |
+| sample/cursor | PDX ranges, transfer position, nibble phase, EOF, early cutoff, transition to next sample | Supplied bytes are retained, but actual consumption is unresolved |
+| PDX length/bank | Separately validate container storage capacity and the selected native version's read capability | The examined PCM1 route uses the trailing 16 bits of length. The packer's 24-bit limit does not guarantee native playback |
+| Completion/interruption/resumption | Requests from MXDRV to IOCS and effective DMA/chip behavior | Correspondence between stream stop, DMA completion, chip STOP, and keyoff has not been independently verified |
+| reset/continuation | State transitions separating predictor and step, cursor, and PLAY state | Original VGM reset relationships cannot be reproduced, and the standard IOCS reference is unresolved |
+| rate | When ED settings take effect, OPM CT output/PPI/divider, exact rational rates | Comparing F numbers alone is insufficient. Write frequency and consumption rate must be separated |
+| pan | FC requested values, effective application time through IOCS/PPI, mute and decoder continuation | Current tie + pan mid-playback changes are unverified in effective playback |
+| Time | Tempo/timer across all tracks, synchronization/gate/delay, DMA and decoder clocks, same-time order | MDX boundary quantization checks alone do not guarantee transfer/consumption |
+| VGM output | Mapping block IDs to PDX slots, stream/direct writes, chip-control consistency | The Leonardo version has fixed rate/pan and a stop stub. soundlog is also uncertified as a reference |
+| VGM input | Expansion of streams into actual data writes, order relative to direct writes, supply/consumption state | Currently stream/bank handling only retains raw data and rejects it |
 
-## 独立した実行基準R
+## Independent execution reference R
 
-第一候補は、特定版のネイティブMXDRVをX68000実機または独立した全体エミュレータで実行する環境R。
-PCM8なしの標準9track/PCM1に範囲を限定し、少なくとも以下を固定して記録する。
+The first candidate is environment R, running a specific native MXDRV version on real X68000 hardware or an independent full-system emulator.
+Limit its scope to standard 9-track/PCM1 without PCM8, and fix and record at least:
 
-- MXDRVの版、実行バイナリhash、資料/逆アセンブルの出所。
-- 機種、ROM IOCSの版/hash、PCM8・XAPNEL等の差替え有無。
-- OPM/ADPCM clock、divider、初期化・開始手順、loop回数/終了条件。
-- emulatorの版/commit、chip/DMAモデル、traceの観測地点と時計。
+- MXDRV version, executable binary hash, and documentation/disassembly sources.
+- Machine model, ROM IOCS version/hash, and whether replacements such as PCM8 or XAPNEL are present.
+- OPM/ADPCM clocks, divider, initialization/start procedure, and loop count/end condition.
+- Emulator version/commit, chip/DMA model, and trace observation points and clocks.
 
-ROM IOCSの動作まで含むため、単に「標準MXDRV」とだけ名付けた基準にしない。
-資料としてMXDRV 2.06+17 Rel.X5-Sのネイティブ逆アセンブルを確認したが、
-そのバイナリとROMを用いる実行基準Rはまだ用意・実行していない。
-実機/独立エミュレータの取得可能なtraceも確認が必要である。
+Because ROM IOCS behavior is included, do not label the reference merely “standard MXDRV.”
+Native disassembly of MXDRV 2.06+17 Rel.X5-S was examined as evidence,
+but execution reference R using that binary and ROM has not yet been prepared or run.
+Available traces from hardware/an independent emulator also need investigation.
 
-この版の逆アセンブルからは、F7がgate keyoffを抑制すること、activeなPCMの次note要求が
-sample lookup前にreturnすること、FC/EDが次ADPCMOUTへ持ち越されること、
-新規PCM1開始がADPCMMOD(0)→ADPCMOUT、gate keyoffが条件付きADPCMMOD(1)→(0)となることを追える。
-これはC1のdriver/IOCS要求層に使える根拠であり、IOCS内部の物理resetを保証するものではない。
+The disassembly of this version shows that F7 suppresses gate keyoff; a subsequent note request for active PCM
+returns before sample lookup; FC/ED carry forward to the next ADPCMOUT;
+new PCM1 start uses ADPCMMOD(0)→ADPCMOUT; and gate keyoff conditionally uses ADPCMMOD(1)→(0).
+This supports the driver/IOCS request layer of C1; it does not guarantee a physical reset inside IOCS.
 
-IOCS呼出しだけでは物理PLAY/STOP/resetや実消費を証明できない。
-Rでは、時刻付きのOPM/PPI/ADPCM書込みとDMAデータ転送を観測する。
-ニブル消費数まで判定する場合はdecoder入力位置・状態の観測または別途認証したchip modelが必要。
-取得できない項目は未検証とする。音声比較と実機の聴き比べは補助証拠として別に残す。
+IOCS calls alone cannot prove physical PLAY/STOP/reset or actual consumption.
+In R, observe timestamped OPM/PPI/ADPCM writes and DMA data transfers.
+Assessing consumed nibble counts also requires observation of decoder input position/state or a separately certified chip model.
+Items that cannot be obtained remain unverified. Retain audio comparison and listening comparisons on hardware separately as supporting evidence.
 
-NanoDrive8は物理音源を駆動する別のプレイヤーとして状態設計・差分調査に使う。
-ネイティブMXDRV+ROM IOCSと異なる制御を含むので、標準のoracleにはしない。
-portable_mdx/MXDRVgはhost上の補助基準候補だが、元ドライバとの対応、IOCS相当処理、
-X68Sound側の状態とタイミングを確認してから採用する。
-同じ由来のコードを複数使うことを、完全に独立した根拠の数として数えない。
-soundlogと未修正Leonardo版の出力は、期待値生成に使わない。
+Use NanoDrive8, a separate player driving physical sound hardware, for state design and difference investigation.
+Its control differs from native MXDRV + ROM IOCS, so it is not the standard oracle.
+portable_mdx/MXDRVg are candidates for auxiliary host references, but adopt them only after checking correspondence to the original driver,
+IOCS-equivalent processing, and state/timing on the X68Sound side.
+Do not count multiple codebases of the same origin as fully independent evidence.
+Do not use soundlog or the unmodified Leonardo version to generate expected values.
 
-## A/B/Cと失敗箇所の切り分け
+## A/B/C and isolating failure locations
 
 ```text
 original MDX+PDX --R--> VGM0 --vgm2mml native analysis--> A
@@ -173,112 +175,112 @@ A --target projection--> generated MDX+PDX --R--> VGM_ref --analysis--> B_ref
                                      +--player under test P--> VGM_P --analysis--> B
 ```
 
-`analysis`はOPM/PCMのsource解釈まで。target量子化・正規化した出力をsource Segmentと比較しない。
-Rはconverter/Pと別の実行経路にする。最初の小さいfixtureからB_refも取得する。
+`analysis` extends through OPM/PCM source interpretation. Do not compare target-quantized/normalized output with source Segments.
+R must use an execution route separate from the converter/P. Obtain B_ref from the first small fixture onward.
 
-| 比較 | 判定するもの |
+| Comparison | What it assesses |
 |---|---|
-| C1 と A | 原MDX実行のVGM化とVGM source解析が、直接解析/独立基準と合うか |
-| A と B_ref | source IRからgenerated MDX+PDXへの投影が標準環境の再生を保つか |
-| B_ref と B | 同一generated MDX+PDXについてPが標準環境の動作を再現するか |
-| A と B、C1 と B_ref/B | 最終的な往復と、複数経路の誤りの相殺がないか |
+| C1 and A | Whether VGM conversion of original MDX execution and VGM source analysis match direct analysis/the independent reference |
+| A and B_ref | Whether projection from source IR into generated MDX+PDX preserves playback in the standard environment |
+| B_ref and B | Whether P reproduces standard-environment behavior for the same generated MDX+PDX |
+| A and B, C1 and B_ref/B | The final round trip, and whether errors across routes cancel each other out |
 
-A/B一致だけは内部一貫性の証拠であり、標準再生の正しさを認証しない。
-初段のR→VGM0についても、VGM formatterを通す前のtraceと照合する。
-C1とRで同じ実装を流用する場合は異なる観測方法による照合と明記し、
-独立したsequencer/IOCS根拠として数えない。
+A/B agreement alone is evidence of internal consistency; it does not certify correct standard playback.
+Also compare the first R→VGM0 stage with its trace before the VGM formatter.
+If C1 and R reuse the same implementation, explicitly describe this as comparison through different observation methods;
+do not count it as independent sequencer/IOCS evidence.
 
-`C ≈ A ≈ B`は目的の略記である。許容差付き一致は推移的ではないので、
-各経路/各項目を個別判定し、上の必要な対をそれぞれ比較する。
+`C ≈ A ≈ B` is shorthand for the goal. Agreement within tolerance is not transitive,
+so assess each route/item separately and compare each required pair above.
 
-best-effort成果物でもA/B/Cの比較を省略しない。
-AとB_refの既知lossは`lossy`として報告し、厳密な往復成功には数えない。
-別途、選択したtarget planの近似が実際に再現され、変更対象外が一致するかを検証する。
-fallback適用後の期待target planは、比較対象の実出力を見る前に規則とsource evidenceから確定する。
-sourceと期待target planの差をknown loss、期待target planと実出力の差を検証上の不一致として分ける。
-loss区間を単に比較から除外することで、余分な再発音・reset・timing不良を隠さない。
-同じ生成MDX+PDXを再生するB_refとBでは、source→targetのlossは差を許容する理由にならない。
-再生変換器がtarget plan/標準環境から外れた場合は`fail`、根拠不足なら`unverified`とする。
+Do not omit A/B/C comparison for best-effort artifacts either.
+Report known losses between A and B_ref as `lossy`; do not count them as strict round-trip success.
+Separately validate that the approximation in the selected target plan is actually reproduced and unaffected items match.
+Determine the expected target plan after fallback from rules and source evidence before inspecting the actual output being compared.
+Distinguish source-to-expected-target-plan differences as known loss, and expected-target-plan-to-actual-output differences as validation mismatches.
+Do not hide extra retriggers, resets, or timing defects by simply excluding loss intervals from comparison.
+For B_ref and B playing the same generated MDX+PDX, source→target loss is not a reason to allow differences.
+If the playback converter departs from the target plan/standard environment, use `fail`; if evidence is insufficient, use `unverified`.
 
-## 元MDX+PDXの直接解析C
+## Direct analysis C of original MDX+PDX
 
-C0はMMLへ逆変換せず、MDX命令とPDXから直接作る。
-PDXの全slot・元offset/length・符号化bytesと、MDXのtrack/byte offsetを保存する。
-note/rest/F7/F8/FC/ED/FD等の命令、repeat/end/escape、tempo、同期、delayを保持する。
-command列を読むだけでは再生時刻は分からない。実行制御を解釈してtrack間の時刻を決める必要がある。
-OPMも音色・software LFO・shared controlを含む実行解釈が必要である。
+Build C0 directly from MDX commands and PDX, without reverse-converting to MML.
+Retain every PDX slot, original offset/length, and encoded bytes, plus MDX track/byte offsets.
+Retain commands such as note/rest/F7/F8/FC/ED/FD, repeat/end/escape, tempo, synchronization, and delay.
+Reading command sequences alone does not reveal playback times. Execution control must be interpreted to determine time across tracks.
+OPM also requires execution interpretation, including voices, software LFO, and shared control.
 
-C1は、選択したMXDRVの確定した規則とIOCS profileに従ってC0を実効再生情報へ写像する。
-要求pan/rateと実効pan/rate、note要求とsample開始、gate要求と物理停止を分ける。
-不明な項目にはunknownと出所を残す。新しい推測で完全なCを作らない。
+C1 maps C0 to effective playback information according to verified rules of the selected MXDRV and the IOCS profile.
+Separate requested pan/rate from effective pan/rate, note requests from sample starts, and gate requests from physical stops.
+Leave unknown items marked unknown with their sources. Do not create a complete C through new guesses.
 
-VGMから元のF7、q、Fコマンド配置を一意に逆算する必要はない。
-それらの命令列そのものをA/Bの必須一致条件にせず、C1への写像後の観測可能な挙動を比べる。
-同じ再生を表す別のMDX構造、slot割当て、loop表現も許容できる。
+There is no need to uniquely reconstruct original F7, q, or F command placement from VGM.
+Do not make those command sequences themselves mandatory A/B equality criteria; compare observable behavior after mapping to C1.
+Different MDX structures, slot assignments, and loop representations that describe the same playback are acceptable.
 
-## 意味論的な比較項目
+## Semantic comparison items
 
-source ID、slot番号、VGM block ID、Segment行数の一致は要求しない。
-Segment境界が異なっても、共通の時間境界で状態区間を比較する。
-発音・停止・reset等のedgeは別のordered eventとして比較し、区間の併合で消さない。
+Do not require matching source IDs, slot numbers, VGM block IDs, or Segment row counts.
+Even if Segment boundaries differ, compare state intervals using common time boundaries.
+Compare edges such as note starts, stops, and resets as separate ordered events; do not erase them by merging intervals.
 
-| PCM項目 | 比較方法 |
+| PCM item | Comparison method |
 |---|---|
-| sample | codec/bit order/output precisionと実bytes。hashは索引、最終的にはbytesを照合 |
-| 全assetと再生範囲 | 元PDXの全assetと、VGMで供給/消費されたprefixやsliceを区別。打切りで未再生のsuffixを欠落扱いしない |
-| 開始/終了 | 論理trigger、データ供給開始/終了、物理PLAY/STOP、audible開始/終了を区別して時刻・順序を比較 |
-| 継続/reset | playback間の継続関係、cursor rewind、decoder reset、reset根拠を個別比較 |
-| cursor/消費 | byte offset・ニブル位置・消費範囲。供給byte数を消費数として代用しない |
-| rate | clock/dividerと有理数ニブルrate、実効変更時点。streamのwrite cadenceは別に比較 |
-| pan | 実効L/R/muteの時間軌跡。mute中もdecoder/cursorが進むかを保持 |
-| 終了理由 | gate、rest、sample EOF、explicit stop、song end、loopによる終了/継続 |
-| timing/loop | 共通の時間原点、同時刻順序、tempo境界、loop入口/出口のdecoder/cursor状態 |
+| sample | codec/bit order/output precision and actual bytes. Hashes are indexes; ultimately compare bytes |
+| All assets and playback ranges | Distinguish all assets in the original PDX from prefixes/slices supplied/consumed in VGM. Do not treat an unplayed suffix after cutoff as missing |
+| Start/end | Distinguish logical triggers, data supply start/end, physical PLAY/STOP, and audible start/end; compare times and order |
+| continuation/reset | Separately compare continuity between playbacks, cursor rewind, decoder reset, and reset evidence |
+| cursor/consumption | Byte offsets, nibble positions, and consumed ranges. Do not substitute supplied byte counts for consumption |
+| rate | clock/divider, rational nibble rate, and effective change times. Compare stream write cadence separately |
+| pan | Effective L/R/mute trajectories over time. Retain whether decoder/cursor advances during mute |
+| End reason | gate, rest, sample EOF, explicit stop, song end, and ending/continuation due to loops |
+| timing/loop | Common time origin, same-time order, tempo boundaries, and decoder/cursor state at loop entry/exit |
 
-IOCSが前置/後置する安定化データがある場合、そのprofileで確認した出所を記録する。
-`0x80`等の固定byte列を一般的な無音として除去しない。
-VGMだけでは復元できないPDX全assetや未再生suffixは、Cから得たcontainer情報と再生一致を別判定する。
-全asset復元を一般VGMの往復の必須条件にすると、観測されなかった情報を要求してしまう。
+If IOCS prepends/appends stabilization data, record its origin as verified in that profile.
+Do not remove fixed byte sequences such as `0x80` as generic silence.
+For all PDX assets and unplayed suffixes unrecoverable from VGM alone, assess container information from C separately from playback agreement.
+Requiring recovery of all assets for a general VGM round trip would require information that was never observed.
 
-OPMは各operatorのkey edge/mask、KC/KF、voice/operator parameters、volume、pan、
-LFO/noise/shared controlの実効状態と時刻を比べる。
-KeyOff後の状態・releaseに影響する設定も含める。未知のsource registerを架空の既知値で埋めない。
-同じ最終状態でも意味のあるKeyOff/KeyOnやresetの違いを同一視しない。
-raw列の一致は診断用として残すが、意味論的な合格条件の代わりにしない。
+For OPM, compare effective states and times for each operator's key edges/masks, KC/KF, voice/operator parameters, volume, pan,
+and LFO/noise/shared control.
+Include post-KeyOff state and settings affecting release. Do not fill unknown source registers with invented known values.
+Do not equate meaningful KeyOff/KeyOn or reset differences merely because the final state is identical.
+Retain raw-sequence comparison for diagnostics, but do not substitute it for semantic acceptance criteria.
 
-## 時間と合格条件
+## Time and acceptance criteria
 
-- VGM0→A、VGM_ref/P→B_ref/Bは整数sample時刻と同時刻順序を保存する。
-- R/P→VGMの時間丸めは元のtrace時計と変換式で計測する。
-  44.1kHzへの丸めだけなら1sample以内が候補だが、取得方式を確認する前に固定保証しない。
-- A→MDX投影の境界誤差はsource/target時刻を別列で保存する。
-  現行6sampleの上限はこの投影のnote/control境界の制約である。
-- decoder消費、reset回数、sample bytes、同時刻順序、供給間隔の違いには6sample許容を流用しない。
-  長い再生のrate丸めによる累積driftやunderrunも独立に調べる。
-- 開始時のwarmup/初期化offsetを除く場合はprofileで確認した一つのoffsetのみとし、
-  元の時間も保持する。trackごとのrebase、任意のtime warpで差を隠さない。
-- loopは規定回数/時間で打ち切り、その時点の状態と継続関係も比較する。
+- VGM0→A and VGM_ref/P→B_ref/B preserve integer sample times and same-time order.
+- Measure time rounding in R/P→VGM using the original trace clock and conversion formula.
+  If rounding only to 44.1 kHz, within 1 sample is a candidate tolerance; do not guarantee it before checking the acquisition method.
+- Store source/target times in separate columns for A→MDX projection boundary errors.
+  The current 6-sample upper bound constrains note/control boundaries in this projection.
+- Do not reuse the 6-sample tolerance for differences in decoder consumption, reset counts, sample bytes, same-time order, or supply intervals.
+  Investigate cumulative drift from rate rounding during long playback and underruns separately.
+- If excluding a startup warmup/initialization offset, use only one offset verified in the profile,
+  and retain original times. Do not hide differences through per-track rebasing or arbitrary time warping.
+- End loops after a specified count/time; also compare state and continuation relationships at that point.
 
-結果は項目別のpass/lossy(known loss)/unverified/failを出す。
-厳密な往復ではlossyを成功扱いせず、必須項目がunknownの場合もPCM往復成功とはしない。
-MML生成、MDX parse、PDX bytes/static refs、意味論比較、音声/実機比較の結果は分ける。
-CSVには値とともにoriginal/derived time、source offset、observation/inference/assumption、
-profile、未検証理由を残す。schemaの追加は既存raw/state/sample dumpsを置き換えずに行う。
+Emit per-item pass/lossy(known loss)/unverified/fail outcomes.
+For a strict round trip, lossy is not success; unknown required items also preclude a claim of successful PCM round trip.
+Separate results for MML generation, MDX parsing, PDX bytes/static refs, semantic comparison, and audio/hardware comparison.
+Alongside values, CSV must retain original/derived time, source offset, observation/inference/assumption,
+profile, and reasons for unverified items. Add schemas without replacing existing raw/state/sample dumps.
 
-## 次の実装・検証順
+## Next implementation and validation order
 
-1. ネイティブMXDRVの版とROM IOCS profileを固定し、独立環境Rの観測手段を確認する。
-2. 自作の短いMDX+PDXで、単発、same/different sample、長い保持、F7前後、rest、gate、
-   EOF、途中pan/F、delay/tempo/同期の実効規則を調べる。sampleと手書き期待値はsoundlogで生成しない。
-3. C0の直接解析と根拠付きC1の限定schema、R trace→比較用情報を用意する。
-   target projection側へ四種類のassessmentとloss reportを追加し、strict/best-effortを分ける。
-   途中pan等の表現可能性と定義済みfallbackを判定し、現在の生成説明/target eligibilityに反映する。
-4. 現行raw/state IRを保持してVGM streamと消費モデルを追加し、独立traceでsource解釈を検証する。
-5. 同じsample bindingからPCM MDX命令を構築する出力を追加する。
-   OPMの既存経路とtyped MDX builderを使い、PCM MMLや新しいMML compilerを必須にしない。
-6. 小さなfixtureからA/C1/B_refを照合し、投影とsource解釈を認証する。
-   Pの修正は確認済みの標準規則に限定し、同じ生成MDXについてB_ref/Bを照合する。
-7. public fixtureを拡張してから、ローカルの元MDX+PDXと一般VGMへ広げる。
-   ROM/楽曲/sample bytesはgitへ入れない。Z_MUSICは別profile/backendから同じPCM IRを消費する。
+1. Fix the native MXDRV version and ROM IOCS profile, and confirm observation methods for independent environment R.
+2. Use short self-authored MDX+PDX to investigate effective rules for single notes, same/different samples, long holds, before/after F7, rests, gates,
+   EOF, mid-playback pan/F, delay/tempo/synchronization. Do not generate samples or handwritten expectations with soundlog.
+3. Prepare direct C0 analysis, a limited evidence-backed C1 schema, and comparison information from R traces.
+   Add the four assessment outcomes and loss reports to target projection, separating strict/best-effort.
+   Assess expressibility and defined fallbacks for mid-playback pan and similar cases, and reflect them in current generation descriptions/target eligibility.
+4. Retain the current raw/state IR while adding VGM streams and a consumption model; validate source interpretation against independent traces.
+5. Add output that builds PCM MDX commands from the same sample bindings.
+   Use the existing OPM route and typed MDX builder; do not require PCM MML or a new MML compiler.
+6. Compare A/C1/B_ref starting with small fixtures to certify projection and source interpretation.
+   Limit fixes to P to verified standard rules, and compare B_ref/B for the same generated MDX.
+7. Expand public fixtures before extending to local original MDX+PDX and general VGM.
+   Do not put ROM/song/sample bytes in git. Z_MUSIC consumes the same PCM IR through a separate profile/backend.
 
-現在の`verify_opm_mdx_roundtrip.py`はOPM検証であり、このPCMのA/B/C検証は実装されていない。
-利用可能なCLIがあるかのように、新しい検証コマンドをREADMEへ記載しない。
+The current `verify_opm_mdx_roundtrip.py` validates OPM; this PCM A/B/C validation is not implemented.
+Do not document new validation commands in README as though a usable CLI exists.

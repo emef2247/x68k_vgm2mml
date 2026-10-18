@@ -5,13 +5,16 @@ set -euo pipefail
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 tools="$root/.tools"
 with_mdxtools=false
+with_psg_pcm=false
 for option in "$@"; do
     case "$option" in
         --with-mdxtools) with_mdxtools=true ;;
+        --with-psg-pcm) with_psg_pcm=true ;;
         --help|-h)
-            printf '%s\n' 'Usage: bash scripts/setup_tools.sh [--with-mdxtools]' \
+            printf '%s\n' 'Usage: bash scripts/setup_tools.sh [--with-mdxtools] [--with-psg-pcm]' \
                 'Installs MXC v1.01, pinned run68x and the locked Rust helper.' \
                 '--with-mdxtools also builds mdxinfo, pdxinfo, mdxdump and mdx2mml.' \
+                '--with-psg-pcm also prepares the external emu2149 runtime.' \
                 'Requires Python 3, curl, git, CMake, make, a C compiler and Rust/Cargo.' \
                 'A fresh MXC installation also requires lha or lhasa (LH1 support).'
             exit 0 ;;
@@ -137,3 +140,5 @@ if sys.argv[3] == 'true':
 print('Setup complete. Installed tools: ' + ', '.join(binaries))
 print('Manifest: ' + str(tools / 'setup_manifest.json'))
 PY
+
+if $with_psg_pcm; then bash "$root/scripts/setup_psg_pcm.sh"; fi

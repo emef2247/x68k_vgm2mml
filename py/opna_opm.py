@@ -269,7 +269,7 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False, *
         continuous_pcm = any(s.continuation_index or
             'controls_during_decoder_epoch' in s.issues or
             (s.rate_num == 0 and native_pcm.clock_hz > 0) for s in projection_pcm.segments)
-        target_pcm = None if continuous_pcm else project_msm6258(projection_pcm)
+        target_pcm = None if continuous_pcm else project_msm6258(projection_pcm,pcm_profile=options.get('pcm_profile','standard'))
         if target_pcm is not None:
             target_pcm.dump(outdir, source.stem)
         if any(row['domain'] != 'adpcm_b_data_block' for row in metadata['auxiliary_commands']):
@@ -329,13 +329,14 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False, *
         if continuous_pcm:
             from opna_adpcm_waveform import project as project_continuous_pcm
             pcm_bridge = project_continuous_pcm(projection_pcm,
-                source_raw=read_vgm_bytes(source), loop_start=loop_start)
+                source_raw=read_vgm_bytes(source), loop_start=loop_start,
+                pcm_profile=options.get('pcm_profile','standard'))
             pcm_bridge.native.dump(outdir, source.stem)
             pcm_bridge.dump(outdir, source.stem)
         else:
             from opna_pcm import adapt
             pcm_bridge = adapt(projection_pcm, target_pcm, source_raw=read_vgm_bytes(source),
-                               loop_start=loop_start)
+                               loop_start=loop_start,pcm_profile=options.get('pcm_profile','standard'))
             pcm_bridge.dump_bridge(outdir, source.stem)
         mapping = folder / (source.stem + '.source_map.csv')
         with mapping.open('w', encoding='utf-8', newline='') as stream:
@@ -356,7 +357,7 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False, *
             pitch='committed 11-bit FNUM; existing nominal OPM KC/KF projection',
             target_only_assumptions='unwritten counterpart controls/pitch use reset zero',
             limitations='FM EG/DT rates unretimed; ADPCM-B transcoding is approximate; no acoustic equivalence',
-            pcm_ir=dict(source_codec='ym2608-adpcm-b', target_codec='msm6258-adpcm4',
+            pcm_ir=dict(pcm_profile=options.get('pcm_profile','standard'),source_codec='ym2608-adpcm-b', target_codec='msm6258-adpcm4',
                         native_segments=len(native_pcm.segments), target_samples=len(pcm_bridge.samples),
                         eligible_playbacks=sum(p.independently_playable for p in pcm_bridge.playbacks),
                         ineligible_playbacks=sum(not p.independently_playable for p in pcm_bridge.playbacks),

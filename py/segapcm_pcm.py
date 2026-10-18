@@ -4,7 +4,7 @@ from pcm_waveform_mdx import (CHUNK_TICKS, MAX_BYTES, TARGET_RATE,
     ProjectedWaveformAnalysis as ProjectedSegaPcmAnalysis, project as project_waveform, _loss)
 
 
-def project(native, *, source_raw, loop_start=None, loop_count=1):
+def project(native, *, source_raw, loop_start=None, loop_count=1,pcm_profile='standard'):
     evidence = []
     if native.reset_profile:
         evidence.append(dict(criterion='source_interpretation', status='unverified',
@@ -20,4 +20,4 @@ def project(native, *, source_raw, loop_start=None, loop_count=1):
         loop_count=loop_count, source_origin='projected_msm6258_from_segapcm',
         evidence_prefix='segapcm', artifact_prefix='segapcm_pcm',
         source_description='Native 8-bit SegaPCM mix', source_evidence=evidence,
-        encoder=encode_msm6258)
+        encoder=encode_msm6258,pcm_profile=pcm_profile)

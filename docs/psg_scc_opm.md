@@ -16,8 +16,11 @@ python vgm2mml.py INPUT.vgm --outdir outputs/opm/NAME
 
 The OPM target uses an independently implemented **FM/feedback PSG tone profile**
 by default. `--psg-model additive` selects the previous four-sine PSG model.
-SCC continues to use waveform-derived additive synthesis in either case:
-vgm-conv's AY-to-OPM profile is not a mapping for arbitrary SCC waves.
+SCC defaults to fitted FM plus additive synthesis independently of the PSG
+model; a missing bank is fitted automatically. Explicit one/two-channel additive
+and fitted FM models are described in
+[SCC voice projection](scc_fm_projection.md); vgm-conv's AY profile is not a
+mapping for arbitrary SCC waves.
 The main entry point defaults to MDX format and selects the projection from
 actual source commands. Deprecated `--target opm`/`opm-additive` aliases remain
 available with their original model/gain/pitch defaults.
@@ -84,7 +87,9 @@ allocation/compression switches do not apply to this projection.
 PSG/SSG use the shared source-sample MSX `extract_notes` interpretation.
 Decreasing/steady software levels remain runs; level rises, pitch writes and
 settings/shape boundaries infer new units. Zero-duration controls retain their
-order without alone inventing a Key. SCC retains audibility-edge inference.
+order without alone inventing a Key. SCC now uses the same MSX SCC note/run
+interpretation, retaining pitch, waveform and inferred volume-rise boundaries.
+See [SCC units and software envelopes](scc_fm_projection.md).
 See [musical units and scoped noise](psg_musical_noise.md). This is a
 target interpretation: PSG/SCC do not supply native OPM Keys. The user selected
 musical articulation over preserving the previous held oscillator phase.
@@ -163,7 +168,11 @@ and each row target track. Silent-only parts need no oscillator.
 Source channel, row, native sample boundaries and target write IDs remain visible
 in the unified target CSV. Source CSVs remain integrated per chip.
 
-## Approximation
+## Original prototype approximation (2026-10-05)
+
+The list below describes the original prototype. Current musical articulation,
+noise, song-loop and optional SCC voice behavior are specified above and in
+[scc_fm_projection.md](scc_fm_projection.md).
 
 - Default PSG FM profile: AL4/FB7, a MUL2 modulator at TL27 and a MUL1 carrier
   driven by a fixed volume-to-TL curve with eight attenuation steps of headroom.

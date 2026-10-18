@@ -182,6 +182,12 @@ which contains GNU GPL version 3. Preserve the upstream checkout, component
 notices and corresponding source if redistributing these tools; this entry is
 not a full audit of mdxtools' bundled sources and submodules.
 
+The optional SCC voice fitter also compiles the external checkout's YM2151
+core with this repository's authored `scripts/scc_opm_probe.c` adapter. The core
+sources and built shared library stay under local `.tools/`; preserve the
+upstream component notices. No emulator source or shared library is bundled
+in the voice bank or normal MML output.
+
 ## Distribution scope
 
 The repository and listening exports do not bundle the above external compiler,
@@ -241,3 +247,15 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+## Optional PSG PCM runtime: emu2149
+
+Project: [digital-sound-antiques/emu2149](https://github.com/digital-sound-antiques/emu2149)
+
+Pinned commit: `441f3dc295a9b82db16921461f0678b483db8304`.
+Used by the authored `scripts/psg_pcm_probe.c` adapter only for opt-in continuous
+PSG source rendering. Core checkout and built library remain under local `.tools/`.
+The upstream [MIT LICENSE](https://github.com/digital-sound-antiques/emu2149/blob/441f3dc295a9b82db16921461f0678b483db8304/LICENSE)
+credits Copyright (c)2014 Mitsutaka Okazaki; source header separately records
+Copyright (C)2001-2022 Mitsutaka Okazaki. Preserve upstream license/copyright
+texts if distributing the source or a linked runtime binary. Neither is bundled
+in ordinary MML/PCM IR/listening artifacts by this project.
