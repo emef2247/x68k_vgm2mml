@@ -38,7 +38,11 @@ def project(native,*,source_raw,loop_start=None,loop_count=1,pcm_profile='standa
         detail='20Hz first-order high-pass then centered63tap Hamming-sinc low-pass before profile resampling',
         projected_value=dict(gain=gain,lowpass_cutoff_hz=.45*float(profile.rate),taps=63,
             filter_edges='zero padding; no added timestamp delay; FIR pre-ringing possible',clipped_samples=clipped),
-        fallback='explicit_filtered_mono_transcoding')]
+        fallback='explicit_filtered_mono_transcoding'),
+        dict(criterion='transcoding',status='lossy',code='psg_filter_tails_cropped',cause='target_projection',
+            detail='Filtered decay/pre-ringing outside conservative source amplitude-active spans is omitted; no source gate expansion',
+            projected_value=dict(fir_half_width_source_samples=31,highpass_hz=20),
+            fallback='retain_original_source_span_boundaries')]
     return package_waveform(view,source_raw=source_raw,loop_start=loop_start,loop_count=loop_count,
         source_origin='projected_msm6258_from_psg',evidence_prefix='psg',artifact_prefix='psg_pcm',
         source_description='Continuous AY8910 three-channel mix',source_evidence=evidence,pcm_profile=pcm_profile)

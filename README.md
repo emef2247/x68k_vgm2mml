@@ -22,13 +22,26 @@ VGMの実際のコマンドから使用音源を判定し、OPM／PCM、OPNA FM�
 
 PSG／SSGは共通の発音・音量run解釈を使い、固定音量のnoise-onlyパート1本をOPMノイズへ近似できます。[対応範囲と中間結果](docs/psg_musical_noise.md)を参照してください。
 
-SCCはMSX側と共通の発音・SW音量run解釈を使います。SCCの既定は`fm-additive`で、必要な音色バンクは自動生成します。`--scc-model additive8`で空きOPM chを使う8成分近似も選択できます。FM音色探索を含む[使い方と制約](docs/scc_fm_projection.md)を参照してください。
+SCCはMSX側と共通の発音・SW音量run解釈を使います。既定は `fm-additive` で、必要な音色バンクは自動生成します。`additive`、`additive8`、`fm-fm` も選択できます。
 
-SCCだけを比較試聴する場合は、次のように指定できます。自動音色探索にはWSLのGCC・NumPyと外部YM2151 coreが必要です（[準備方法](docs/scc_fm_fit.md)）。PSGのみの出力や加算モデルでは探索しません。
+- `additive` : 1ch・4倍音加算
+- `additive8` : 2ch・最大8倍音加算
+- `fm-additive` : 1ch FM＋1ch加算（既定）
+- `fm-fm` : 2ch FM
 
-```sh
-python scripts/export_mdx.py INPUT_DIRECTORY --outdir outputs/listen/scc \
-  --scc_only --compiler mmlx --no-vgm
+SCCのみを比較試聴したい場合は、次のように指定できます。自動音色探索にはWSL上のGCC・NumPyおよび外部YM2151 coreが必要です（[準備方法](docs/scc_fm_fit.md)）。PSGのみの出力や加算モデルでは探索しません。
+
+```bash
+python scripts/export_mdx.py INPUT_DIRECTORY \
+  --outdir outputs/listen/scc \
+  --scc-only \
+  --compiler mmlx \
+  --no-vgm
+```
+
+概要は「SCCからOPMへの投影」、詳細な対応範囲・チャンネル割り当て・音色探索・中間結果については [使い方と制約](docs/scc_fm_projection.md) を参照してください。
+
+PSGをADPCMへまとめ、OPM chをSCCへ優先的に割り当てたい場合は `--psg-output pcm --pcm-policy best-effort` を指定できます。外部AY coreの準備、対応範囲、PDX容量の注意については [PSG→PCM](docs/psg_pcm.md) を参照してください。
 ```
 
 ### 入力と出力
@@ -71,6 +84,45 @@ python scripts/export_mdx.py input.vgm \
 VGMには音符そのものではなく、音源への書き込みとその時刻が記録されています。したがって、VGMからMMLを生成する際には、発音・停止・音程・音量・音色の変化を解釈し、MMLで表現可能な時間単位へ変換しています。
 
 MMLの生成に成功したことは、元VGMとの音声一致を保証するものではありません。近似や省略が発生する場合があり、その内容は診断情報やレポートに記録されます。
+
+### SCCからOPMへの投影
+
+SCCはMSX側と共通の発音・SW音量run解釈を使用し、元のState・Segment・32-byte波形を保持したまま、OPM向けの音色・演奏情報へ投影します。
+
+既定の `fm-additive` は、解析した波形からFM音色を探索し、1ch FM＋1ch加算の候補を使用します。必要な音色バンクは自動生成します。
+
+利用できる主な音色モデルは次のとおりです。
+
+- `additive` : 1ch・4倍音加算
+- `additive8` : 2ch・最大8倍音加算
+- `fm-additive` : 1ch FM＋1ch加算（既定）
+- `fm-fm` : 2ch FM
+
+`additive8`、`fm-additive`、`fm-fm` は空いているOPM chを利用してSCC波形の近似精度向上を試みます。利用可能なOPM chが不足する場合は、自動的に1ch構成へ戻ることがあります。
+
+SCCのみを比較試聴したい場合は、次のように実行できます。
+
+```bash
+python scripts/export_mdx.py INPUT_DIRECTORY \
+  --outdir outputs/listen/scc \
+  --scc-only \
+  --compiler mmlx \
+  --no-vgm
+```
+
+8倍音加算モデルを使用する例:
+
+```bash
+python scripts/export_mdx.py INPUT_DIRECTORY \
+  --outdir outputs/listen/scc_additive8 \
+  --scc-model additive8 \
+  --compiler mmlx \
+  --no-vgm
+```
+
+FM音色探索を使用する `fm-additive` および `fm-fm` には、WSL上のGCC・NumPyおよび外部YM2151 coreが必要です。`additive` と `additive8` では音色探索を行いません。
+
+対応範囲、チャンネル割り当て、音色探索、中間結果については [docs/scc_fm_projection.md](docs/scc_fm_projection.md) を参照してください。
 
 ## PCMを含むVGMからMML・PCM IRを生成する
 
@@ -135,6 +187,7 @@ MDX側の主なオプションは次のとおりです。
 | `--scc-voice-bank FILE` | FM SCCモデルで使う探索済み音色JSON（省略時は自動生成） |
 | `--psg-only` / `--psg_only` | PSGだけを出力。元のSCC解析結果は保持 |
 | `--scc-only` / `--scc_only` | SCCだけを出力。元のPSG解析結果は保持 |
+| `--psg-output opm\|pcm` | PSGの出力先（既定opm）。PCMはbest-effortを指定。[詳細](docs/psg_pcm.md) |
 | `--psg-gain` / `--scc-gain` | PSG／SCC投影時の音量調整 |
 | `--pcm-policy strict\|best-effort` | PCM投影で既知損失を許容するか |
 | `--pcm-profile standard\|low\|ultra_low` | PCM出力の容量・音質設定（既定standard）。[詳細](docs/pcm_profiles.md) |

@@ -1,8 +1,9 @@
 # Experimental SCC to FM voice fitting
 
-This independent experiment compares fixed SCC waveforms against a real YM2151
+The offline fitter compares fixed SCC waveforms against a real YM2151
 emulator. It does not parse VGM, alter source Segments or claim complete SCC
-reproduction. Production use, when selected, consumes the saved voice bank at the
+reproduction. The canonical frontend can invoke the fitter automatically when its FM bank is
+omitted. Production projection consumes the saved voice bank at the
 Target boundary; source software envelopes must remain separate carrier-level
 trajectories.
 

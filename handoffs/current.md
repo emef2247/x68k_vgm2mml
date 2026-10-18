@@ -1,3 +1,99 @@
+# Song-loop assembly fix and MUCOM research (2026-10-18)
+
+User authorized only the typed FM/PCM song-loop assembly fix; SW-envelope/size
+optimization stays deferred. scripts/mdx_fixture_generator/src/main.rs now
+resolves source L from a separately compiled prefix and checks prefix equality.
+Only the pinned mmlx0.2.0 duration-first + later-finite-repeat two-byte F1
+adjustment is corrected. No guard weakening, nearest-boundary guessing, source
+IR modification or loop removal. Log relocation in existing .pcm/mdx_build.log.
+Nested/multiple/unreachable L and cross-L context changes remain errors.
+
+Three authored test groups plus six existing directPCM tests pass (9 total),
+including valid-but-wrong legacy target, multiline inherited state, serialized
+FM/P loop matching, unchanged good offsets and malformed rejection. Boundary/
+timing verification only; no two-pass PCM playback certification. Release
+helper rebuilt for user regression. Saved authored structural reproduction under
+outputs/diagnostics/pcm_song_loop_20261018: release helper compiled the pair;
+inspected commands.csv and mdx_build.log, FM A/B and PCM P F1 targets land on
+note/rest command starts. No private song reruns/listening or Git
+stage/commit/push. External field_notes/2026-10-18_typed_pcm_song_loop_relocation.md
+records evidence. Native buffer/capacity problems are not repaired by this fix.
+
+Next: user runs --force regression on the same inputs. MUCOM SCC->OPNA remains
+research/design, keeping PSG->SSG and fm-additive preference. Findings saved in
+sibling mucom88_vgm2mml/docs/scc_opna_design.md; no SCC MUCOM implementation yet.
+
+--- Previous checkpoint ---
+
+# Latest native regression diagnosis (2026-10-18)
+
+User resumed after pause with full-song PSG->PCM regression and asks whether
+SCC growth/missing macros causes MADRV track-buffer shortage. Read-only diagnosis
+completed using existing CSVs/MDXs/commands/structures; no conversion/test rerun,
+no source/test edits, no Git stage/commit/push.
+
+Source data confirms failed native-load MDXs are dominated by SCC FM command
+bytes; PCM P command track is tiny. Finite repeats already emitted. MSX @e curve
+sharing differs from current MDX @v/hold trajectory encoding. Lexicalmacroization
+alone is not a verified standardMDX binary compression solution (mmlx has no
+runtime phrase call). Exact MADRV installed buffer settings remain unknown.
+
+Existing failures are distinct: MDX track-start >0xfffe and typed FM song-loop
+outerboundary guard. --force was a separate shellcommand, not applied; it does
+not waive either nativecapacity or loop construction. See external
+field_notes/2026-10-18_psg_pcm_full_song_capacity_regression.md forprivatecounts.
+Next implementation needs user direction; do not conflate loopguard bug with
+capacity or silently truncate/retrigger sources to fit. Prior balance can use
+existing --psg-gain0.5 or --scc-gain0.25; no defaults changed in this diagnosis.
+
+--- Previous implementation checkpoint ---
+
+# PSG continuous PCM implementation checkpoint (2026-10-18)
+
+First user priority is complete and saved: source-only aliases, automatic SCC
+bank, canonical defaultFM+additive, README. See checkpoint below. User explicitly
+asked to resumePSG->PCM afterward; that implementation is now saved in x68k.
+No agent stage/commit/push/branch operations; user staging observed during work and preserved. No private regression or listening here.
+
+Opt-in --psg-output pcm (defaultopm), requires --pcm-policy best-effort.
+--psg_only can select PCM-only; --scc_only+PSGPCM rejected. Bothselectorsretain
+source State/Segments/music. PSG directedtoPCM freesits oldOPMreservations.
+External pinnedMIT emu2149 under.tools via scripts/setup_psg_pcm.sh; fullsetup
+--with-psg-pcm supported. New authored Cwrapper renderscontinuous44100 AYtype0,
+oneinstance, flags0..3; sharednoise/EG and same-valueR13 once perorderedrawwrite.
+RawWAV, orderedwriteCSV, gates, core/inputhashes and assumptions inspectable.
+Existing MSX note/run/structure audits retained, no pernote runtime reset.
+
+py/psg_pcm_mdx.py targetview:20HzACcoupling, centered63tap LPF at.45profileRate,
+commonmono gain, existingMSM6258 waveformpackager; originalDACwaveformunchanged.
+Filtertailcropping, FIRphase/bandwidth, externalcorequality1highpitch/DAClimits,
+mono/resampling/ADPCM predictorreset/loopfreeze all documented. Actualencoded
+chunkbytes dedup only; no fake equal-note reuse or runtime-memoryfit guarantee.
+
+opm_target_vgm.write_target_vgm(exact_source_times=True) usedonlythismode,
+resorts original(vgmticks,targetch,writeid), preservesEOF/loop exact, negative
+waitguard. Existingroundedperformance trajectorydumps retainedandlabeledasnot
+serializedtiming. Source-map and canonicalOPMtraces showexactstream. PCMoverride
+andFMshareone expandedtimeline; no spoofend/remappingoriginalIR. Validator includes
+PCMchunkbounds and exactoriginal->finalclock error; commonPCMclockpositivegate
+and nearest-even selectedrate <=1sample durationrounding retained.
+
+Savedthenchecked:2newexacttime/filter/profilechecks,4actualAYcoreauthoredchecks,
+5existingSCCsource/voicechecks passed. Public-derivedmixedMIX withSCCadditive8+
+PSGPCM ultra_low exportedtypedPCM MDX/PDXsuccess. AuthoredAYLOOP (loop997/end13001,
+statecontinuousreplay) PCM-only canonicalMDX/PDXsuccess. Existing9PSG/SCCtarget+
+5performancechecks passed as well (25focusedchecks total). Artifacts under
+outputs/diagnostics/psg_pcm_20261018/{pcm_only_loop,listen_mixed}. No private tests.
+
+Architectreadreviewfound gateIDnamespace mix onreplay and corehash mislabeledas
+sourcehash: bothfixed,4runtimechecks passed again. Explicitfiltertail lossadded;
+focusedrereview found no remainingblocker. AYLOOP regenerated:sourceandOPMEOF25005,
+chosenL13001, multiplier65, maxsource->finalerror207samples withinconfigured8ms;
+MML310bytes/MDX117bytes/PDX5188bytes hashesmatchgenerationassessment. Source10musical
+units retained. README/docs/setup saved; diffcheckclean. Readyforuserregression. No broader PCM optimization/time-window/VGMexport work.
+
+--- Earlier checkpoint ---
+
 # Output source selection and automatic SCC bank checkpoint (2026-10-18)
 
 User priority: finish --psg_only/--scc_only, default fm-additive and automatic

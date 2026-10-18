@@ -121,7 +121,7 @@ def _gates(writes, end):
             start = item
             members = []
         if was_active or active:
-            members.append(item.source_event_id)
+            members.append(item.event_id)
         if was_active and not active:
             if item.vgmticks > start.vgmticks:
                 gates.append(PlaybackGate(len(gates), Fraction(start.vgmticks),
@@ -171,7 +171,9 @@ def render(raw, *, loop_count=1, root=None):
     if status:
         raise RuntimeError(f'Continuous AY source renderer failed: {status}')
     metadata = dict(schema='psg-playback-v1', core='external emu2149',
-        core_commit=CORE_COMMIT, source_sha256=hashes, clock_hz=clock,
+        core_commit=CORE_COMMIT, runtime_source_sha256=hashes,
+        source_sha256=hashlib.sha256(raw).hexdigest(),
+        event_namespace='expanded_command_occurrence', clock_hz=clock,
         ay_type=header['ay_type'], ay_flags=header['ay_flags'],
         initialization=['PSG_new(clock,44100)', 'PSG_setVolumeMode(2): AY-3-8910',
                         'PSG_setQuality(1)', 'PSG_reset once before first write'],

@@ -15,6 +15,7 @@ Normal single-file conversion uses `python vgm2mml.py`; conversion implementatio
 - `audit_mdx_metadata.py`, `render_additive_mdx_notes.py`, `analyze_wav.py`: metadata, additive-model experiments and acoustic diagnostics (NumPy for WAV analysis).
 - `batch_vgm_to_mgs.py`, `collect_mgs.py`, `compile_mgs.mjs`, `mml_to_vgm.mjs`, `mgs_to_vgm.mjs`: compatibility batch/compiler/replay diagnostics. Batch conversion invokes the canonical frontend with `--target mgs`.
 - `check_opll_key_edges.py`, `check_reference_pitch.py`, `compare_reference_vgmticks.py`, `audit_reference_loop_windows.py`, `audit_mml_loops.py`, `verify_pitch_roundtrip.py`: compatibility evidence checks, retained because tests and source semantics depend on them.
+- `setup_psg_pcm.sh`, `psg_pcm_probe.c`: pinned external emu2149 source runtime for opt-in PSG-to-PCM projection. See [scope and diagnostics](../docs/psg_pcm.md).
 - `fit_scc_fm.py`, `scc_opm_probe.c`: optional static SCC voice fitting against the external YM2151 core; writes a content-addressed bank, measured scores and optional audio. See [fitting](../docs/scc_fm_fit.md) and [MML use](../docs/scc_fm_projection.md).
 - `batch_vgm_conv.py`: external converter comparison.
 - `experiment_*.py`: retained development experiments; not normal conversion frontends.

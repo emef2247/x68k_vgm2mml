@@ -346,11 +346,82 @@ fn compile_pcm(fm_input: &Path, plan_input: &Path, output: &Path) -> Result<(), 
     result
 }
 
+// mmlx 0.2.0 applies a legacy two-byte adjustment to some L targets.
+// Typed PCM assembly uses command-end-relative F1 offsets. Resolve the actual
+// source marker instead of guessing a nearby boundary or relaxing validation.
+fn compile_pcm_fm(text: &str) -> Result<soundlog::mdx::document::MdxDocument, Error> {
+    use mmlx::mdx::MmlCommand;
+    use soundlog::mdx::command::MdxCommand;
+    fn contains_marker(commands: &[MmlCommand]) -> bool {
+        commands.iter().any(|command| match command {
+            MmlCommand::LoopStart => true,
+            MmlCommand::Repeat { body, .. } => contains_marker(body),
+            _ => false,
+        })
+    }
+    let parsed = mmlx::mdx::parse(text)?;
+    let mut fm = mmlx::mdx::compile(&parsed)?;
+    for track in &parsed.tracks {
+        if !matches!(track.channel, 'A'..='H') { continue; }
+        if track.commands.iter().any(|command| matches!(command,
+            MmlCommand::Repeat { body, .. } if contains_marker(body))) {
+            return Err("FM song loop must be outside finite repeats".into());
+        }
+        let markers: Vec<_> = track.commands.iter().enumerate()
+            .filter_map(|(index, command)| matches!(command, MmlCommand::LoopStart).then_some(index)).collect();
+        let marker = match markers.as_slice() {
+            [] => continue,
+            [index] => *index,
+            _ => return Err("FM track requires at most one song-loop marker".into()),
+        };
+        // Compile the prefix with the same initial octave/length state. Comparing
+        // commands also rejects context-sensitive ties/portamento across L.
+        let mut prefix_source = parsed.clone();
+        let mut prefix_track = track.clone();
+        prefix_track.commands.truncate(marker);
+        prefix_source.tracks = vec![prefix_track];
+        let prefix = mmlx::mdx::compile(&prefix_source)?;
+        let index = usize::from(track.channel as u8 - b'A');
+        let mut prefix_commands = prefix.tracks[index].clone();
+        if !matches!(prefix_commands.pop(), Some(MdxCommand::EndOfTrack(_))) {
+            return Err("FM song-loop prefix has no finite end".into());
+        }
+        let commands = &mut fm.tracks[index];
+        if !commands.starts_with(&prefix_commands) {
+            return Err("FM song-loop prefix differs from full compilation".into());
+        }
+        let byte_count = |commands: &[MdxCommand]| -> Result<usize, Error> {
+            commands.iter().try_fold(0usize, |total, command| {
+                total.checked_add(command.to_mdx_bytes().ok_or("Unserializable FM command")?.len())
+                    .ok_or_else(|| "FM byte position overflow".into())
+            })
+        };
+        let target = byte_count(&prefix_commands)?;
+        let position = byte_count(&commands[..commands.len() - 1])?;
+        let relative = target as i64 - (position as i64 + 3);
+        let relative = i16::try_from(relative).map_err(|_| "FM song loop exceeds signed 16-bit offset")?;
+        if relative >= 0 { return Err("FM song loop must jump backward".into()); }
+        let legacy_adjustment = matches!(commands.get(prefix_commands.len()), Some(MdxCommand::Note(_) | MdxCommand::Rest(_)))
+            && commands.iter().skip(prefix_commands.len() + 1).any(|command| matches!(command, MdxCommand::LoopStart(_)));
+        let Some(MdxCommand::EndOfTrackLoop(offset)) = commands.last_mut() else {
+            return Err("FM song-loop marker has no compiled F1 terminator".into());
+        };
+        if offset.offset != relative {
+            if !legacy_adjustment || relative.checked_add(2) != Some(offset.offset) {
+                return Err("Unexpected compiled FM song-loop offset; refusing relocation".into());
+            }
+            eprintln!("FM song-loop relocation {}: source L byte {}; F1 offset {} -> {} (command-end-relative)",
+                track.channel, target, offset.offset, relative);
+            offset.offset = relative;
+        }
+    }
+    Ok(fm)
+}
+
 fn compile_pcm_inner(fm_input: &Path, plan_input: &Path, output: &Path) -> Result<(), Error> {
     use soundlog::mdx::{command::{MdxCommand, MdxEndOfTrack}, document::{MdxBuilder, MdxDocument}};
     let plan = parse_pcm_track(&fs::read_to_string(plan_input)?)?;
-    let parsed = mmlx::mdx::parse(&fs::read_to_string(fm_input)?)?;
-    let fm = mmlx::mdx::compile(&parsed)?;
+    let fm = compile_pcm_fm(&fs::read_to_string(fm_input)?)?;
     if fm.header.pdx_name.as_ref().is_some_and(|name| !name.is_empty())
         || fm.tracks.iter().skip(8).flatten().any(|command| !matches!(command, MdxCommand::EndOfTrack(_)))
         || fm.tracks.iter().flatten().any(|command| matches!(command, MdxCommand::PcmMode(_))) {
@@ -858,6 +929,74 @@ mod tests {
         assert_eq!(fm_track_timing(&pcm.commands, 255, &mut saw_tempo).unwrap(), (6, Some(2)));
         assert!(parse_pcm_track(&plan.replace("rest\t\t4\n", "").replace("end_tick\t6", "end_tick\t2")).is_err());
         assert!(parse_pcm_track(&plan.replace("song_loop\t\t\n", "song_loop\t\t\nsong_loop\t\t\n")).is_err());
+    }
+
+    #[test]
+    fn direct_pcm_relocates_source_loop_before_duration_and_later_repeat() {
+        for duration in ["c%1", "r%1"] {
+            // For a note the wrong +2 target is itself a valid outer boundary;
+            // correcting only rejected byte addresses would miss that case.
+            let text = format!("A @t255 r%2 L {duration} [r%3]2\n");
+            let original = mmlx::mdx::compile(&mmlx::mdx::parse(&text).unwrap()).unwrap();
+            let repaired = compile_pcm_fm(&text).unwrap();
+            let mut saw_tempo = false;
+            assert_eq!(fm_track_timing(&repaired.tracks[0], 255, &mut saw_tempo).unwrap(), (9, Some(2)));
+            let mut expected = original.tracks[0].clone();
+            let soundlog::mdx::command::MdxCommand::EndOfTrackLoop(offset) = expected.last_mut().unwrap() else { panic!("missing loop"); };
+            offset.offset -= 2;
+            assert_eq!(repaired.tracks[0], expected);
+        }
+        // Parser merges channel lines while retaining octave/default length.
+        let text = "A @t255 o2 l8 [r%1]2\nB r%32\nA L c\nA [r%3]2\n";
+        let repaired = compile_pcm_fm(text).unwrap();
+        assert_eq!(fm_track_timing(&repaired.tracks[0], 255, &mut false).unwrap(), (32, Some(2)));
+        assert!(repaired.tracks[0].iter().any(|command| matches!(command,
+            soundlog::mdx::command::MdxCommand::Note(note) if note.note == 0x95 && note.length == 24)));
+    }
+
+    #[test]
+    fn direct_pcm_preserves_correct_loops_and_rejects_ambiguous_markers() {
+        for text in ["A @t255 r%2 L r%7\n", "A @t255 r%2 L @v100 c%1 [r%3]2\n", "A @t255 r%9\n"] {
+            let original = mmlx::mdx::compile(&mmlx::mdx::parse(text).unwrap()).unwrap();
+            assert_eq!(compile_pcm_fm(text).unwrap().tracks, original.tracks);
+        }
+        for text in ["A @t255 [r%2 L r%1]2\n", "A @t255 L r%2 L r%1\n", "A @t255 ! L r%2\n"] {
+            assert!(compile_pcm_fm(text).is_err());
+        }
+        assert!(compile_pcm_fm("A @t255 c%2 L _ d%3\n").unwrap_err().to_string()
+            .contains("prefix differs"));
+        let mut malformed = compile_pcm_fm("A @t255 r%2 L c%1 [r%3]2\n").unwrap();
+        let soundlog::mdx::command::MdxCommand::EndOfTrackLoop(offset) = malformed.tracks[0].last_mut().unwrap() else { panic!("missing loop"); };
+        offset.offset += 1;
+        assert!(fm_track_timing(&malformed.tracks[0], 255, &mut false).is_err());
+    }
+
+    #[test]
+    fn direct_pcm_serializes_relocated_fm_and_pcm_song_loops_together() {
+        use soundlog::mdx::command::MdxCommand;
+        let directory = Directory::new();
+        let fm_path = directory.0.join("fm.mml");
+        let plan_path = directory.0.join("plan.tsv");
+        let output = directory.0.join("combined.mdx");
+        fs::write(&fm_path, "A @t255 r%2 L c%1 [r%3]2\nB r%2 L r%1 [r%3]2\n").unwrap();
+        fs::write(&plan_path, "kind\tvalue\tticks\npdx_name\ttest.pdx\t\ntempo\t255\t\nend_tick\t9\t\nrest\t\t2\nsong_loop\t\t\nrest\t\t7\nend\t\t\n").unwrap();
+        let mut builder = PdxBuilder::new();
+        builder.set_sample(0, 0, vec![0x37]).unwrap();
+        fs::write(directory.0.join("test.pdx"), builder.finalize().to_bytes()).unwrap();
+        compile_pcm(&fm_path, &plan_path, &output).unwrap();
+        let package = MdxPackage::parse(&fs::read(output).unwrap(), None).unwrap();
+        let ranges = package.mdx.sourcemap().unwrap();
+        for index in [0, 1, 8] {
+            let commands = &package.mdx.tracks[index];
+            let timed = if index == 0 { &commands[1..] } else { commands.as_slice() };
+            assert_eq!(fm_track_timing(timed, 255, &mut false).unwrap(), (9, Some(2)));
+            let MdxCommand::EndOfTrackLoop(jump) = commands.last().unwrap() else { panic!("missing loop"); };
+            let (position, size) = ranges[index].last().unwrap();
+            let target = (*position + *size) as i64 + i64::from(jump.offset);
+            let target_index = ranges[index].iter().position(|(start, _)| *start as i64 == target).unwrap();
+            assert!(matches!(commands[target_index], MdxCommand::Note(note) if note.length == 1)
+                || matches!(commands[target_index], MdxCommand::Rest(_)));
+        }
     }
 
     #[test]

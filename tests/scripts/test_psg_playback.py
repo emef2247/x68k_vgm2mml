@@ -1,6 +1,7 @@
 from array import array
 import ctypes
 import csv
+import hashlib
 import json
 from pathlib import Path
 import struct
@@ -114,13 +115,22 @@ class PsgPlaybackTests(unittest.TestCase):
     def test_loop_replay_continuity_source_ids_and_dump(self):
         setup = write(0, 43) + write(7, 62) + write(8, 15) + wait(301)
         body = write(8, 7) + wait(503) + write(8, 15) + wait(197)
-        result = render(authored(setup + body, loop_offset=len(setup)), loop_count=2)
+        raw = authored(setup + body, loop_offset=len(setup))
+        result = render(raw, loop_count=2)
         explicit = render(authored(setup + body + body))
         self.assertEqual(result.samples, explicit.samples)
         self.assertEqual(result.samples, self.reference(result))
         self.assertEqual(result.source_end_vgmticks, 1701)
         replays = [item for item in result.writes if item.loop_iteration]
         self.assertEqual(len(replays), 2)
+        self.assertEqual(result.metadata['source_sha256'], hashlib.sha256(raw).hexdigest())
+        self.assertEqual(result.metadata['event_namespace'], 'expanded_command_occurrence')
+        self.assertIn('emu2149.c', result.metadata['runtime_source_sha256'])
+        self.assertEqual(result.gates[0].source_event_ids,
+                         tuple(item.event_id for item in result.writes
+                               if item.event_id >= result.gates[0].start_event_id))
+        self.assertTrue(all(item.event_id in result.gates[0].source_event_ids
+                            for item in replays))
         for item in replays:
             first = next(write for write in result.writes
                          if write.source_event_id == item.source_event_id)
