@@ -1,5 +1,7 @@
 ## SCC Timbre Projection to OPM
 
+Japanese original: [scc_fm_projectionJ.md](scc_fm_projectionJ.md).
+
 The current target is the X68000 MDX path. Several projection models are
 available, including the default FM-plus-additive (`fm-additive`) mode, with
 optional allocation of up to two OPM channels per SCC channel.

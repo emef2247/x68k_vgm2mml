@@ -1,116 +1,118 @@
 # MGSDRV compatibility
 
+Japanese original: [mgs_compatibilityJ.md](mgs_compatibilityJ.md).
+
 Explicitly select `--target mgs` for the inherited PSG/SCC/OPLL path.
 
 # vgm2mml
-PSG／OPLL／SCCのVGMからMGSDRV用MMLを生成します。
-MGSDRV用MMLは https://msxplay.com/editor.html にコピー＆ペーストして再生できます。
+Generates MGSDRV MML from PSG/OPLL/SCC VGM files.
+MGSDRV MML can be copied and pasted into https://msxplay.com/editor.html for playback.
 
-## 機能概要
-- VGM（MSX-Music / SCC）を解析し、MGSDRV 形式の MML を自動生成  
-- レジスタアクセスに忠実な MML を出力
+## Feature overview
+- Analyzes VGM (MSX-Music / SCC) and automatically generates MGSDRV-format MML\
+- Outputs MML faithful to register accesses
 
-## コマンド一覧
+## Command list
 
-| コマンド | 対応音源 | 概要 |
+| Command | Supported chips | Overview |
 |----------|----------|------|
-| `vgm2mml.py` | PSG, OPLL, SCC | MGSDRV用MMLを出力 |
-| `py/vgm_reader.py` | PSG, OPLL, SCC | 入力のlog/traceを出力 |
+| `vgm2mml.py` | PSG, OPLL, SCC | Outputs MGSDRV MML |
+| `py/vgm_reader.py` | PSG, OPLL, SCC | Outputs input logs/traces |
 
 ---
 
 ## vgm2mml.py
 
-### 使い方
+### Usage
 ```bash
 python vgm2mml.py --target mgs [-h] [--outdir OUTDIR] [--dump-passes] [--debug] [--raw-ticks] vgm
 ```
 
-### 基本例
+### Basic example
 ```
 python vgm2mml.py --target mgs stem.vgm
 ```
 
-出力例：
+Example output:
 ```
 stem.mml
 ```
 
-### オプション
-| オプション | 説明 |
+### Options
+| Option | Description |
 |-----------|------|
-| `--outdir OUTDIR` | MML ファイルの出力先ディレクトリを指定 |
-| `--sync-min-gap N` | 同期コメントの最小間隔（出力MMLのstep、既定1000）。0でループ・マクロを分割しない全同期点を表示。開始・終端は常に表示 |
-| `--dump-passes` | イベントlog/trace、PASS0-3、PSG/SCC Segment、SCC波形CSVを保存 |
-| `--vgmticks` | trace/pass/Segmentに丸め前のVGMサンプル時刻を併記。Segment保存には`--dump-passes`も指定 |
-| `--debug` | デバッグ用ファイルを出力 |
-| `--raw-ticks` | 音長を `%` tick 形式（例: `c%%N`）で出力（デフォルトは音価形式） |
-| `--normalize-lengths` | OPLLの発音間隔から共通の音長基準を推定し、音長・ゲートを補正。既定は無効。適用できない曲は従来出力を維持。`--raw-ticks`との併用不可 |
-| `--legacy-loops` | PSG/SCC/OPLLの可逆なループ構造化を無効にし、従来のループ・エンベロープ処理を使用 |
-| `--legacy-macros` | ループ内部を探索する既定のマクロ強化を無効にし、従来のマクロ処理を使用 |
-| `--enhance-macros` | マクロ強化を明示的に有効化（現在は既定）。`--dump-passes`で採用マクロCSVと候補案の文字数を保存 |
+| `--outdir OUTDIR` | Specify the output directory for the MML file |
+| `--sync-min-gap N` | Minimum spacing between sync comments (in output MML steps; default 1000). Set 0 to show every sync point that does not split loops/macros. Start and end are always shown |
+| `--dump-passes` | Save event logs/traces, PASS0-3, PSG/SCC Segments, and SCC waveform CSVs |
+| `--vgmticks` | Include original VGM sample times before rounding in trace/pass/Segment output. Also specify `--dump-passes` to save Segments |
+| `--debug` | Output debug files |
+| `--raw-ticks` | Output note lengths in `%` tick format (e.g. `c%%N`); note-value notation is the default |
+| `--normalize-lengths` | Infer a shared note-length basis from OPLL attack intervals and correct lengths/gates. Disabled by default. Songs that cannot use it retain conventional output. Incompatible with `--raw-ticks` |
+| `--legacy-loops` | Disable reversible PSG/SCC/OPLL loop structuring and use conventional loop/envelope processing |
+| `--legacy-macros` | Disable the default macro enhancement that searches inside loops and use conventional macro processing |
+| `--enhance-macros` | Explicitly enable macro enhancement (currently the default). With `--dump-passes`, save selected macro CSVs and character counts for candidate plans |
 
-PSG/SCCは、イベントCSV → Segment → MMLの段階に分けて処理します。
-構成と中間フォーマットは [PSG/SCC Segment pipeline](psg_scc_segments.md) を参照してください。
-統合MMLのstepコメントは、再生中の全チャンネルで音符・休符の境界が揃う位置に自動挿入します。
-PSG/SCCは休符だけのチャンネルと休符中の不要な設定を省き、一定音程の音量推移をソフトウェアエンベロープへ抽出します。
-`--dump-passes` では抽出した区間を `*.target_notes.csv`、適用後の音源別MMLを `*.target.mml` に保存します。
-仕様と出力例は [同期ポイント](mml_sync.md) を参照してください。
-テストはリポジトリのルートで `python -m unittest discover -s tests/scripts -v` を実行します。
+PSG/SCC processing is divided into event CSV → Segment → MML stages.
+See [PSG/SCC Segment pipeline](psg_scc_segments.md) for the structure and intermediate formats.
+Step comments in merged MML are inserted automatically where note/rest boundaries align across all playing channels.
+PSG/SCC omit rest-only channels and unnecessary settings during rests, and extract volume trajectories at constant pitch into software envelopes.
+With `--dump-passes`, extracted intervals are saved in `*.target_notes.csv`, and per-chip MML after application in `*.target.mml`.
+See [sync points](mml_sync.md) for the specification and output examples.
+Run tests at the repository root with `python -m unittest discover -s tests/scripts -v`.
 
-### 音長の補正
+### Note-length correction
 
 ```bash
 python vgm2mml.py --target mgs tests/fixtures/public/psg_opll/msxplay.com/sample/sample.vgm \
   --outdir outputs/sample-normalized --normalize-lengths --dump-passes
 ```
 
-補正は元の`vgmticks`やSegment CSVを書き換えず、MML生成時に行います。
-曲ごとに音長基準の推定と安全性を自動判定し、適用できない場合は全パートを
-従来の出力のまま維持します。OPLLリズムも共通基準で処理します。
-PSG/SCCはOPLLから推定した基準に合わせて音長を変換し、SWエンベロープの
-フレーム指定は維持します。**現状、PSG/SCCだけの曲には補正効果がありません。**
+Correction happens during MML generation without rewriting original `vgmticks` or Segment CSVs.
+The note-length basis and safety are assessed automatically for each song; when correction cannot be applied,
+all parts retain conventional output. OPLL rhythm also uses the shared basis.
+PSG/SCC note lengths are converted to the basis inferred from OPLL, while software envelope
+frame settings are preserved. **PSG/SCC-only songs currently receive no correction.**
 
-コンソールと`<stem>.normalization.json`に、`applied`（適用）または
-`unchanged`（未適用）とその理由を記録します。`--dump-passes`を併用すると、
-補正前MML、補正した音のCSV、ループ判定CSVも保存します。
-詳細は[音長補正の仕様](note_normalization.md)を参照してください。
+The console and `<stem>.normalization.json` record `applied` or
+`unchanged`, together with the reason. With `--dump-passes`,
+MML before correction, corrected-note CSVs, and loop decision CSVs are also saved.
+See the [note-length correction specification](note_normalization.md) for details.
 
-### バッチ変換・MGSコンパイル
+### Batch conversion and MGS compilation
 
 ```bash
-# 通常の変換
+# Conventional conversion
 python scripts/batch_vgm_to_mgs.py tests/fixtures/local_only/opll --outdir outputs/mgs/opll
 
-# 音長補正を有効にして比較
+# Enable note-length correction for comparison
 python scripts/batch_vgm_to_mgs.py tests/fixtures/local_only/opll \
   --outdir outputs/mgs/normalize-lengths/opll --normalize-lengths
 ```
 
-入力ディレクトリ以下のVGM/VGZを再帰的に変換し、PATH上のネイティブ`mgsc`を
-優先してMGSへコンパイルします。実行ファイルは`--mgsc PATH`で指定できます。
-各曲のMMLと`convert.log`／`compile.log`を残し、失敗しても次の曲へ進みます。
-補正の適用・未適用は各曲の`convert.log`と`<stem>.normalization.json`で確認できます。
+Recursively converts VGM/VGZ files beneath the input directory and compiles them to MGS,
+preferring native `mgsc` on PATH. Specify an executable with `--mgsc PATH`.
+Each song retains its MML and `convert.log`/`compile.log`; processing continues to the next song after a failure.
+Check each song's `convert.log` and `<stem>.normalization.json` to see whether correction was applied.
 
-`results.csv`／`results.json`にコンパイル結果（`success`、`buffer_error`など）と、
-コンパイル成功曲のOPLLメロディKEYON合計・不足数・超過数を記録します。
-KEYON比較にはNode.jsとlibkss-jsが必要です。比較を省く場合は
-`--skip-keyon-counts`を指定してください。未実施の比較は空欄で、0とは扱いません。
-通常実行と補正実行は出力先を分けると結果を比較できます。
-依存関係と詳細は[バッチ実行](../scripts/README.md)を参照してください。
+`results.csv`/`results.json` record compilation results (`success`, `buffer_error`, etc.) and,
+for successfully compiled songs, OPLL melodic KEYON totals, shortages, and excesses.
+KEYON comparison requires Node.js and libkss-js. Specify
+`--skip-keyon-counts` to omit comparison. Unperformed comparisons remain blank and are not treated as zero.
+Use separate output directories for conventional and corrected runs to compare results.
+See [batch execution](../scripts/README.md) for dependencies and details.
 
 ---
 
-## 制限事項
-- `#alloc` に設定されている値はチャンネルごとの文字数です。コンパイル後のバッファサイズに合うよう調整が必要な場合があります
+## Limitations
+- The values in `#alloc` are character counts per channel. They may need adjustment to fit the buffer sizes after compilation
 
-## 注意事項
-MGSDRV の MML は **コンパイル後、全チャンネルのバッファサイズ合計が 16KB 以内**である必要があります。しかし**本スクリプトはこの制限を考慮していません**。  
-そのため、生成された MML が大きすぎる場合は、以下のような調整が必要です：
-- `#alloc` の値を手動で調整  
-- マクロ化してデータ量を削減  
+## Notes
+MGSDRV MML requires **the total buffer size of all channels after compilation to be within 16 KB**. However, **this script does not account for that limit**.\
+If generated MML is too large, adjustments such as the following may be needed:
+- Manually adjust `#alloc` values\
+- Use macros to reduce data size\
 
-## ライセンス
+## License
 MIT License
 
 ---
@@ -338,21 +340,21 @@ decision CSVs are retained alongside native Segment dumps.
 See [usage and limits](note_normalization.md)
 and [sample/grider/sx01v measurements](../field_notes/2026-10-02_note_normalization_benchmark.md).
 
-### 圧縮方式の比較
+### Comparing compression methods
 
-PSG/SCC/OPLLの可逆なループ構造化と、全音源のマクロ強化は既定で有効です。
-PSG/SCCでは音量推移を保持した音の反復を先に構造化し、その後で共通の
-ソフトウェアエンベロープを選びます。参照MMLは変換の入力に使用しません。
-`--dump-passes`で音からSegmentへの対応、ループ候補・構造・出力判定、
-エンベロープ候補の構造化前後の出現数を保存します。
-従来の圧縮で比較する場合は、通常変換・バッチのどちらでも
-`--legacy-loops --legacy-macros`を指定してください。音長補正は引き続き
-`--normalize-lengths`を指定したときのみ有効です。
+Reversible loop structuring for PSG/SCC/OPLL and enhanced macros for all chips are enabled by default.
+For PSG/SCC, repetitions of notes preserving their volume trajectories are structured first, then shared
+software envelopes are selected. Reference MML is not used as conversion input.
+`--dump-passes` saves note-to-Segment mappings, loop candidates/structures/output decisions,
+and envelope candidate occurrence counts before and after structuring.
+To compare against conventional compression, specify
+`--legacy-loops --legacy-macros` in either normal or batch conversion. Note-length correction remains
+enabled only when `--normalize-lengths` is specified.
 
 ```bash
 python scripts/batch_vgm_to_mgs.py tests/fixtures/local_only/opll --outdir outputs/mgs/default
 python scripts/batch_vgm_to_mgs.py tests/fixtures/local_only/opll --outdir outputs/mgs/legacy --legacy-loops --legacy-macros
 ```
 
-OPLLはリズムを使用する曲では6音＋リズム（`#opll_mode 1`）、
-リズムOFFの曲では9音（`#opll_mode 0`）を出力します。
+For OPLL, songs using rhythm output 6 melodic voices + rhythm (`#opll_mode 1`),
+while songs with rhythm OFF output 9 melodic voices (`#opll_mode 0`).

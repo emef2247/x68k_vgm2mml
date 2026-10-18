@@ -1,119 +1,148 @@
-# OPMクロックとMDXの音程補正
+# OPM clocks and MDX pitch correction
 
-MDXの再生先はX68000の4,000,000Hz YM2151です。入力VGMが異なる
-YM2151の正のクロックを宣言していても、単一インスタンスならTargetで補正します。
-Raw、State、Segmentのクロック、時刻、KC/KFは変更しません。
+Japanese original: [opm_clock_projectionJ.md](opm_clock_projectionJ.md).
 
-## 補正の位置と計算
+The MDX playback target is the X68000's 4,000,000 Hz YM2151. A VGM declaring a
+different positive YM2151 clock is corrected at the target boundary when it uses
+a single instance. Raw, State, and Segment clocks, timestamps, and KC/KF values
+remain unchanged.
 
-`opm_mdx.project_segments`が共通の入り口です。structured／legacyの音符、
-registers（channel／conductor）のレジスタ、PCM併用のFM部も同じ投影を使います。
-PSG／SCCのOPM投影は既に4MHzを生成するため追加の音程変更はありません。
-`--no-normalize-lengths`でも音程補正は有効です。時間の正規化とは別の処理です。
+## Correction boundary and calculation
+
+`opm_mdx.project_segments` is the shared entry point. Structured and legacy note
+notation, registers notation with channel or conductor layouts, and the FM part
+of mixed PCM output all use the same projection. PSG/SCC OPM projection already
+generates a 4 MHz target, so it needs no additional pitch change.
+Pitch correction remains enabled with `--no-normalize-lengths`; it is separate
+from timing normalization.
 
 ```text
 pitch offset in 1/64-semitone units = round(768 * log2(source clock / 4,000,000))
 target pitch = source KC/KF pitch + offset
 ```
 
-KCの穴・別名とKFの上位6bitを使って音程位置を計算します。入力クロックが
-低い場合は出力KC/KFを下げ、再生先クロックによる音程上昇を相殺します。
-3,579,580Hzでは補正は-123/64半音です。KCのみ／KFのみの変更にも対応し、
-繰り上がりが必要なら同じsource eventから両レジスタを出力します。
-各命令は`target_sequence`で順序を保持します。4MHz入力の命令値は変更しません。
+Pitch positions use KC gaps/aliases and the upper six bits of KF. A lower input
+clock requires lower output KC/KF values to counteract the pitch increase caused
+by the target clock. At 3,579,580 Hz the correction is -123/64 semitones.
+KC-only and KF-only updates are supported; when a carry is needed, both
+registers are emitted from the same source event. `target_sequence` retains
+command order. Command values from 4 MHz inputs remain unchanged.
 
-範囲内の計算は公称の対数音程に基づき、丸め誤差は最大0.78125 centsです。
-範囲外のclampは別の損失で、誤差がこの値を超える場合があります。
-実チップの周波数ROMや演奏音を測定して同一性を確認した値ではありません。
-参照したKC/KF索引とクロック比例の実装は
-[mdxtoolsのYM2151実装](https://github.com/vampirefrog/mdxtools/blob/master/ym2151.c)
-です。ROM表やエミュレータコードは取り込まず、対数式を独立に実装しています。
+In-range calculations use nominal logarithmic pitch, with a maximum rounding
+error of 0.78125 cents. Out-of-range clamping is a separate loss and can exceed
+that error. These values are not measurements establishing identity with the
+physical chip's frequency ROM or audible playback. The KC/KF indexing and
+clock-scaling reference is the
+[mdxtools YM2151 implementation](https://github.com/vampirefrog/mdxtools/blob/master/ym2151.c).
+The logarithmic formula is implemented independently; no ROM table or emulator
+code is incorporated.
 
-## 未知の初期値と範囲外
+## Unknown initial values and out-of-range pitches
 
-- 異なるクロックの入力に限り、未書き込みKC/KFを出力側のreset-zero仮定として
-  扱います。元のStateの`None`は保持します。最初の発音に必要なKC/KFは両方とも
-  Key-On前に設定し、MXDRVの既存値には依存しません。
-- 通常KCの96音域と最上端KC `0x7f`の別名を扱います。
-  KCのbit7、KFの下位2bitは音程に使用せず、元のbyteはCSVに残します。
-- 既定の`--opm-pitch-policy clamp`は範囲外を最寄りのKC/KFへ寄せます。
-  音程差、件数、source eventを損失として記録します。3,579,580HzのKC/KF=0では
-  下限へのclampに約+192.252 centsの差があります。
-- `--opm-pitch-policy error`は厳密な範囲検査を維持します。初回Key-On前の
-  範囲外セットアップは保留できますが、発音までに解決しない場合、
-  または初回発音後（リリースを含む）の更新はエラーです。
-- この範囲はKC/KFレジスタの指定範囲です。Segmentに独自の許容枠を設定したもの
-  ではなく、音色側の倍率なども変更するHW全体の実現可能性を判定していません。
+- Only for inputs with a different clock, unwritten KC/KF values use an explicit
+  target-side reset-zero assumption. The original State keeps `None`. Both KC
+  and KF required for the first attack are set before Key-On, without relying
+  on pre-existing MXDRV values.
+- The normal 96-note KC range and the alias at the uppermost KC `0x7f` are
+  handled. KC bit 7 and the lower two KF bits do not contribute to pitch;
+  original bytes remain in the CSV.
+- The default `--opm-pitch-policy clamp` selects the nearest KC/KF at the range
+  boundary. Pitch differences, counts, and source events are recorded as losses.
+  At 3,579,580 Hz with KC/KF=0, clamping to the lower bound introduces about
+  +192.252 cents of error.
+- `--opm-pitch-policy error` retains strict range checking. Out-of-range setup
+  before the first Key-On can be deferred, but it is an error if unresolved at
+  the attack. Out-of-range updates after the first attack, including release,
+  are errors.
+- This range is the KC/KF register range. It is not a custom tolerance around a
+  Segment's pitch, nor an assessment of all hardware possibilities such as
+  changing the voice's frequency multipliers.
 
-## 検査できるデータ
+## Inspectable evidence
 
-`--dump-passes`で次を保存します。
+`--dump-passes` saves:
 
-- `.opm.segments.csv`：変更しない入力Segment。
-- `.mdx.pitch.csv`：source event／Segment、入力クロックと元KC/KF、
-  未書き込み値の仮定、出力KC/KF、公称音程誤差、clamp／保留した初期化。
-- `.mdx.controls.csv`：`register,data`は出力命令、`source_register,source_data`は
-  元の命令。追加のKC/KFも元のsource eventへたどれます。
-- `.mdx.timing.json`と`.mdx.normalization.json`の`pitch_projection`：補正の概要。
+- `.opm.segments.csv`: unchanged input Segments.
+- `.mdx.pitch.csv`: source events/Segments, input clock and original KC/KF,
+  assumptions for unwritten values, output KC/KF, nominal pitch error, clamping,
+  and deferred initialization.
+- `.mdx.controls.csv`: output commands in `register,data`; original commands in
+  `source_register,source_data`. Added KC/KF writes retain their source-event
+  provenance.
+- `pitch_projection` in `.mdx.timing.json` and `.mdx.normalization.json`: the
+  correction summary.
 
-TXTでは`OPM clock and pitch projection`を確認してください。
-`Pitch range policy`のclamped eventsは音符数ではなく、音程更新／Key-On評価の件数です。
-通常の丸め誤差とclampによる誤差を別々に表示します。
-仮定の件数は影響を受けたイベント数であり、チャンネル数ではありません。
-roundtrip比較は補正後の期待値との一致を確認します。
-KC/KFの対は同一source eventの最後まで反映してから比較します。
+In the TXT report, see `OPM clock and pitch projection`. Clamped events under
+`Pitch range policy` count pitch-update/Key-On evaluations, not notes. Ordinary
+rounding errors and clamp errors are shown separately. Assumption counts are
+numbers of affected events, not channels. Roundtrip comparisons check the
+corrected expectation, applying the complete KC/KF pair for a source event before
+comparing it.
 
-## 補正の限界
+## Correction limits
 
-DT1のHz単位のdetune、EGとkey scaling、LFO、ノイズ、チップタイマーは
-再調整しません。音程レジスタが一致しても音色・変調・リリースまで
-音響的に等価とは限りません。PCMのrate／符号化バイトは変更しません。
-dual-chip／別チップ種は引き続き対象外です。
-
+DT1 detune in Hz, EG and key scaling, LFO, noise, and chip timers are not retuned.
+Matching pitch registers does not establish acoustic equivalence of timbre,
+modulation, or release. PCM rates and encoded bytes are unchanged. Dual-chip
+inputs and different chip types remain outside this scope.
 
 ## Protected interval tick allocation
 
-音程補正とは別に、`py/opm_output_normalization.py`は時間の正規化時に
-共有FM/PCMクロックへ境界を割り当てます。2026-10-11に導入された方式は、
-現在は共有ヘルパー`py/ordered_timing.py`の`allocate_tick_domains`を使います。
-ソースのState、Segment、PCM IRや元の時刻は変更しません。
+Separately from pitch correction, `py/opm_output_normalization.py` assigns
+boundaries to a shared FM/PCM clock during timing normalization. The approach
+introduced on 2026-10-11 now uses `allocate_tick_domains` in the shared helper
+`py/ordered_timing.py`. Source State, Segments, PCM IR, and original timestamps
+remain unchanged.
 
-- 最寄りtickへの丸めで、保護対象の正の区間が潰れた場合だけ、同じ絶対境界
-  移動許容量内で順序付き割り当てを試します。許容量は
-  `floor(44100 * --normalization-ms / 1000)` source samplesで、既定は352です。
-- 各境界に、投影後の整数source-sample時刻が許容量内になる厳密な整数tick領域を
-  与えます。MDXラッパーは原点0をtick 0に固定します。隣接境界は非減少、
-  protected intervalの終端は始端より少なくとも1 tick後、という辺からなるDAGを
-  解きます。途中の通常制御境界が同じtickにまとまることは許されます。
-- 保護するのは曲全体、残存FMゲート、保持中の部分Key操作・再発音の区間、
-  許容量を超える休符、正の副作用パルス、残存PCMゲート、許容量を超えるPCM休符、
-  有効な曲ループ区間です。完了していない終端ゲートも残存ゲートです。
-  短いSegmentや未完了ゲートを、完結した短音として省略してはいけません。
-- 領域内に解がなければヘルパーは`None`を返し、その候補を不採用にします。
-  不正な入力配列・区間参照は`ValueError`です。割り当て後にも境界誤差、原点、
-  全体の順序、保護区間の正の長さを独立に再検査します。許容量を緩めて
-  強制採用したり、黙ってループや発音を落としたりはしません。
-- 他の候補も成立しなければ、元のstructured投影と共有クロックへ戻ります。
-  候補側の短音省略も採用しません。PCMの候補固有の失敗と、ソース自体の
-  eligibilityエラーは別です。後者が正規化で解消したことにはしません。
+- Ordered allocation is attempted only when nearest-tick rounding collapses a
+  protected positive interval. It uses the same absolute boundary-movement
+  allowance: `floor(44100 * --normalization-ms / 1000)` source samples, 352 by
+  default.
+- Each boundary receives a strict integer tick domain whose projected integer
+  source-sample timestamp lies within that allowance. The MDX wrapper fixes
+  source origin 0 at tick 0. It solves a DAG requiring adjacent boundaries to
+  be nondecreasing and each protected interval to end at least one tick after
+  its start. Intermediate ordinary control boundaries may share a tick.
+- Protected intervals include the whole song, surviving FM gates, held partial
+  Key operations and retrigger intervals, rests longer than the allowance,
+  positive side-effect pulses, surviving PCM gates, PCM rests longer than the
+  allowance, and valid song-loop intervals. Unclosed terminal gates are also
+  surviving gates. Do not omit a short Segment or an unfinished gate as though
+  it were a completed short note.
+- If no solution exists within the domains, the helper returns `None` and the
+  candidate is rejected. Invalid input arrays or interval references raise
+  `ValueError`. After allocation, boundary errors, origin, global order, and
+  positive lengths of protected intervals are independently rechecked. The
+  allowance is not relaxed to force acceptance, and loops or gates are not
+  silently discarded.
+- If no other candidate is feasible, conversion returns to the original
+  structured projection and shared clock. Candidate-side short-gate omissions
+  are not adopted either. Candidate-specific PCM failure is distinct from
+  source eligibility failure; normalization does not establish that the latter
+  has been resolved.
 
-採用した`boundary_ticks`は投影に格納し、FM、PCM、validator、pass dumpが
-同じ対応表を使います。`.mdx.normalization.json`は`boundary_allocation`、
-`adjusted_nearest_boundaries`、protected intervalや棄却候補を記録し、
-`.mdx.normalization.csv`で元時刻・候補tick・誤差を追跡できます。
-短音省略と候補選択の詳細は[音価と正規化](opm_note_lengths.md)を参照してください。
+Accepted `boundary_ticks` are stored in the projection. FM, PCM, validators,
+and pass dumps use the same mapping. `.mdx.normalization.json` records
+`boundary_allocation`, `adjusted_nearest_boundaries`, protected intervals, and
+rejected candidates. `.mdx.normalization.csv` traces original timestamps,
+candidate ticks, and errors. See [Note lengths and normalization](opm_note_lengths.md)
+for short-gate omission and candidate selection.
 
-## 実装確認と履歴の範囲
+## Implementation cross-check and historical scope
 
-この文書のKC/KF補正・pitch policyは`py/opm_pitch_projection.py`、時間割り当ては
-`py/opm_output_normalization.py`と`py/ordered_timing.py`の現行コードと照合しています。
-既存の`tests/scripts/test_opm_pitch_projection.py`は全notation/layout、未知初期値、
-clamp/error、リリース後の範囲外更新、source保持、ペア書き込みの検証を含みます。
-`tests/scripts/test_ordered_timing.py`は実現可能・不可能な制約、非隣接区間、原点を含む
-固定anchor、入力非変更、厳密なMDX領域を扱います。今回これらのテストは読取のみで、
-再実行していません。
+This document's KC/KF correction and pitch policy were cross-checked against
+`py/opm_pitch_projection.py`; timing allocation was checked against
+`py/opm_output_normalization.py` and `py/ordered_timing.py`.
+Existing `tests/scripts/test_opm_pitch_projection.py` covers all notation/layout
+variants, unknown initial values, clamp/error, out-of-range updates after
+release, source preservation, and paired writes.
+`tests/scripts/test_ordered_timing.py` covers feasible/infeasible constraints,
+nonadjacent intervals, fixed anchors including the origin, non-mutation of
+inputs, and strict MDX domains. These tests were inspected but not rerun for
+that review.
 
-2026-10-11当時のrange-errorのみの方針は、現在の既定clampに先行する判断です。
-実装時の検証結果・私有曲の視聴・試行履歴は、外部ノート
-`field_notes/2026-10-11_opm_clock_projection.md`に残します。
-そこでの成功件数や視聴結果を、現在のコードや全ドライバの検証済み仕様とは扱いません。
+The range-error-only policy from 2026-10-11 predates the current default clamp
+policy. Implementation-time checks, private listening results, and trial
+history belong in the external note
+`field_notes/2026-10-11_opm_clock_projection.md`. Its success counts and listening
+results are not specifications verified for the current code or every driver.

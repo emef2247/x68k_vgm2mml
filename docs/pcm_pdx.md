@@ -1,6 +1,8 @@
 # Native MSM6258 PCM and PDX
 
-PCM出力の低容量設定は[PCM profiles](pcm_profiles.md)を参照。既定のsource／target境界は維持する。
+Japanese original: [pcm_pdxJ.md](pcm_pdxJ.md).
+
+For smaller PCM output, see [PCM profiles](pcm_profiles.md). The existing source/target boundary is preserved.
 
 The project uses the name MSM6258 for this chip and its PCM IR. VGM keeps
 its existing command `0xB7`, DAC stream chip ID `0x17`, and header fields at

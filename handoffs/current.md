@@ -1,3 +1,20 @@
+# English documentation checkpoint (2026-10-18)
+
+User requested English canonical docs before further enhancer work. Translated
+10 Japanese/mixed docs at original paths, preserving exact original bytes in
+<stem>J.md. Existing psg_pcm_J.md renamed byte-identically to psg_pcmJ.md; existing
+scc_fm_projectionJ.md retained. All12 English/Japanese pairs have original links.
+No Japanese text remains outside J-suffixed docs. Original hashes verified;
+headings, existing link targets, numeric/code identifiers and command examples
+retained. Only2 shell comments translated in a fenced MGS example. Markdown
+hardbreak trailing spaces replaced with backslashes in translated MGS narrative.
+No converter/source/test changes or conversion/test executions; no Git mutations.
+User handles commit. Translation is not an implementation/specification refresh.
+Next: resume scc_vgm_enhancer Segment->VGM design when user requests; inherited
+native/MML validation limits and pending regression remain as recorded below.
+
+--- Previous checkpoint ---
+
 # Song-loop assembly fix and MUCOM research (2026-10-18)
 
 User authorized only the typed FM/PCM song-loop assembly fix; SW-envelope/size

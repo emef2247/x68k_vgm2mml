@@ -1,6 +1,8 @@
 # Native PCM source evidence and target placement
 
-PCM出力の低容量設定は[PCM profiles](pcm_profiles.md)を参照。既定のsource／target境界は維持する。
+Japanese original: [pcm_source_and_targetJ.md](pcm_source_and_targetJ.md).
+
+For smaller PCM output, see [PCM profiles](pcm_profiles.md). The existing source/target boundary is preserved.
 
 MSM6258 encoded sample identity uses codec plus exact supplied bytes. Decoder
 reset/continuation, rational nibble rate, raw pan and source timing belong to

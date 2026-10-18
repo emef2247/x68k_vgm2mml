@@ -1,5 +1,7 @@
 ## PSG to MDX PCM Projection
 
+Japanese original: [psg_pcmJ.md](psg_pcmJ.md).
+
 `--psg-output pcm` combines the audio from the three PSG channels into a single
 mono PCM stream instead of assigning PSG voices to OPM channels. SCC is still
 projected to OPM in the normal way. This removes the large volume of PSG control
