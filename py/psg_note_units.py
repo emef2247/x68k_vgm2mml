@@ -28,7 +28,7 @@ def interpret(segments,*,end=None):
         values=[]
         for index,s in enumerate(rows):
             if s.vgmticks is None or s.vgmticks_end is None or s.vgmticks_end<s.vgmticks:
-                raise ValueError('PSG musical interpretation requires exact source sample bounds')
+                raise ValueError('PSG musical interpretation requires exact source sample boundaries')
             # Source audibility is independent of a legacy rendered rest spelling.
             scale=s.scale if s.scale!='r' else '' if s.mode and (s.volume or s.envelope_enabled) else 'r'
             stop=interval_end(rows,index,end)

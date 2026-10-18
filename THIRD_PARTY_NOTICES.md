@@ -182,6 +182,12 @@ which contains GNU GPL version 3. Preserve the upstream checkout, component
 notices and corresponding source if redistributing these tools; this entry is
 not a full audit of mdxtools' bundled sources and submodules.
 
+The optional SCC voice fitter also compiles the external checkout's YM2151
+core with this repository's authored `scripts/scc_opm_probe.c` adapter. The core
+sources and built shared library stay under local `.tools/`; preserve the
+upstream component notices. No emulator source or shared library is bundled
+in the voice bank or normal MML output.
+
 ## Distribution scope
 
 The repository and listening exports do not bundle the above external compiler,

@@ -134,7 +134,14 @@ def build_parser():
     advanced.add_argument('--no-loops', action='store_true', help='Disable MDX finite-repeat compression')
     advanced.add_argument('--psg-gain', type=float, default=None, help='PSG projection gain: fm=1, additive=0.125')
     advanced.add_argument('--psg-model', choices=['fm', 'additive'], default=None,
-                         help='PSG-to-OPM tone model (default: fm); SCC uses additive')
+                         help='PSG-to-OPM tone model (default: fm); SCC model is selected separately')
+    advanced.add_argument('--scc-model',choices=('additive','additive8','fm-additive','fm-fm'),default=None,
+                          help='SCC OPM voice approximation; default fm-additive; automatically fit a bank when omitted')
+    advanced.add_argument('--scc-voice-bank',type=Path,help='Offline fitted YM2151 SCC voice bank JSON')
+    selection=advanced.add_mutually_exclusive_group()
+    selection.add_argument('--psg-only','--psg_only',action='store_true',help='Project only PSG; retain native source evidence')
+    selection.add_argument('--scc-only','--scc_only',action='store_true',help='Project only SCC; retain native source evidence')
+    advanced.add_argument('--psg-output',choices=('opm','pcm'),default='opm',help='PSG target: OPM or continuous mixed ADPCM (requires best-effort)')
     advanced.add_argument('--scc-gain', type=float, default=None, help='SCC-to-OPM gain (default: 0.125)')
     fidelity = parser.add_argument_group('Target fidelity policies')
     fidelity.add_argument('--opm-pitch-policy', choices=['clamp', 'error'], default=None,
@@ -218,7 +225,7 @@ def main():
     if args.target == 'mdx' and mgs_options:
         parser.error('MGSDRV compatibility options require --target mgs')
     projection_options = (args.psg_model is not None or args.opm_pitch_policy is not None
-                          or args.psg_gain is not None or args.scc_gain is not None)
+                          or args.psg_gain is not None or args.scc_gain is not None or args.scc_model is not None or args.scc_voice_bank is not None or args.psg_only or args.scc_only or args.psg_output!='opm')
     if args.target == 'mgs' and projection_options:
         parser.error('OPM projection options require --target mdx')
 
@@ -303,9 +310,16 @@ def main():
             report['excluded_sources'] = [dict(chip='segapcm', reason='Explicit --fm-only diagnostic export')]
         elif route == 'opm-segapcm-source':
             report['chip_projection'] = 'opm-segapcm-pdx'
+        source_selection='psg' if args.psg_only else 'scc' if args.scc_only else 'all'
+        if source_selection!='all' and route!='psg-scc-to-opm':
+            raise ValueError('--psg-only/--scc-only require a PSG/SCC input and --target mdx')
+        report['source_selection']=source_selection
+        if args.psg_output=='pcm' and (route!='psg-scc-to-opm' or args.scc_only or args.notation!='structured'):
+            raise ValueError('--psg-output pcm requires structured PSG/SCC MDX input and cannot combine with --scc-only')
         pcm_applicable = (route == 'opna-fm-to-opm'
                           or route == 'opm-segapcm-source' and not args.fm_only
-                          or route == 'native-opm-pcm' and 'pcm' in usage['used_chips'])
+                          or route == 'native-opm-pcm' and 'pcm' in usage['used_chips']
+                          or route=='psg-scc-to-opm' and args.psg_output=='pcm')
         report['pcm_options'] = dict(applicable=pcm_applicable, policy=args.pcm_policy or 'strict',
                                     profile=args.pcm_profile,
                                     generator_configured=bool(args.pcm_generator))
@@ -313,7 +327,7 @@ def main():
             raise ValueError('--target opm-additive requires the additive PSG model')
         if route == 'psg-scc-to-opm' and (args.notation == 'legacy' or args.track_layout != 'channels'):
             raise ValueError('PSG/SCC OPM projection supports structured/registers notation and channel tracks')
-        if route in ('native-opm-pcm', 'opna-fm-to-opm', 'opm-segapcm-source') and any(v is not None for v in (args.psg_model, args.psg_gain, args.scc_gain)):
+        if route in ('native-opm-pcm', 'opna-fm-to-opm', 'opm-segapcm-source') and any(v is not None for v in (args.psg_model,args.psg_gain,args.scc_gain,args.scc_model,args.scc_voice_bank)):
             raise ValueError('PSG/SCC projection options do not apply to native MDX')
         report['status'] = 'resolved'
         record_report()
@@ -383,6 +397,9 @@ def main():
         try:
             mml, plan = convert(vgm_path, song_dir, psg_gain=args.psg_gain,
                                 scc_gain=.125 if args.scc_gain is None else args.scc_gain,
+                                scc_model=args.scc_model or ('additive' if compatibility_target=='opm-additive' else 'fm-additive'),
+                                scc_voice_bank=args.scc_voice_bank,source_selection=source_selection,psg_output=args.psg_output,
+                                pcm_policy=args.pcm_policy or "strict",pcm_profile=args.pcm_profile,pcm_generator=args.pcm_generator,
                                 title=args.title if args.title is not None else title_from_gd3(vgm_path, base_name, args.gd3_language),
                                 psg_model=args.psg_model or ('additive' if compatibility_target == 'opm-additive' else 'fm'),
                                 pitch_policy=args.opm_pitch_policy,
@@ -400,6 +417,8 @@ def main():
             from opna_force import force_console_lines
             for line in force_console_lines(song_dir, base_name):
                 print(line)
+        if source_selection!='all':
+            print('Output source selection: '+source_selection.upper()+' only; native source evidence retained')
         print(f'MDX MML: {mml}')
         if normalize:
             with open(os.path.join(song_dir, base_name + '.mdx.normalization.json'), encoding='utf-8') as stream:

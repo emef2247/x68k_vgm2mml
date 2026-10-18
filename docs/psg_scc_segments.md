@@ -104,7 +104,9 @@ waveform/volume changes at the actual segment boundary.
 SCC regression checks therefore compare rendered time/pitch/volume against trace
 states instead of requiring the historical buggy hashes below. Other-chip hashes
 remain checked (normalizing the extra empty fifth-channel CSV separator).
-Envelope extraction/application and removing rest-only tracks remain future work.
+That historical compatibility-renderer scope is separate from current MDX
+projection, which reuses MSX SCC note/software-volume runs and shared structural
+analysis; see [SCC target projection](scc_fm_projection.md).
 
 ```sh
 python -m unittest discover -s tests/scripts -v

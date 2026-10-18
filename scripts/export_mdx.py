@@ -68,22 +68,23 @@ def inspect_export_commands(generator, mdx, census, timeout):
 
 
 def run_batch(source, output, *, target='mdx', generator=None, timeout=600,
-              max_ticks=None, psg_model=None, psg_gain=None, scc_gain=None,
+              max_ticks=None,psg_model=None,psg_gain=None,scc_gain=None,scc_model=None,scc_voice_bank=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mxc', mxc=None, run68=None,
               normalize_lengths=None, normalization_ms=8, no_vgm=False, song_loop=True, listening_layout=False, _title=None,
-              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard'):
+              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output='opm'):
     if listening_layout:
         from export_listening import run_listening_batch
         return run_listening_batch(source, output, core=run_batch, options=dict(
             target=target, generator=generator, timeout=timeout, max_ticks=max_ticks,
-            psg_model=psg_model, psg_gain=psg_gain, scc_gain=scc_gain,
+            psg_model=psg_model,psg_gain=psg_gain,scc_gain=scc_gain,scc_model=scc_model,scc_voice_bank=scc_voice_bank,
             opm_pitch_policy=opm_pitch_policy, pcm_policy=pcm_policy, compiler=compiler,
-            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, no_vgm=no_vgm, song_loop=song_loop, fm_only=fm_only, force=force,pcm_profile=pcm_profile))
+            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, no_vgm=no_vgm, song_loop=song_loop, fm_only=fm_only, force=force,pcm_profile=pcm_profile,psg_only=psg_only,scc_only=scc_only,psg_output=psg_output))
     source, output = Path(source).resolve(), Path(output).resolve()
     from conversion_config import normalization_samples
     normalization_samples(normalization_ms)
     from pcm_profiles import get_profile
     get_profile(pcm_profile)
+    if psg_only and scc_only:raise ValueError('--psg-only and --scc-only are mutually exclusive')
     if target not in ('mdx', 'opm', 'opm-additive'):
         raise ValueError('Target must be mdx, opm or opm-additive')
     if compiler not in ('mxc', 'mmlx'):
@@ -115,7 +116,9 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=600,
                      ('mdx-fixture-generator' + suffix)).resolve()
     if not generator.is_file():
         raise ValueError('Build scripts/mdx_fixture_generator or specify --generator')
-    options = ['--pcm-profile',pcm_profile]
+    options = ['--pcm-profile',pcm_profile,'--psg-output',psg_output]
+    if psg_only:options.append('--psg-only')
+    if scc_only:options.append('--scc-only')
     if force:
         options.append('--force')
     if fm_only:
@@ -124,7 +127,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=600,
     if normalize_lengths is not None:
         options.append('--normalize-lengths' if normalize_lengths else '--no-normalize-lengths')
     for flag, value in (('--psg-model', psg_model), ('--psg-gain', psg_gain),
-                        ('--scc-gain', scc_gain), ('--opm-pitch-policy', opm_pitch_policy)):
+                        ('--scc-gain',scc_gain),('--scc-model',scc_model),('--scc-voice-bank',Path(scc_voice_bank).resolve() if scc_voice_bank is not None else None),('--opm-pitch-policy',opm_pitch_policy)):
         if value is not None:
             options.extend([flag, str(value)])
     _bounded(output / 'results.csv', output)
@@ -331,9 +334,15 @@ def main():
                         help='Partial MDX output: omit unsupported OPNA HW effects and excess PCM samples; list all losses')
     parser.add_argument('--fm-only', action='store_true',
                         help='Diagnostic OPM + SegaPCM export: explicitly omit SegaPCM from MDX; retain source evidence')
+    selection=parser.add_mutually_exclusive_group()
+    selection.add_argument('--psg-only','--psg_only',action='store_true')
+    selection.add_argument('--scc-only','--scc_only',action='store_true')
+    parser.add_argument('--psg-output',choices=('opm','pcm'),default='opm')
     parser.add_argument('--psg-model', choices=('fm', 'additive'))
     parser.add_argument('--psg-gain', type=float)
-    parser.add_argument('--scc-gain', type=float)
+    parser.add_argument('--scc-gain',type=float)
+    parser.add_argument('--scc-model',choices=('additive','additive8','fm-additive','fm-fm'),help='SCC voice model (default fm-additive; fit missing bank automatically)')
+    parser.add_argument('--scc-voice-bank',type=Path)
     parser.add_argument('--opm-pitch-policy', choices=('clamp', 'error'))
     parser.add_argument('--pcm-policy', choices=('strict', 'best-effort'),
                         help='Native PCM projection policy; default strict')
@@ -344,10 +353,10 @@ def main():
         rows = run_batch(args.input, args.outdir, target=args.target, generator=args.generator,
                          compiler=args.compiler, mxc=args.mxc, run68=args.run68,
                          timeout=args.timeout, max_ticks=args.max_ticks, psg_model=args.psg_model,
-                         psg_gain=args.psg_gain, scc_gain=args.scc_gain,
+                         psg_gain=args.psg_gain,scc_gain=args.scc_gain,scc_model=args.scc_model,scc_voice_bank=args.scc_voice_bank,
                           opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy,
                           normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, no_vgm=args.no_vgm,
-                          listening_layout=True, song_loop=not args.no_song_loop, fm_only=args.fm_only, force=args.force,pcm_profile=args.pcm_profile)
+                          listening_layout=True, song_loop=not args.no_song_loop, fm_only=args.fm_only, force=args.force,pcm_profile=args.pcm_profile,psg_only=args.psg_only,scc_only=args.scc_only,psg_output=args.psg_output)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     success = sum(row['status'] == 'success' for row in rows)

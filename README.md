@@ -22,6 +22,15 @@ VGMの実際のコマンドから使用音源を判定し、OPM／PCM、OPNA FM�
 
 PSG／SSGは共通の発音・音量run解釈を使い、固定音量のnoise-onlyパート1本をOPMノイズへ近似できます。[対応範囲と中間結果](docs/psg_musical_noise.md)を参照してください。
 
+SCCはMSX側と共通の発音・SW音量run解釈を使います。SCCの既定は`fm-additive`で、必要な音色バンクは自動生成します。`--scc-model additive8`で空きOPM chを使う8成分近似も選択できます。FM音色探索を含む[使い方と制約](docs/scc_fm_projection.md)を参照してください。
+
+SCCだけを比較試聴する場合は、次のように指定できます。自動音色探索にはWSLのGCC・NumPyと外部YM2151 coreが必要です（[準備方法](docs/scc_fm_fit.md)）。PSGのみの出力や加算モデルでは探索しません。
+
+```sh
+python scripts/export_mdx.py INPUT_DIRECTORY --outdir outputs/listen/scc \
+  --scc_only --compiler mmlx --no-vgm
+```
+
 ### 入力と出力
 
 | 入力 | 主な出力 |
@@ -122,6 +131,10 @@ MDX側の主なオプションは次のとおりです。
 | `--normalization-ms MS` | 正規化前の短い発音の省略閾値と出力時刻の最大移動量 |
 | `--no-loops` | 有限反復の生成を無効化 |
 | `--psg-model fm\|additive` | PSGからOPMへの音色投影モデル |
+| `--scc-model additive\|additive8\|fm-additive\|fm-fm` | SCC音色モデル（既定fm-additive）。[詳細](docs/scc_fm_projection.md) |
+| `--scc-voice-bank FILE` | FM SCCモデルで使う探索済み音色JSON（省略時は自動生成） |
+| `--psg-only` / `--psg_only` | PSGだけを出力。元のSCC解析結果は保持 |
+| `--scc-only` / `--scc_only` | SCCだけを出力。元のPSG解析結果は保持 |
 | `--psg-gain` / `--scc-gain` | PSG／SCC投影時の音量調整 |
 | `--pcm-policy strict\|best-effort` | PCM投影で既知損失を許容するか |
 | `--pcm-profile standard\|low\|ultra_low` | PCM出力の容量・音質設定（既定standard）。[詳細](docs/pcm_profiles.md) |
