@@ -1,0 +1,11 @@
+{
+  "authored": true,
+  "clock_hz": 4000000,
+  "nominal_native_frame_rate": 31250,
+  "source_samples": 14112,
+  "channels": 3,
+  "expected_bank_samples": 1,
+  "expected_playbacks": 3,
+  "expected_pcm_tracks": 2,
+  "description": "One finite ROM view reused with different gate lengths, gains and pans; overlapping P/Q playback"
+}

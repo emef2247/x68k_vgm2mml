@@ -58,6 +58,25 @@ ROM storage does not allocate the declared ROM size.
 
 ## Target boundary
 
+The default `--segapcm-projection auto` first tries reusable finite one-shot
+views with stable controls, through `py/segapcm_bank.py`. This keeps full sample
+assets separate from event duration/gain/pan and can allocate P-W. Unsupported
+actual audible sample loops and other documented capabilities trigger an
+explicit whole-song mixed fallback; `bank` requires the new route and `mix`
+forces the previous route. Inspect `.segapcm_projection.json` rather than
+assuming every converted song now uses a reusable bank. See
+[reusable sample banks](pcm_sample_bank_design.md) for the full first-version
+scope, source-view identities, gain approximations and artifacts.
+
+Finite sounding parts additionally handle muted initialization, effective
+cursor seeks and bounded held-control variants, retaining native evidence.
+Onset gain uses an explicit MXDRV/PCM8 compatibility profile. All candidate
+assets can be inspected as [listening WAVs](pcm_block_previews.md), including
+assets omitted by capacity selection. Capturing finite per-voice parts has an
+explicit resource limit; hitting it still selects whole-song mix in `auto`.
+
+The following describes the retained mixed fallback.
+
 `py/segapcm_pcm.py` mixes `(left + right)/2`, clips to signed16 with counts,
 linearly resamples to F4/15625Hz and independently encodes MSM6258 ADPCM.
 This is an explicit best-effort target transform; strict policy blocks its

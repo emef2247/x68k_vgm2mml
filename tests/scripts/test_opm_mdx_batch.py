@@ -27,11 +27,12 @@ class OpmMdxBatchTests(unittest.TestCase):
                 generator = root / 'helper'
                 generator.touch()
                 argv = ['verify', str(source), '--generator', str(generator), '--outdir', str(root / 'out'), *flags]
-                with patch.object(sys, 'argv', argv), patch.object(batch, 'generate', return_value=SimpleNamespace(events=[])), \
+                with patch.object(sys, 'argv', argv), patch.object(batch, 'generate', return_value=SimpleNamespace(events=[])) as generate, \
                         patch.object(batch, 'convert', side_effect=ValueError('stop after option resolution')) as convert, \
                         contextlib.redirect_stdout(io.StringIO()):
                     self.assertEqual(batch.main(), 1)
                 self.assertIs(convert.call_args.kwargs['normalize_lengths'], expected)
+                self.assertEqual(generate.call_args.kwargs['compiler'], 'mmlx')
 
     def test_mxc_roundtrip_compiles_then_replays_without_recompiling_mml(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -103,7 +104,7 @@ class OpmMdxBatchTests(unittest.TestCase):
                 self.assertEqual(generate.call_count, 1)  # Initialization only.
             row = json.loads((out / 'results.json').read_text())[0]
             self.assertEqual(row['status'], 'conversion_failed')
-            self.assertEqual(row['compiler'], 'mxc')
+            self.assertEqual(row['compiler'], 'mmlx')
             for key in ('mml', 'mdx', 'vgm', 'compile_log', 'compiler_input'):
                 self.assertNotIn(key, row)
             for name in old_names:
@@ -135,7 +136,7 @@ class OpmMdxBatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             source = root / 'source.vgm'
-            source.write_bytes(vgm(b'\x54\x08\x08', 3579580))
+            source.write_bytes(vgm(b'\x54\x08\x08', 0x80000000 | 3579580))
             generator = root / 'generator'
             generator.touch()
             out = root / 'out'
@@ -145,7 +146,7 @@ class OpmMdxBatchTests(unittest.TestCase):
                     contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(batch.main(), 1)
                 convert.assert_not_called()
-                self.assertEqual(generate.call_args.kwargs['compiler'], 'mxc')
+                self.assertEqual(generate.call_args.kwargs['compiler'], 'mmlx')
             row = json.loads((out / 'results.json').read_text())[0]
             self.assertEqual(row['status'], 'unsupported_target')
             self.assertEqual(row['clock_hz'], 3579580)

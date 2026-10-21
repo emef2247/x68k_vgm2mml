@@ -48,6 +48,7 @@ class PcmAssessment:
             raise ValueError('PCM policy must be strict or best-effort')
         self.policy = policy
         self.target_profile = TARGET_PROFILE
+        self.active_pcm_tracks = ['P']
         self.artifact_status = 'pending'
         self.validation_run = 'not_run'
         self.items = []
@@ -80,6 +81,11 @@ class PcmAssessment:
     def generated(self):
         self.artifact_status = 'generated'
 
+    def set_pcm_tracks(self, tracks):
+        self.active_pcm_tracks = sorted(set(tracks))
+        self.target_profile = ('MDX PCM4/8 enabled (E8); 16 tracks; '
+                               + '/'.join(self.active_pcm_tracks) + ' projection')
+
     def error(self, detail):
         self.artifact_status = 'error'
         self.add('artifact', 'fail', 'artifact_generation_failed', detail,
@@ -88,7 +94,8 @@ class PcmAssessment:
     def as_dict(self):
         return dict(schema_version=1, policy=self.policy, target_profile=self.target_profile,
                     target_layout=dict(track_count=16, pcm_mode_command='E8',
-                                       active_pcm_tracks=['P'], inactive_pcm_tracks=list('QRSTUVW')),
+                                       active_pcm_tracks=self.active_pcm_tracks,
+                                       inactive_pcm_tracks=[t for t in 'PQRSTUVW' if t not in self.active_pcm_tracks]),
                     artifact_status=self.artifact_status, assessment_status=self.assessment_status,
                     validation_status=aggregate(self.items), validation_run=self.validation_run,
                     artifacts=self.artifacts,

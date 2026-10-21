@@ -269,9 +269,6 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False, *
         continuous_pcm = any(s.continuation_index or
             'controls_during_decoder_epoch' in s.issues or
             (s.rate_num == 0 and native_pcm.clock_hz > 0) for s in projection_pcm.segments)
-        target_pcm = None if continuous_pcm else project_msm6258(projection_pcm,pcm_profile=options.get('pcm_profile','standard'))
-        if target_pcm is not None:
-            target_pcm.dump(outdir, source.stem)
         if any(row['domain'] != 'adpcm_b_data_block' for row in metadata['auxiliary_commands']):
             raise ValueError('Unexpanded OPNA DAC streams may affect FM; projection refused')
         analysis = metadata['analysis']
@@ -326,7 +323,13 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False, *
         rows = merge(rows, ssg_rows)
         write_vgm(rows, target, end=analysis.source_end_vgmticks, loop_start=loop_start,
                   loop_event_id=source_loop.get('replay_start_event_id'))
-        if continuous_pcm:
+        from opna_pcm_bank import project as project_pcm_bank
+        pcm_bridge = project_pcm_bank(projection_pcm, source_raw=read_vgm_bytes(source),
+            loop_start=loop_start, pcm_profile=options.get('pcm_profile', 'standard'))
+        finite_pcm_bank = pcm_bridge is not None
+        if finite_pcm_bank:
+            pcm_bridge.dump(outdir, source.stem)
+        elif continuous_pcm:
             from opna_adpcm_waveform import project as project_continuous_pcm
             pcm_bridge = project_continuous_pcm(projection_pcm,
                 source_raw=read_vgm_bytes(source), loop_start=loop_start,
@@ -335,6 +338,8 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False, *
             pcm_bridge.dump(outdir, source.stem)
         else:
             from opna_pcm import adapt
+            target_pcm = project_msm6258(projection_pcm, pcm_profile=options.get('pcm_profile','standard'))
+            target_pcm.dump(outdir, source.stem)
             pcm_bridge = adapt(projection_pcm, target_pcm, source_raw=read_vgm_bytes(source),
                                loop_start=loop_start,pcm_profile=options.get('pcm_profile','standard'))
             pcm_bridge.dump_bridge(outdir, source.stem)
@@ -362,6 +367,7 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False, *
                         eligible_playbacks=sum(p.independently_playable for p in pcm_bridge.playbacks),
                         ineligible_playbacks=sum(not p.independently_playable for p in pcm_bridge.playbacks),
                         continuous_decoder_epochs=continuous_pcm,
+                        finite_sample_bank=finite_pcm_bank,
                         native_issues=[issue.code for issue in native_pcm.issues],
                         candidate_pdx_samples=len(pcm_bridge.samples), pdx_distinct_samples=None,
                         policy=options.get('pcm_policy', 'strict'),

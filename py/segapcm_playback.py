@@ -122,6 +122,7 @@ class _Rom:
         self.blocks = []
         self.cached = None
         self.missing_reads = 0
+        self.last_read_missing = False
 
     def update(self, block):
         size, start = block.declared_rom_size, block.start_address
@@ -138,7 +139,9 @@ class _Rom:
         self.cached = None
 
     def read(self, address):
+        self.last_read_missing = False
         if not self.size:
+            self.last_read_missing = True
             self.missing_reads += 1
             return 0x80
         address &= self.mask
@@ -157,12 +160,13 @@ class _Rom:
                         lo = newer[1]
                 self.cached = (lo, hi, data, block[0])
                 return data[address - block[0]]
+        self.last_read_missing = True
         self.missing_reads += 1
         return 0x80
 
 
 def render(trace, end_vgmticks, loop_start=None, *, max_frames=32_000_000,
-           max_runtime_events=1_000_000):
+           max_runtime_events=1_000_000, voice_sink=None):
     """Reconstruct one supplied source traversal, preserving its event order.
 
     VGM-loop expansion is the reader's responsibility. ``loop_start`` is
@@ -201,6 +205,8 @@ def render(trace, end_vgmticks, loop_start=None, *, max_frames=32_000_000,
     ram = {chip: bytearray([0xff]) * 0x800 for chip in chips}
     fractions = {chip: [0] * 16 for chip in chips}
     rom = {chip: _Rom() for chip in chips}
+    generations = {chip: 0 for chip in chips}
+    last_events = {}
     active = set()
     active_order = ()
     opened = {}
@@ -235,11 +241,13 @@ def render(trace, end_vgmticks, loop_start=None, *, max_frames=32_000_000,
         time = Fraction(source.vgmticks)
         if hasattr(event, 'payload'):
             rom[chip].update(event)
+            generations[chip] = event.rom_generation
             return
         memory = ram[chip]
         offset = event.ram_offset
         channel = event.channel if event.channel is not None else (offset & 0x7f) // 8
         key = chip, channel
+        last_events[key] = source
         old = memory[offset]
         memory[offset] = event.value
         if event.role == 'unmodeled_ram' and 'Unused RAM writes retained without audible effect' not in issues:
@@ -270,6 +278,7 @@ def render(trace, end_vgmticks, loop_start=None, *, max_frames=32_000_000,
             address |= fractions[chip][channel]
             control = memory[base + 0x86]
             end = (memory[base + 6] + 1) & 0xff
+            looped = False
             if (address >> 16) == end:
                 time = Fraction(time_num, time_den)
                 if control & 2:
@@ -285,9 +294,19 @@ def render(trace, end_vgmticks, loop_start=None, *, max_frames=32_000_000,
                 memory[base + 0x85] = (address >> 16) & 0xff
                 fractions[chip][channel] = 0
                 runtime(chip, channel, 'sample_loop', time)
+                looped = True
             mask = ((trace.interface_raw >> 16) & 0xff) or 0x70
             bank = (control & mask & (rom[chip].mask >> shift)) << shift
             sample = rom[chip].read((address >> 8) + bank) - 128
+            if voice_sink is not None:
+                if rom[chip].last_read_missing and hasattr(voice_sink, 'missing_rom'):
+                    voice_sink.missing_rom(frame, chip, channel, address, generations[chip], bank,
+                        memory[base + 2] & 0x7f, memory[base + 3] & 0x7f,
+                        last_events[(chip, channel)])
+                voice_sink(frame, chip, channel, opened[(chip, channel)][1], address,
+                    (memory[base + 2] & 0x7f, memory[base + 3] & 0x7f,
+                     memory[base + 7], memory[base + 6], control,
+                     generations[chip], bank), sample, last_events[(chip, channel)], looped)
             left += sample * (memory[base + 2] & 0x7f)
             right += sample * (memory[base + 3] & 0x7f)
             address = (address + memory[base + 7]) & 0xffffff

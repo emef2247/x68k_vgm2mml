@@ -19,7 +19,10 @@ source MSM6258 samples.
 
 The canonical `vgm2mml.py --target mdx` path emits readable MDX MML and, when
 PCM samples are present, a sixteen-track MDX plus PDX with initial E8 (PCM4/8
-enable) on A. Only P carries PCM playback; Q-W contain finite end commands.
+enable) on A. Native MSM6258 and mixed-waveform routes use P; the finite
+SegaPCM bank route can allocate independent playbacks to P-W. See
+[reusable sample banks](pcm_sample_bank_design.md) for its current subset,
+fallback and inspection artifacts. Unused PCM tracks contain finite ends.
 The mode requires an available PCM extension in the playback environment.
 Six mode-projected listening cases played and stopped correctly in the user's
 MMDSP environment; this is bounded evidence, not universal runtime certification.
@@ -28,6 +31,27 @@ conversion remains Python-only; typed PCM construction and packing require
 the built `scripts/mdx_fixture_generator` helper. See README for commands.
 Stopped PCM setup writes without any samples do not create an empty PDX or
 require the helper; their source control evidence is still available in dumps.
+
+## Output footprint target
+
+The current operational target is a PDX file of at most **1,200,000 bytes**,
+including reference tables, padding and payload. This is a user-selected
+conservative playback target, not a universal PDX format limit. A player's
+internal decoded-PCM workspace is not part of this encoded-file budget.
+MDX file capacity, compiler/offset limits and PDX capacity are separate checks.
+
+Projection and packing enforce the aggregate byte budget, as well as one
+bank's 96 slots and the 65,535-byte per-sample projection scope. The default
+`budget96` policy selects existing representatives within both budgets for
+eligible MSM6258, Delta-T and SegaPCM target assets. Explicit `similar` / `off`
+reject an oversized bank; `--force` may omit whole samples instead. PSG PCM has
+the same size guard, but is not included in approximate representative sharing.
+
+The final packed file is checked again, including any padding. Oversized output
+is removed and reported as failure. No payload is truncated. Size compliance
+is separate from runtime playback validation. Adding banks must not bypass the
+total file budget. See [bank reduction](pcm_bank_reduction.md) for selection
+order and diagnostics.
 
 ## Implemented scope
 

@@ -43,7 +43,6 @@ def source_facts(path, *, include_pcm=False):
 
 def generate(generator, mml, folder, stem, *, max_ticks=None,
              compiler='mmlx', mxc=None, run68=None):
-    # Keep existing diagnostic callers compatible; the CLI selects MXC by default.
     if compiler not in ('mxc', 'mmlx'):
         raise ValueError('Compiler must be mxc or mmlx')
     mdx, vgm = folder / (stem + '.mdx'), folder / (stem + '.vgm')
@@ -109,8 +108,8 @@ def main():
     parser.add_argument('--mdxdump',type=Path,help='External mdxtools executable for reference/generated MDX metadata audit')
     parser.add_argument('--track-layout', choices=('channels', 'conductor'), default='channels')
     parser.add_argument('--generator', type=Path, default=ROOT / 'scripts/mdx_fixture_generator/target/release' / ('mdx-fixture-generator' + suffix))
-    parser.add_argument('--compiler', choices=('mxc', 'mmlx'), default='mxc',
-                        help='FM MML compiler (default mxc); comparator is unchanged')
+    parser.add_argument('--compiler', choices=('mxc', 'mmlx'), default='mmlx',
+                        help='FM MML compiler (default mmlx); comparator is unchanged')
     parser.add_argument('--mxc', type=Path, help='Native MXC.X compiler')
     parser.add_argument('--run68', type=Path, help='run68 executable for native MXC')
     args = parser.parse_args()

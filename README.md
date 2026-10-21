@@ -50,7 +50,11 @@ PSGは通常OPMへ変換しますが、連続PCMとして再構築し、X68000�
 
 OPMのみのMML生成にRustコンパイラは不要です。現行のPCM経路では試聴用MDX／PDXの補助生成も同じ処理内で行うため、外部helperのビルドが必要です。準備方法は[docs/mdx_compiler_setup.md](docs/mdx_compiler_setup.md)を参照してください。
 
+PDXは参照表込みで1,200,000 bytesを上限とします。既定の `--pcm-bank-merge budget96` は、対応するPCM候補から代表音を選び、96枠と総容量の両方に収めます。置換・容量の診断は[PCMバンク削減](docs/pcm_bank_reduction.md)を参照してください。
+
 PCMの出力容量を抑えたい場合は `--pcm-profile low` または `--pcm-profile ultra_low` と `--pcm-policy best-effort` を指定できます。標準設定は維持し、低レートの出力用PCMを生成します。[対応音源・容量と音質の関係](docs/pcm_profiles.md)を参照してください。
+
+SegaPCMは、固定条件の有限サンプルを再利用するバンク方式を優先します。初版の対象外となる途中の設定変更・サンプル内ループなどがある場合は、曲全体を従来のミックス方式へ戻し、理由を記録します。`--segapcm-projection auto|bank|mix` の使い方と制約は[再利用PCMサンプルバンク](docs/pcm_sample_bank_design.md)を参照してください。
 
 ## VGMの曲全体ループ
 
@@ -210,6 +214,8 @@ python scripts/export_mdx.py INPUT_DIRECTORY \
 ```
 
 変換の詳細は[docs/segapcm_segments.md](docs/segapcm_segments.md)を参照してください。
+SegaPCMの候補サンプルは試聴用WAVとしても保存します。保存先と一覧の見方は[docs/pcm_block_previews.md](docs/pcm_block_previews.md)を参照してください。
+MSM6258・Delta-T・SegaPCMは、既定で近いPCMへの置換も使い、PDX向けサンプルを最大96種に収めます。`--pcm-bank-merge similar` は品質条件内の統合、`off` は近似なしです。NumPyが必要です。近似条件と統合結果の見方は[docs/pcm_bank_reduction.md](docs/pcm_bank_reduction.md)を参照してください。
 
 `--fm-only` でも元のSegaPCM状態・制御情報は保存します。
 
@@ -270,7 +276,7 @@ python scripts/export_mdx.py INPUT_DIRECTORY \
 
 `--force`は完全な音の再現やMDX生成の成功を保証するオプションではありません。入力破損やコンパイラ制限では引き続き停止します。PCM再符号化などの既知損失を許容する`--pcm-policy best-effort`は別の指定です。適用範囲と診断ファイルの見方は[docs/opna_force.md](docs/opna_force.md)を参照してください。
 
-`scripts/export_mdx.py` の実行結果が `compilation_failed` になる場合、既定のMXCから `--compiler mmlx` に切り替えると改善することがあります。
+`scripts/export_mdx.py` と `scripts/verify_opm_mdx_roundtrip.py` の既定コンパイラはmmlxです。MXCを使う場合は `--compiler mxc` を明示してください。PCM経路は引き続きmmlxを使います。
 
 ```bash
 python scripts/export_mdx.py INPUT_DIRECTORY \
@@ -315,9 +321,9 @@ Licensed under the [MIT License](LICENSE).
 
 | プロジェクト | 本リポジトリでの用途 |
 |---|---|
-| MXC | MML→MDXコンパイル |
+| MXC | 明示選択時のMML→MDXコンパイル |
 | [run68x](https://github.com/kg68k/run68x) | MXCなどHuman68kプログラムの実行 |
-| [mmlx](https://github.com/h1romas4/chipstream/tree/main/crates/mmlx) | 明示選択時のMML→MDXコンパイル、およびPCM経路のFM部分 |
+| [mmlx](https://github.com/h1romas4/chipstream/tree/main/crates/mmlx) | 既定のMML→MDXコンパイル、およびPCM経路のFM部分 |
 | [soundlog](https://github.com/h1romas4/chipstream/tree/main/crates/soundlog) | FMのMDX→VGM、PDX構築・PCM参照検査 |
 | [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv) | PSG→OPMの音色・音量対応、およびOPNA FM→OPMのレジスタ対応方式 |
 | [mdxtools](https://github.com/vampirefrog/mdxtools) | MDX／PDXの独立検査と逆コンパイル |

@@ -5,8 +5,9 @@ import json
 from pathlib import Path
 
 
-SLOT_LIMIT = 96
-VERIFIED_SAMPLE_BYTES = 65535
+from pcm_capacity import SLOT_LIMIT, MAX_SAMPLE_BYTES, PDX_BYTE_LIMIT, PDX_TABLE_BYTES, packed_pdx_bytes
+
+VERIFIED_SAMPLE_BYTES = MAX_SAMPLE_BYTES
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,9 @@ class CapacityView:
         return dict(enabled=True, target_view='force_capacity_binding',
                     source_unchanged=True, slot_limit=SLOT_LIMIT,
                     verified_sample_byte_scope=VERIFIED_SAMPLE_BYTES,
+                    pdx_byte_limit=PDX_BYTE_LIMIT,
+                    retained_pdx_bytes=packed_pdx_bytes(self.analysis.samples),
+                    pdx_byte_budget_satisfied=packed_pdx_bytes(self.analysis.samples) <= PDX_BYTE_LIMIT,
                     retained_sample_ids=[s.sample_id for s in self.analysis.samples],
                     omitted_playback_count=len(omitted),
                     omitted_playback_ids=[row['playback_id'] for row in omitted],
@@ -56,12 +60,14 @@ def select_capacity(analysis, *, omit_playback_ids=(), normalization_ms=8):
     still validated by the caller and their diagnostics remain separate.
     Oversized samples consume no slot. Once 96 slots are bound, later new
     identities stay omitted; later uses of already bound samples survive.
+    The table-inclusive file byte budget is also enforced; bound reuse costs zero.
     """
     from conversion_config import normalization_samples
     omission_bound = normalization_samples(normalization_ms)
     normalization_ids = set(omit_playback_ids)
     samples = {s.sample_id: s for s in analysis.samples}
     retained, rejected, rows = {}, {}, []
+    stored_bytes = PDX_TABLE_BYTES
     ordered = sorted(analysis.playbacks,
                      key=lambda p: (p.start_vgmticks, p.first_source_event_id, p.playback_id))
     for p in ordered:
@@ -80,8 +86,12 @@ def select_capacity(analysis, *, omit_playback_ids=(), normalization_ms=8):
             elif len(retained) >= SLOT_LIMIT:
                 kind, actual, limit = 'slot_capacity', len(retained) + 1, SLOT_LIMIT
                 reason = 'single PDX bank is full; later new sample omitted'
+            elif stored_bytes + len(sample.encoded_bytes) > PDX_BYTE_LIMIT:
+                kind, actual, limit = 'pdx_byte_capacity', stored_bytes + len(sample.encoded_bytes), PDX_BYTE_LIMIT
+                reason = 'PDX file byte budget is full; new whole sample omitted without truncation'
             else:
                 retained[p.sample_id] = sample
+                stored_bytes += len(sample.encoded_bytes)
             if kind:
                 rejected[p.sample_id] = (kind, actual, limit, reason)
         rows.append(dict(playback_id=p.playback_id, sample_id=p.sample_id,

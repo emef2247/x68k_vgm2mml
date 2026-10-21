@@ -40,3 +40,9 @@ Inspect `.opna_adpcm.playback.json/.csv`, `.opna_adpcm.waveform.json`, the
 waveform gate CSV, and the generated waveform-to-MSM6258 mapping/bridge files.
 Native source Segments remain intact. MML/MDX/PDX generation is not proof of
 native playback or acoustic equivalence. User regression/listening is separate.
+
+## Shared reusable sample banks
+
+Eligible MSM6258, finite Delta-T and SegaPCM assets now share the target96-slot
+projection. See [shared PCM bank sources](pcm_bank_shared_sources.md) for native
+reset/supply validation, finite Delta-T identities and fallback boundaries.
