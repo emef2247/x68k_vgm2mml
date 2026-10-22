@@ -56,6 +56,14 @@ validated.
 
 ## PCM capacity
 
+The default `--pcm-bank-merge budget96` first reuses existing target assets to
+fit both 96 slots and a 1,200,000-byte PDX, including its table. This approximation
+is separate from force. With `similar` / `off`, or for routes outside this
+reducer, force may omit a whole new sample that would exceed the file budget
+(`pdx_byte_capacity`); later events using retained samples still play. It does
+not crop bytes or infer new decoder reset boundaries. Final packed size is
+checked even after capacity selection. See [bank reduction](pcm_bank_reduction.md).
+
 Keep the original PCM IR unchanged and select target samples in first-playback
 order.
 

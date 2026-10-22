@@ -62,7 +62,7 @@ class OpnaPcmTests(unittest.TestCase):
         plan = project(bridge, stem='best', policy='best-effort', tick_mapper=lambda t: t)
         self.assertEqual(len(plan.bindings), 1)
         self.assertEqual(plan.units[-1].end_tick, bridge.source_end_vgmticks)
-        self.assertIn('transcoded MSM6258', plan.summary()['pcm_byte_preservation_scope'])
+        self.assertIn('MSM6258 target asset bytes', plan.summary()['pcm_byte_preservation_scope'])
         self.assertIn('no observed MSM6258 byte supply', plan.summary()['pcm_consumption_scope'])
         self.assertTrue(any(i['code'] == 'msm6258_requantization' for i in plan.assessment.items))
 
@@ -118,7 +118,9 @@ class OpnaPcmTests(unittest.TestCase):
             self.assertTrue(options['replayed_song_loop'])
             self.assertEqual(options['pcm_analysis_override'].source_raw, bytes(raw))
             self.assertEqual(mml, result)
-            self.assertEqual(settings['pcm_ir']['pdx_distinct_samples'], 1)
+            self.assertEqual(settings['pcm_ir']['candidate_pdx_samples'], 1)
+            # The mocked downstream writes no final timing/binding evidence.
+            self.assertEqual(settings['pcm_ir']['pdx_distinct_samples'], 0)
             report = json.loads((out / 'case.opna_pcm_bridge.json').read_text())
             self.assertEqual(report['target_sample_count'], 1)
 

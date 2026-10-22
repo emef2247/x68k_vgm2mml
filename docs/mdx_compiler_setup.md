@@ -1,6 +1,8 @@
-# Persistent MXC / run68 setup (WSL)
+# MDX compiler setup (WSL)
 
-FM-only export defaults to MXC. Keep external tools in ignored `.tools/`,
+Listening export and OPM roundtrip verification default to mmlx. The typed PCM
+backend also uses mmlx for its FM portion. Select `--compiler mxc` explicitly
+for native MXC compilation through run68. Keep external tools in ignored `.tools/`,
 outside generated `outputs/`. Deleting `outputs/` must not remove dependencies.
 The lookup order is explicit `--mxc` / `--run68`, PATH, `.tools/`, then the old
 `outputs/research/` locations for compatibility. An invalid explicit path is
@@ -96,6 +98,19 @@ python3 scripts/export_mdx.py tests/fixtures/public/opm/from_fm/block_boundary/ 
 After setup the usual export command needs no tool-path options. Alternatively,
 use `--mxc /persistent/path/MXC.X --run68 /persistent/path/run68`.
 PCM uses the existing typed PCM backend; this setup does not change that route.
+
+## Similar SegaPCM sample sharing
+
+The default `--pcm-bank-merge budget96` PCM target pass uses NumPy:
+
+```sh
+python3 -m pip install numpy
+```
+
+It does not need SciPy or a new chip emulator. Use `--pcm-bank-merge off` to
+compare exact-byte sharing only. This policy applies to eligible MSM6258, Delta-T and SegaPCM target assets.
+PSG PCM extraction remains separate.
+See [PCM bank reduction](pcm_bank_reduction.md).
 
 ## Tool licenses and redistribution
 

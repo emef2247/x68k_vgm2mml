@@ -48,7 +48,7 @@ class ExportMdxTests(unittest.TestCase):
             with patch('export_mdx.subprocess.run', side_effect=successful_run), \
                     patch('export_mdx.compile_mxc', side_effect=compile_score), \
                     patch('export_mdx.write_export_report', side_effect=OSError('report unavailable')):
-                row = run_batch(source, out, generator=generator, no_vgm=True)[0]
+                row = run_batch(source, out, generator=generator, compiler='mxc', no_vgm=True)[0]
             self.assertEqual(row['status'], 'success')
             self.assertEqual(row['report_status'], 'failed')
             self.assertIn('report unavailable', row['report_error'])
@@ -83,6 +83,7 @@ class ExportMdxTests(unittest.TestCase):
         with patch('sys.argv', args), patch('export_mdx.run_batch', return_value=[dict(status='success')]) as call:
             self.assertEqual(main(), 0)
         self.assertTrue(call.call_args.kwargs['no_vgm'])
+        self.assertEqual(call.call_args.kwargs['compiler'], 'mmlx')
 
     def test_no_vgm_mxc_compiles_without_replay_and_removes_old_vgm(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -95,7 +96,7 @@ class ExportMdxTests(unittest.TestCase):
             with patch('export_mdx.subprocess.run', side_effect=successful_run) as calls, \
                     patch('export_mdx.compile_mxc', side_effect=compile_score) as compile_call, \
                     patch('export_mdx.tick_budget', side_effect=AssertionError('Replay was requested')):
-                row = run_batch(source, out, generator=generator, no_vgm=True)[0]
+                row = run_batch(source, out, generator=generator, compiler='mxc', no_vgm=True)[0]
             compile_call.assert_called_once()
             self.assertEqual(calls.call_count, 1)
             self.assertEqual(row['status'], 'success')
@@ -116,7 +117,7 @@ class ExportMdxTests(unittest.TestCase):
                         Path(command[3]).write_bytes(b'MDX')
                     return subprocess.CompletedProcess(command, 0, '', '')
                 with patch('export_mdx.subprocess.run', side_effect=run):
-                    row = run_batch(source, out, generator=generator, compiler='mmlx', no_vgm=True)[0]
+                    row = run_batch(source, out, generator=generator, no_vgm=True)[0]
                 self.assertEqual(row['status'], 'success' if produced else 'compilation_failed')
                 self.assertFalse(row['vgm'])
 
@@ -180,7 +181,7 @@ class ExportMdxTests(unittest.TestCase):
                     self.assertNotIn('--normalize-lengths', command)
                     self.assertNotIn('--no-normalize-lengths', command)
 
-    def test_default_mxc_compiles_then_replays_existing_mdx(self):
+    def test_explicit_mxc_compiles_then_replays_existing_mdx(self):
         with tempfile.TemporaryDirectory() as tmp:
             source, out, generator = self.prepare(Path(tmp), ('a.vgm',))
             def compile_score(mml, mdx, **kwargs):
@@ -199,7 +200,7 @@ class ExportMdxTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 0, '', '')
             with patch('export_mdx.subprocess.run', side_effect=run), \
                     patch('export_mdx.compile_mxc', side_effect=compile_score) as compile_call:
-                row = run_batch(source, out, generator=generator)[0]
+                row = run_batch(source, out, generator=generator, compiler='mxc')[0]
             self.assertEqual(row['status'], 'success')
             self.assertEqual(row['compiler'], 'mxc')
             self.assertEqual(row['compiler_input'], '_compiler_inputs/a.vgm.mxc.mml')
@@ -219,7 +220,7 @@ class ExportMdxTests(unittest.TestCase):
                 (folder / ('a' + suffix)).write_bytes(b'stale')
             with patch('export_mdx.subprocess.run', side_effect=successful_run) as calls, \
                     patch('export_mdx.compile_mxc', side_effect=ValueError('Missing --mxc tool')):
-                row = run_batch(source, out, generator=generator)[0]
+                row = run_batch(source, out, generator=generator, compiler='mxc')[0]
             self.assertEqual(row['status'], 'compilation_failed')
             self.assertTrue(row['mml'])
             self.assertFalse(row['mdx'] or row['vgm'])
@@ -238,7 +239,7 @@ class ExportMdxTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 1, '', 'replay failed')
             with patch('export_mdx.subprocess.run', side_effect=run), \
                     patch('export_mdx.compile_mxc', side_effect=compile_score):
-                row = run_batch(source, out, generator=generator)[0]
+                row = run_batch(source, out, generator=generator, compiler='mxc')[0]
             self.assertEqual(row['status'], 'replay_failed')
             self.assertTrue(row['mdx'])
             self.assertFalse(row['vgm'])
@@ -249,7 +250,7 @@ class ExportMdxTests(unittest.TestCase):
             error = subprocess.TimeoutExpired(['run68'], 17, output=b'partial compiler output')
             with patch('export_mdx.subprocess.run', side_effect=successful_run) as calls, \
                     patch('export_mdx.compile_mxc', side_effect=error):
-                row = run_batch(source, out, generator=generator, timeout=17)[0]
+                row = run_batch(source, out, generator=generator, compiler='mxc', timeout=17)[0]
             self.assertEqual(row['status'], 'compilation_timeout')
             self.assertIn('partial compiler output', (out / row['error_log']).read_text())
             self.assertEqual(calls.call_count, 1)

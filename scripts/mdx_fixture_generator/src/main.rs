@@ -158,9 +158,10 @@ struct PcmTrackPlan {
     end_tick: u64,
     song_loop_tick: Option<u64>,
     commands: Vec<soundlog::mdx::command::MdxCommand>,
+    tracks: std::collections::BTreeMap<usize, Vec<soundlog::mdx::command::MdxCommand>>,
 }
 
-fn parse_pcm_track(text: &str) -> Result<PcmTrackPlan, Error> {
+fn parse_pcm_single_track(text: &str) -> Result<PcmTrackPlan, Error> {
     use soundlog::mdx::command::*;
     let rows: Vec<Vec<&str>> = text.lines().map(|line| line.split('\t').collect()).collect();
     if rows.first().map(Vec::as_slice) != Some(["kind", "value", "ticks"].as_slice())
@@ -193,7 +194,7 @@ fn parse_pcm_track(text: &str) -> Result<PcmTrackPlan, Error> {
                     "frequency" if value <= 4 => MdxAdpcmOrNoiseFrequency { value }.into(),
                     "pan" if value <= 3 => MdxPan::from_raw(value).into(),
                     "gate" if value == 8 => MdxGate { value }.into(),
-                    "volume" if value == 128 => MdxVolume { value }.into(),
+                    "volume" if value >= 128 => MdxVolume { value }.into(),
                     _ => return Err(format!("Unsupported standard PCM control {}={value}", row[0]).into()),
                 };
                 initial.insert(row[0]);
@@ -245,7 +246,51 @@ fn parse_pcm_track(text: &str) -> Result<PcmTrackPlan, Error> {
     if !ended || total != end_tick {
         return Err(format!("PCM plan needs final end and exact end_tick: {total} != {end_tick}").into());
     }
-    Ok(PcmTrackPlan { pdx_name: rows[1][1].to_owned(), tempo, end_tick, song_loop_tick: song_loop.map(|(_, tick)| tick), commands })
+    Ok(PcmTrackPlan { pdx_name: rows[1][1].to_owned(), tempo, end_tick, song_loop_tick: song_loop.map(|(_, tick)| tick), commands, tracks: Default::default() })
+}
+
+fn parse_pcm_track(text: &str) -> Result<PcmTrackPlan, Error> {
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.len() < 5 { return Err("PCM track plan is incomplete".into()); }
+    let metadata = lines[..4].join("\n");
+    let mut selected = 8usize;
+    let mut groups = std::collections::BTreeMap::<usize, Vec<&str>>::new();
+    groups.insert(selected, Vec::new());
+    for line in &lines[4..] {
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.first() == Some(&"track") {
+            if fields.len() != 3 || !fields[2].is_empty() || fields[1].len() != 1 {
+                return Err("PCM track selection requires track<TAB>P..W<TAB>".into());
+            }
+            let label = fields[1].as_bytes()[0];
+            if !(b'P'..=b'W').contains(&label) { return Err("PCM track must be P..W".into()); }
+            let next = 8 + usize::from(label - b'P');
+            if groups.get(&selected).is_some_and(Vec::is_empty) {
+                return Err("Empty PCM track selection".into());
+            }
+            if groups.contains_key(&next) { return Err("Duplicate PCM track selection".into()); }
+            selected = next;
+            groups.insert(selected, Vec::new());
+        } else {
+            groups.get_mut(&selected).unwrap().push(line);
+        }
+    }
+    let mut plan = None;
+    for (track, body) in groups {
+        let parsed = parse_pcm_single_track(&format!("{}\n{}\n", metadata, body.join("\n")))?;
+        if let Some(first) = plan.as_mut() {
+            let first: &mut PcmTrackPlan = first;
+            if parsed.song_loop_tick != first.song_loop_tick {
+                return Err("PCM tracks require the same song loop start".into());
+            }
+            first.tracks.insert(track, parsed.commands);
+        } else {
+            let mut first = parsed;
+            first.tracks.insert(track, first.commands.clone());
+            plan = Some(first);
+        }
+    }
+    plan.ok_or_else(|| "Missing PCM track".into())
 }
 
 fn fm_track_timing(commands: &[soundlog::mdx::command::MdxCommand], tempo: u8, saw_tempo: &mut bool) -> Result<(u64, Option<u64>), Error> {
@@ -443,17 +488,22 @@ fn compile_pcm_inner(fm_input: &Path, plan_input: &Path, output: &Path) -> Resul
     builder.set_title_bytes(title_bytes.clone()).set_pdx_name(Some(&plan.pdx_name));
     for tone in &fm.tone_bank.tones { builder.append_tone(tone.clone()); }
     for (index, track) in fm.tracks.iter().take(8).enumerate() { builder.set_track(index, track.clone()); }
-    builder.set_track(8, plan.commands.clone());
+    for (index, commands) in &plan.tracks { builder.set_track(*index, commands.clone()); }
     // The sixteen-track layout selects the reference-verified PCM extension
     // route. MdxBuilder supplies its initial E8 marker on track A.
-    for index in 9..16 { builder.set_track(index, vec![MdxEndOfTrack.into()]); }
+    for index in 8..16 {
+        if !plan.tracks.contains_key(&index) { builder.set_track(index, vec![MdxEndOfTrack.into()]); }
+    }
     let bytes = builder.finalize()?.to_bytes()?;
     if bytes.len() > 65535 { return Err("Combined native MDX exceeds 65535 bytes".into()); }
     let mut package = MdxPackage { mdx: MdxDocument::parse(&bytes)?, pdx: None };
     if package.mdx.tracks.len() != 16 || package.mdx.header.track_count() != 16 || package.mdx.tracks[8] != plan.commands
         || !matches!(package.mdx.tracks[0].first(), Some(MdxCommand::PcmMode(_)))
         || package.mdx.tracks.iter().flatten().filter(|command| matches!(command, MdxCommand::PcmMode(_))).count() != 1
-        || package.mdx.tracks[9..].iter().any(|track| track.as_slice() != [MdxEndOfTrack.into()]) {
+        || package.mdx.tracks[8..].iter().enumerate().any(|(i, track)| {
+            plan.tracks.get(&(i+8)).map_or_else(
+                || track.as_slice() != [MdxEndOfTrack.into()], |expected| track != expected)
+        }) {
         return Err("Serialized direct PCM track/layout differs from plan".into());
     }
     if package.mdx.tracks[0][1..] != fm.tracks[0] || package.mdx.tracks[1..8] != fm.tracks[1..8]
@@ -969,6 +1019,24 @@ mod tests {
         let soundlog::mdx::command::MdxCommand::EndOfTrackLoop(offset) = malformed.tracks[0].last_mut().unwrap() else { panic!("missing loop"); };
         offset.offset += 1;
         assert!(fm_track_timing(&malformed.tracks[0], 255, &mut false).is_err());
+    }
+
+    #[test]
+    fn direct_pcm_multitrack_plan_checks_every_track_and_shared_loop() {
+        let header = "kind\tvalue\tticks\npdx_name\tbank.pdx\t\ntempo\t255\t\nend_tick\t4\t\n";
+        let body = "rest\t\t1\nsong_loop\t\t\nrest\t\t3\nend\t\t\n";
+        let text = format!("{header}{body}track\tQ\t\n{body}");
+        let plan = parse_pcm_track(&text).unwrap();
+        assert_eq!(plan.tracks.len(), 2);
+        assert_eq!(plan.song_loop_tick, Some(1));
+        assert_eq!(plan.tracks[&8], plan.tracks[&9]);
+        for broken in [
+            text.replace("track\tQ\t", "track\tX\t"),
+            text.replace("track\tQ\t", "track\tP\t"),
+            format!("{text}track\tQ\t\n{body}"),
+            format!("{header}{body}track\tQ\t\nrest\t\t4\nend\t\t\n"),
+            format!("{header}{body}track\tQ\t\nrest\t\t3\nend\t\t\n"),
+        ] { assert!(parse_pcm_track(&broken).is_err()); }
     }
 
     #[test]

@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'py'))
 from pcm_mdx import RATES
 from vgm_io import read_vgm_bytes
 from vgm_timing import command_times
+from pcm_bank_stats import console_lines as bank_console_lines
 
 
 def _json(path):
@@ -267,6 +268,8 @@ def write_export_report(source, folder, stem, row):
         lines.extend(optional('Rejected clock diagnostics',
                      lambda: _rejected_clock_summary(normalization), []))
     lines.extend(['', 'PCM assessment', ''])
+    lines.extend(optional('PCM bank statistics',
+                 lambda: bank_console_lines(folder, stem, allow_binary=bool(row.get('pdx'))), []))
     profile=conversion.get('pcm_options',{}).get('profile',timing.get('pcm_profile','standard'))
     lines.append('PCM size profile: '+str(profile))
     if assessment:

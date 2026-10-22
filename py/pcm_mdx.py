@@ -1,6 +1,7 @@
 """MDX-only PCM binding and projection of backend-neutral source evidence."""
 import csv
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
+from copy import copy
 from fractions import Fraction
 from pathlib import Path
 import struct
@@ -8,6 +9,7 @@ import re
 import subprocess
 import sys
 
+from pcm_capacity import PDX_BYTE_LIMIT, PDX_TABLE_BYTES, packed_pdx_bytes
 from mdx_duration import duration_spelling
 from opm_mdx import mdx_tick, projected_samples
 from pcm_assessment import PcmAssessment, ProjectionError, PAN_EVIDENCE
@@ -77,21 +79,24 @@ class PcmMdxProjection:
     def summary(self):
         projected = self.source_origin != 'native_msm6258'
         return dict(pcm_profile=self.pcm_profile,pcm_payload_bytes=self.pcm_payload_bytes,
+                    pcm_pdx_byte_limit=PDX_BYTE_LIMIT,
+                    pcm_pdx_estimated_bytes=(PDX_TABLE_BYTES + self.pcm_payload_bytes) if self.bindings else 0,
+                    pcm_pdx_estimate_within_budget=not self.bindings or PDX_TABLE_BYTES + self.pcm_payload_bytes <= PDX_BYTE_LIMIT,
                     pcm_force_capacity=self.force_capacity.summary() if self.force_capacity else None,
                     pcm_sample_count=len(self.bindings),
                     pcm_source_origin=self.source_origin,
                     pcm_playback_count=sum(u.kind == 'pcm_note' for u in self.units),
                     pcm_pdx_file=self.pdx_name if self.bindings else None,
-                    pcm_target='MDX PCM4/8 enabled; single P track, one bank, 96 slots',
+                    pcm_target='MDX PCM4/8 enabled; P-W allocation, one bank, 96 slots',
                     pcm_track_count=16, pcm_mode_command='E8',
-                    pcm_inactive_tracks=list('QRSTUVW'),
+                    pcm_inactive_tracks=[t for t in 'PQRSTUVW' if t not in {u.track for u in self.units}],
                     pcm_sample_bytes_preserved=True,
                     pcm_omitted_playback_count=len(self.omitted_playbacks),
                     pcm_omitted_duration_samples=sum(p['duration_samples'] for p in self.omitted_playbacks),
                     pcm_intended_omissions=list(self.omitted_playbacks),
                     pcm_byte_preservation_scope=(
-                        'transcoded MSM6258 target bytes stored unchanged in PDX; '
-                        'original source memory/encoded bytes retained separately in native source IR'
+                        'MSM6258 target asset bytes stored unchanged in PDX; '
+                        'original source supplies/memory/encoded bytes retained separately in native source IR'
                         if projected else 'encoded playback samples stored in PDX; '
                         'all source supply operations are retained in source IR'),
                     pcm_consumption_scope=(
@@ -131,7 +136,11 @@ class PcmMdxProjection:
             stream.write(f'tempo\t{256-self.sample_multiplier}\t\n')
             end_tick = max((u.end_tick for u in self.units), default=0)
             stream.write(f'end_tick\t{end_tick}\t\n')
+            track = 'P'
             for command in self.typed_commands:
+                if command.get('track', 'P') != track:
+                    track = command['track']
+                    stream.write(f'track\t{track}\t\n')
                 stream.write(f"{command['kind']}\t{command['value']}\t{command['ticks']}\n")
         return path
 
@@ -146,6 +155,11 @@ def boundaries(analysis):
 def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playback_ids=(), normalization_ms=8,
             tick_mapper=None, song_loop_start=None, force=False):
     """Bind unchanged samples; omit nominated notes within the source-time policy."""
+    if getattr(analysis, 'parallel_playbacks', False):
+        return _project_parallel(analysis, stem=stem, sample_multiplier=sample_multiplier,
+                                 policy=policy, omit_playback_ids=omit_playback_ids,
+                                 normalization_ms=normalization_ms, tick_mapper=tick_mapper,
+                                 song_loop_start=song_loop_start, force=force)
     from conversion_config import normalization_samples
     omission_bound = normalization_samples(normalization_ms)
     target_tick = tick_mapper or (lambda t: mdx_tick(t, sample_multiplier))
@@ -200,6 +214,10 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
         capacity = select_capacity(analysis, omit_playback_ids=omit_ids, normalization_ms=normalization_ms)
     capacity_omit_ids = capacity.omitted_playback_ids if capacity is not None else frozenset()
     binding_samples = capacity.analysis.samples if capacity is not None else analysis.samples
+    estimated_pdx_bytes = packed_pdx_bytes(binding_samples)
+    if estimated_pdx_bytes > PDX_BYTE_LIMIT and not getattr(analysis, '_capacity_validation_only', False):
+        reject(f'PDX file byte capacity exceeded: {estimated_pdx_bytes}/{PDX_BYTE_LIMIT} bytes including table',
+               status='lossy', code='pdx_byte_capacity', criterion='capacity')
     if analysis.source_loop_vgmticks is not None and song_loop_start is None:
         assessment.add('loop', 'lossy', 'song_loop_not_emitted',
                        'MDX projection currently emits one finite source pass; the VGM song loop is lost',
@@ -254,7 +272,7 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
                 tokens.append('L')
             elif kind != 'end':
                 tokens.append({'bank': '@', 'frequency': 'F', 'pan': 'p', 'gate': 'q',
-                               'volume': '@v'}[kind] + str(127 if kind == 'volume' else value))
+                               'volume': '@v'}[kind] + str(255 - int(value) if kind == 'volume' else value))
         return ' '.join(tokens)
 
     def duration_commands(kind, start, end, *, slot='', playback_id=None, source_event_id=None):
@@ -326,7 +344,7 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
         if p.end_vgmticks <= p.start_vgmticks:
             reject(f'PCM playback {p.playback_id} has no positive source interval',
                    status='fail', code='invalid_playback_length')
-        if p.start_vgmticks < previous_source_end:
+        if p.start_vgmticks < previous_source_end and not getattr(analysis, 'allocated_parallel_lane', False):
             reject('Multiple overlapping physical PCM playbacks are unsupported', code='overlap')
         previous_source_end = p.end_vgmticks
         if any(event_id not in by_event for event_id in p.control_event_ids):
@@ -375,11 +393,16 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
         if loop_tick is not None and not loop_emitted and start == loop_tick:
             song_loop_marker()
         binding = by_sample[p.sample_id]
+        volume = getattr(p, 'target_volume', 128)
+        if not isinstance(volume, int) or not 128 <= volume <= 255:
+            reject('PCM target volume must use raw 128..255 (amplitude 127..0)',
+                   code='invalid_target_volume', status='fail')
         pan = PCM_PAN[p.pan]
         body = [emit(kind, value, start_tick=start, playback_id=p.playback_id,
                      source_event_id=p.first_source_event_id)
                 for kind, value in (('bank', binding.bank), ('frequency', frequency),
-                                    ('pan', pan), ('gate', 8), ('volume', 128))]
+                                    ('pan', pan), ('gate', 8),
+                                    ('volume', volume))]
         trajectory = []
         body.extend(duration_commands('note', start, end, slot=binding.slot,
                                       playback_id=p.playback_id, source_event_id=p.first_source_event_id))
@@ -389,6 +412,8 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
                                             p.last_source_event_id), trajectory,
                           f'n{binding.slot}'))
         rows.append(dict(playback_id=p.playback_id, sample_id=p.sample_id,
+                         original_sample_id=getattr(p, 'original_sample_id', p.sample_id),
+                         target_volume=volume,
                          bank=binding.bank, slot=binding.slot, mdx_track='P',
                          source_start_vgmticks=p.start_vgmticks,
                          source_end_vgmticks=p.end_vgmticks,
@@ -449,6 +474,195 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
                             sum(len(s.encoded_bytes) for s in binding_samples))
 
 
+def _project_parallel(analysis, **options):
+    """Allocate independent gates without stealing; reuse one global binding."""
+    from conversion_config import normalization_samples
+    from pcm_force_capacity import select_capacity, SLOT_LIMIT, VERIFIED_SAMPLE_BYTES
+    force = options['force']
+    # Capacity/voice omissions must not conceal malformed source evidence.
+    # Reuse ordinary sample/control preflight before selecting any binding.
+    preflight = copy(analysis)
+    object.__setattr__(preflight, 'playbacks', ())
+    object.__setattr__(preflight, 'parallel_playbacks', False)
+    object.__setattr__(preflight, '_capacity_validation_only', True)
+    project(preflight, **options)
+    sample_ids = {s.sample_id for s in analysis.samples}
+    control_ids = {c.source_event_id for c in analysis.controls}
+    for p in analysis.playbacks:
+        fallback = (set(p.issues) == {'irregular_byte_supply'}
+                    and p.decoder_reset_known and p.pan is not None
+                    and p.stream_transfer_end-p.stream_transfer_start == p.supplied_bytes
+                    and p.supplied_bytes > 0 and not analysis.issues)
+        reason = None
+        if (not p.independently_playable and not fallback) or p.sample_id not in sample_ids:
+            reason = 'independent sample evidence is unresolved'
+        elif p.rate_hz not in RATES:
+            reason = 'sample rate has no standard MDX frequency setting'
+        elif p.end_vgmticks <= p.start_vgmticks:
+            reason = 'playback has no positive source interval'
+        elif any(event not in control_ids for event in p.control_event_ids):
+            reason = 'playback references missing source controls'
+        if reason:
+            assessment = PcmAssessment(options['policy'])
+            detail = f'PCM playback {p.playback_id}: {reason}'
+            assessment.add('source_evidence', 'fail', 'invalid_parallel_playback', detail,
+                           cause='source_unresolved', playback_id=p.playback_id)
+            assessment.block(detail)
+            raise ProjectionError(detail, assessment)
+    omission_bound = normalization_samples(options['normalization_ms'])
+    omit_ids = set(options['omit_playback_ids'])
+    capacity = None
+    view = analysis
+    capacity_candidates = []
+    retained_sample_ids = set()
+    retained_pdx_bytes = PDX_TABLE_BYTES
+    samples_by_id = {s.sample_id: s for s in analysis.samples}
+    target_tick = options['tick_mapper'] or (lambda t: mdx_tick(t, options['sample_multiplier']))
+    lanes = [[] for _ in range(8)]
+    ends = [0] * 8
+    omitted = []
+    for playback in sorted(view.playbacks, key=lambda p: (target_tick(p.start_vgmticks),
+                           p.start_vgmticks, p.first_source_event_id, p.playback_id)):
+        normalized = (playback.playback_id in omit_ids and
+                      playback.end_vgmticks - playback.start_vgmticks <= omission_bound)
+        if normalized:
+            if force:
+                capacity_candidates.append(playback)
+                continue
+            omitted.append(dict(playback_id=playback.playback_id, sample_id=playback.sample_id,
+                                source_start_vgmticks=playback.start_vgmticks,
+                                source_end_vgmticks=playback.end_vgmticks,
+                                duration_samples=playback.end_vgmticks-playback.start_vgmticks,
+                                reason=f"intentional output omission within {options['normalization_ms']:g} ms",
+                                source_first_event_id=playback.first_source_event_id,
+                                source_last_event_id=playback.last_source_event_id,
+                                source_channel=getattr(playback, 'source_channel', None),
+                                chip_instance=playback.chip_instance))
+            continue
+        start_tick = target_tick(playback.start_vgmticks)
+        end_tick = target_tick(playback.end_vgmticks)
+        if not normalized and (start_tick < 0 or end_tick <= start_tick):
+            assessment = PcmAssessment(options['policy'])
+            detail = f'PCM playback {playback.playback_id} collapses on the MDX clock'
+            assessment.add('timing', 'lossy', 'clock_collapse', detail,
+                           cause='target_constraint', playback_id=playback.playback_id,
+                           start_vgmticks=playback.start_vgmticks,
+                           end_vgmticks=playback.end_vgmticks)
+            assessment.block(detail)
+            raise ProjectionError(detail, assessment)
+        available = [i for i, end in enumerate(ends) if end <= start_tick]
+        if not available and not normalized:
+            if not force:
+                assessment = PcmAssessment(options['policy'])
+                detail = 'PCM bank projection exceeds eight simultaneous independent voices'
+                assessment.add('capacity', 'lossy', 'pcm_voice_capacity', detail,
+                               playback_id=playback.playback_id,
+                               start_vgmticks=playback.start_vgmticks,
+                               end_vgmticks=playback.end_vgmticks,
+                               cause='target_constraint')
+                assessment.block(detail)
+                raise ProjectionError(detail, assessment)
+            omitted.append(dict(playback_id=playback.playback_id, sample_id=playback.sample_id,
+                                source_start_vgmticks=playback.start_vgmticks,
+                                source_end_vgmticks=playback.end_vgmticks,
+                                duration_samples=playback.end_vgmticks-playback.start_vgmticks,
+                                reason='explicit force omission: eight PCM tracks already active',
+                                source_first_event_id=playback.first_source_event_id,
+                                source_last_event_id=playback.last_source_event_id,
+                                source_channel=getattr(playback, 'source_channel', None),
+                                chip_instance=playback.chip_instance))
+            continue
+        if force:
+            # A gate rejected for bank capacity occupies no target voice. A
+            # ninth voice never reaches capacity selection or consumes a slot.
+            capacity_candidates.append(playback)
+            sample = samples_by_id[playback.sample_id]
+            if (len(sample.encoded_bytes) > VERIFIED_SAMPLE_BYTES or
+                    playback.sample_id not in retained_sample_ids and
+                    (len(retained_sample_ids) >= SLOT_LIMIT or
+                     retained_pdx_bytes + len(sample.encoded_bytes) > PDX_BYTE_LIMIT)):
+                continue
+            if playback.sample_id not in retained_sample_ids:
+                retained_pdx_bytes += len(sample.encoded_bytes)
+                retained_sample_ids.add(playback.sample_id)
+        lane = available[0] if available else 0
+        lanes[lane].append(playback)
+        if not normalized:
+            ends[lane] = end_tick
+    if force:
+        capacity_input = copy(analysis)
+        object.__setattr__(capacity_input, 'playbacks', tuple(capacity_candidates))
+        capacity = select_capacity(capacity_input, omit_playback_ids=omit_ids,
+                                   normalization_ms=options['normalization_ms'])
+        view = capacity.analysis
+    # Slot binding belongs to surviving target events, not unused source assets.
+    # Every lane receives this same pruned ordering, so rebinding is global.
+    used_samples = {p.sample_id for lane in lanes for p in lane
+                    if not (p.playback_id in omit_ids and
+                            p.end_vgmticks-p.start_vgmticks <= omission_bound)}
+    view = copy(view)
+    object.__setattr__(view, 'samples', tuple(s for s in view.samples if s.sample_id in used_samples))
+    if capacity:
+        capacity = replace(capacity, analysis=view)
+    plans = []
+    source_by_id = {p.playback_id: p for p in analysis.playbacks}
+    for index, playbacks in enumerate(lanes):
+        if index and not playbacks:
+            continue
+        lane_view = copy(view)
+        object.__setattr__(lane_view, 'playbacks', tuple(playbacks))
+        object.__setattr__(lane_view, 'parallel_playbacks', False)
+        object.__setattr__(lane_view, 'allocated_parallel_lane', True)
+        lane_options = dict(options, force=False)
+        lane_plan = project(lane_view, **lane_options)
+        track = 'PQRSTUVW'[index]
+        rows = tuple(dict(row, mdx_track=track, target_track=track,
+                          source_channel=getattr(source_by_id[row['playback_id']], 'source_channel', None),
+                          chip_instance=source_by_id[row['playback_id']].chip_instance)
+                     for row in lane_plan.rows)
+        plans.append(replace(lane_plan,
+                             units=tuple(replace(u, track=track) for u in lane_plan.units),
+                             rows=rows,
+                             typed_commands=tuple(dict(c, track=track,
+                                source_channel=getattr(source_by_id.get(c['playback_id']), 'source_channel', None))
+                                for c in lane_plan.typed_commands)))
+    first = plans[0]
+    assessment = first.assessment
+    for plan in plans[1:]:
+        for item in plan.assessment.items:
+            if item not in assessment.items:
+                assessment.items.append(item)
+    for row in omitted:
+        if not row['reason'].startswith('explicit force omission:'):
+            continue
+        assessment.add('capacity', 'lossy', 'force_pcm_voice_capacity', row['reason'],
+                       playback_id=row['playback_id'], start_vgmticks=row['source_start_vgmticks'],
+                       end_vgmticks=row['source_end_vgmticks'], cause='explicit_force_capacity',
+                       projected_value='timed rest', fallback='omit_whole_new_gate')
+    if capacity:
+        for row in capacity.rows:
+            if row['action'] == 'omit_normalization':
+                omitted.append(dict(playback_id=row['playback_id'], sample_id=row['sample_id'],
+                                    source_start_vgmticks=row['source_start_vgmticks'],
+                                    source_end_vgmticks=row['source_end_vgmticks'],
+                                    duration_samples=row['duration_samples'], reason=row['reason'],
+                                    source_first_event_id=row['source_first_event_id'],
+                                    source_last_event_id=row['source_last_event_id']))
+            if row['action'] == 'omit':
+                assessment.add('capacity', 'lossy', 'force_pcm_' + row['cap_kind'], row['reason'],
+                               cause='explicit_force_capacity', playback_id=row['playback_id'],
+                               start_vgmticks=row['source_start_vgmticks'],
+                               end_vgmticks=row['source_end_vgmticks'], projected_value='timed rest')
+    assessment.set_pcm_tracks(row['mdx_track'] for plan in plans for row in plan.rows)
+    all_omitted = [row for plan in plans for row in plan.omitted_playbacks] + omitted
+    fields = tuple(dict.fromkeys(key for row in all_omitted for key in row))
+    return replace(first, units=tuple(u for plan in plans for u in plan.units),
+                   rows=tuple(row for plan in plans for row in plan.rows),
+                   typed_commands=tuple(c for plan in plans for c in plan.typed_commands),
+                   omitted_playbacks=tuple({key: row.get(key) for key in fields} for row in all_omitted),
+                   force_capacity=capacity, assessment=assessment)
+
+
 def default_generator():
     suffix = '.exe' if sys.platform == 'win32' else ''
     return Path(__file__).resolve().parents[1] / 'scripts/mdx_fixture_generator/target/release' / ('mdx-fixture-generator'+suffix)
@@ -461,6 +675,10 @@ def write_pdx(plan, analysis, outdir, stem, *, generator=None):
     folder.mkdir(parents=True, exist_ok=True)
     (folder / 'samples').mkdir(exist_ok=True)
     samples = {s.sample_id: s for s in analysis.samples}
+    estimated_bytes = packed_pdx_bytes(samples[b.sample_id] for b in plan.bindings)
+    if estimated_bytes > PDX_BYTE_LIMIT:
+        (out / plan.pdx_name).unlink(missing_ok=True)
+        raise ValueError(f'PDX file byte capacity exceeded: {estimated_bytes}/{PDX_BYTE_LIMIT} bytes including table')
     manifest = folder / 'manifest.tsv'
     with manifest.open('w', newline='', encoding='utf-8') as stream:
         stream.write('sample_id\tbank\tslot\tfile\n')
@@ -487,6 +705,8 @@ def write_pdx(plan, analysis, outdir, stem, *, generator=None):
     def reject(detail):
         pdx.unlink(missing_ok=True)
         raise ValueError(detail)
+    if len(payload) > PDX_BYTE_LIMIT:
+        reject(f'Packed PDX file byte capacity exceeded: {len(payload)}/{PDX_BYTE_LIMIT} bytes including table')
     if len(payload) < 768:
         reject('PDX builder returned a truncated table')
     expected = {b.slot: samples[b.sample_id].encoded_bytes for b in plan.bindings}
@@ -535,14 +755,14 @@ def write_mdx(plan, fm_structure, outdir, stem, *, generator=None):
                                   assessment)
         raise ValueError('PCM MDX construction failed: ' + detail)
     try:
-        validate_extended_layout(mdx.read_bytes())
+        validate_extended_layout(mdx.read_bytes(), active_tracks={u.track for u in plan.units})
     except ValueError:
         mdx.unlink(missing_ok=True)
         raise
     return mdx
 
 
-def validate_extended_layout(raw):
+def validate_extended_layout(raw, *, active_tracks=('P',)):
     """Reject stale helpers selecting standard9 instead of the required target mode.
 
     Full typed command validation is performed by the helper. This independent
@@ -561,10 +781,12 @@ def validate_extended_layout(raw):
             raise ValueError('invalid tone offset')
         if raw[data_start + tracks[0]] != 0xe8:
             raise ValueError('missing initial E8')
-        for start in tracks[9:]:
+        for index, start in enumerate(tracks[9:], 1):
+            if 'PQRSTUVW'[index] in active_tracks:
+                continue
             end = min([len(raw) - data_start] + [t for t in offsets if t > start])
             if end - start < 2 or raw[data_start + start:data_start + start + 2] != b'\xf1\x00':
                 raise ValueError('active extra PCM track')
     except (ValueError, struct.error, IndexError) as error:
-        raise ValueError('PCM MDX requires 16 tracks, initial E8 and inactive Q-W; '
+        raise ValueError('PCM MDX requires 16 tracks, initial E8 and only declared active PCM tracks; '
                          'rebuild scripts/mdx_fixture_generator or update --pcm-generator') from error

@@ -52,6 +52,11 @@ def patterns():
            + stop_fm + wait(11025))
     loop_setup = setup + voice(0, end=1, looping=True)
     loop = loop_setup + wait(22049) + write(0, 2, 48) + wait(1)
+    bank = (setup + voice(0, left=96, right=0, end=1)
+            + voice(1, left=32, right=32, end=1) + wait(1764)
+            + write(0, 0x86, 1) + wait(1764) + write(1, 0x86, 1)
+            + wait(882) + voice(2, left=0, right=80, end=1)
+            + wait(8820) + stop_fm + wait(882))
     return {
         'SEGAONE': (one, None, dict(source_samples=66150, channels=1,
             expected_natural_stop_seconds=4096 * 32768 / (4000000 * 32),
@@ -60,6 +65,9 @@ def patterns():
             description='Overlapping left/right hardware loops; live volume and delta changes')),
         'SEGALOOP': (loop, len(loop_setup), dict(source_samples=22050, channels=1,
             description='Held SegaPCM across declared VGM loop; short final control interval')),
+        'SEGABANK': (bank, None, dict(source_samples=14112, channels=3,
+            expected_bank_samples=1, expected_playbacks=3, expected_pcm_tracks=2,
+            description='One finite ROM view reused with different gate lengths, gains and pans; overlapping P/Q playback')),
     }
 
 
