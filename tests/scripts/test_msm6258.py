@@ -146,6 +146,37 @@ class Msm6258Tests(unittest.TestCase):
         self.assertEqual(a.transfers[len(a.transfers)-2].chip_instance,1)
         self.assertEqual({i.code for i in a.issues},{'unsupported_chip_instance','unsupported_register'})
 
+    def test_pan_upper_bits_are_raw_evidence_not_invalid_audio_controls(self):
+        for value in (0x80,0x88,0x89,0x8a,0x8b):
+            with self.subTest(value=value):
+                raw=source(run(pan=value));a=analyze(raw)
+                self.assertFalse(a.issues)
+                self.assertEqual(a.playbacks[0].pan,value&3)
+                self.assertEqual(next(c.data for c in a.controls if c.register==2),value)
+                self.assertIn('pan_non_audio_bits',[o.code for o in a.observations])
+                self.assertEqual(a.source_raw,raw)
+
+    def test_register_17_is_observed_without_inventing_hardware_alias(self):
+        raw=source(run().replace(write(1,0x12),write(0x17,0x88)+write(1,0x12)))
+        a=analyze(raw)
+        self.assertFalse(a.issues)
+        self.assertEqual(a.samples[0].encoded_bytes,b'\x12\x34')
+        self.assertTrue(a.playbacks[0].independently_playable)
+        self.assertIn('unmapped_register_17',[o.code for o in a.observations])
+        self.assertEqual(next(c.data for c in a.controls if c.register==0x17),0x88)
+        self.assertEqual(a.playbacks[0].pan,0)
+        self.assertEqual(a.source_raw,raw)
+
+    def test_direct_known_stopped_supply_is_distinct_from_unknown_state(self):
+        raw=source(write(0,1)+write(1,0x56)+wait(2)+run())
+        a=analyze(raw)
+        self.assertFalse(a.issues)
+        self.assertIn('direct_supply_while_stopped',[o.code for o in a.observations])
+        self.assertEqual(a.samples[0].encoded_bytes,b'\x12\x34')
+        self.assertEqual([t.data for t in a.transfers if t.register==1],[0x56,0x12,0x34])
+        unknown=analyze(source(write(1,0x56)+wait(2)+run()),initialization='explicit')
+        self.assertIn('data_outside_known_playback',[i.code for i in unknown.issues])
+
     def test_blocks_and_stream_commands_retained_without_fake_playback(self):
         block=b'\x67\x66\x04'+struct.pack('<I',2)+b'\x12\x34'
         setup=b'\x90\x00\x17\x00\x01'
@@ -175,7 +206,10 @@ class Msm6258Tests(unittest.TestCase):
                 rows=list(csv.DictReader(stream))
             self.assertEqual(len(rows),len(a.transfers))
             self.assertEqual(rows[3]['address'],'265')
-            self.assertEqual(json.loads((folder/'short.pcm_source.json').read_text())['consumption_origin'],'unknown_not_emulated')
+            manifest=json.loads((folder/'short.pcm_source.json').read_text())
+            self.assertEqual(manifest['consumption_origin'],'unknown_not_emulated')
+            self.assertEqual(manifest['register_interpretation_profile'],'libvgm-msm6258-pan-low2-unmapped17')
+            self.assertEqual(manifest['register_reference_revision'],manifest['stream_reference_revision'])
 
 
 if __name__=='__main__':

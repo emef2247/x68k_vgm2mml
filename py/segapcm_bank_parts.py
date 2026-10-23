@@ -14,6 +14,7 @@ from msm6258 import PcmSample, TransferLog
 from opna_adpcm import encode_msm6258
 from pcm8_volume import project_pcm8_volume
 from pcm_profiles import get_profile
+from pcm_capacity import sample_byte_limit
 from segapcm_playback import _Rom, render
 
 
@@ -95,8 +96,9 @@ def _resample(values, source_rate, target_rate, count):
         yield round(a * (1 - fraction) + b * fraction)
 
 
-def project_parts(trace, native, *, source_raw, loop_start=None, loop_count=1, pcm_profile='standard'):
+def project_parts(trace, native, *, source_raw, loop_start=None, loop_count=1, pcm_profile='standard', pdx_format='ex-pdx'):
     from segapcm_bank import BankAnalysis, BankPlayback, BankUnsupported
+    maximum = sample_byte_limit(pdx_format)
     profile = get_profile(pcm_profile)
     collector = PartCollector()
     replay = render(trace, native.source_end_vgmticks, loop_start=loop_start, voice_sink=collector)
@@ -191,8 +193,8 @@ def project_parts(trace, native, *, source_raw, loop_start=None, loop_count=1, p
                 return data
         wanted = Fraction(frame_count) * profile.rate / native.sample_rate
         count = max(2, 2 * round(wanted / 2))
-        if count // 2 > 65535:
-            raise BankUnsupported('sample_length', 'A finite part exceeds 65535 encoded bytes', gate.gate_id)
+        if count // 2 > maximum:
+            raise BankUnsupported('sample_length', f'A finite part exceeds {maximum} encoded bytes for {pdx_format}', gate.gate_id)
         view_id = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
         if view_id not in views:
             decoded = array('h', _resample(waveform_values(), native.sample_rate, profile.rate, count))

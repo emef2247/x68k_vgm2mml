@@ -23,7 +23,7 @@ they must not be interpreted as supplies of the replacement representative.
 `.pcm_bank.source_validation.json` records this preflight separately from the
 final assessment. It is not final playback certification. Native IR remains
 available alongside the reducer's target mapping. If no existing asset is
-within the verified65535-byte sample scope, ordinary capacity handling remains;
+within the selected format's sample-byte limit, ordinary capacity handling remains;
 no cropped or invented asset is substituted merely to pass validation.
 
 ## Finite Delta-T samples
@@ -63,8 +63,10 @@ The CLI and results CSV report the selected PCM route and reduction statistics.
 
 The verified target is one96-slot PDX bank with a 1,200,000-byte file budget,
 including its table. Eight simultaneous PCM voices,
-65535-byte per-sample projection scope, MDX compiler limits and actual player
-memory remain separate constraints. A software mix cannot be demixed by this
+format-dependent per-sample limits, MDX compiler limits and actual player
+memory remain separate constraints. Standard PDX permits 65,535 bytes per
+sample; EX-PDX uses a 32-bit stored length, bounded here by the PCM8 24-bit
+length and the total-file budget. See [PDX length format](pcm_pdx.md#pdx-length-format). A software mix cannot be demixed by this
 bank layer. Private conversion/listening regression remains user validation.
 
 See [reduction policy](pcm_bank_reduction.md),

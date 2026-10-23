@@ -124,8 +124,8 @@ def build_target_trajectory(writes, *, end_tick, source_end_vgmticks):
                 and _integer(w.target_ch, 0, 7) and _integer(w.register, 0, 255)
                 and _integer(w.data, 0, 255)):
             raise ValueError('Invalid target register evidence or end bounds')
-        if w.source_chip not in ('psg', 'scc') or not _integer(
-                w.source_ch, 0, 2 if w.source_chip == 'psg' else 4):
+        if w.source_chip not in ('psg', 'scc', 'dcsg') or not _integer(
+                w.source_ch, 0, {'psg': 2, 'scc': 4, 'dcsg': 7}.get(w.source_chip, -1)):
             raise ValueError('Invalid projection source provenance')
         if w.source_row is not None and not _integer(w.source_row, 0):
             raise ValueError('Invalid projection source row')

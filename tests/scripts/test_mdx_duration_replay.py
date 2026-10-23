@@ -30,6 +30,7 @@ def old_timed(name, duration, held=False):
 class IdentitySamples:
     """The reference is already externally replayed at the target clock."""
     def __init__(self, analysis):
+        self.source_clock_hz = 4_000_000  # Both references are already target-clock replays.
         self.writes = controls(analysis)
         self.source_end_vgmticks = analysis.source_end_vgmticks
         self.end_projected_vgmticks = analysis.source_end_vgmticks

@@ -1,95 +1,100 @@
-# Active checkpoint: PDX byte budget enforced (2026-10-21)
+# Active checkpoint: PCM auto policy and optional verification VGM
 
-User requested 1,200,000-byte PDX cap including table and reuse under pressure.
-Implemented/saved; no Git stage/commit/push. User owns local_only regression.
+2026-10-23: requested changes saved in the working tree. No staging, commit or
+push. The user owns local_only conversion/listening; no private VGM was
+reconverted here. Existing staged and unrelated changes remain intact.
 
-## Current behavior
+## Latest normalization sweep
 
-- pcm_capacity.py centralizes 96slots,65535B/sample,768Btable,1200000Bfile.
-- Default budget96: quality sharing then deterministic representative coverage
-  within slots AND bytes. Onset repair remains byte-feasible. Reuse existing
-  payloads and retain event IDs/times/rates/pan; direct original->final gain/gate
-  diagnostics. Source IR unchanged. This does not bound candidate-generation
-  working memory/time; candidates are made before selection, before PDX packing.
-- Applies to eligible MSM6258,Delta-T,SegaPCM bank/mix. PSG has final guard but
-  no approximate sharing. Explicit similar/off reject overflow unless force
-  omits whole new samples; retained reuse costs0. Parallel omissions occupy
-  no voice. Source errors/reset/control eligibility remain blocking.
-- Final project and writer enforce budget; writer checks actual packed file
-  including padding and removes oversized output. Decoded5MB workspace excluded.
-- Console/results show planned before/after bytes and actual packed cap/fit.
-  Actual size remains unknown until current/owned binary evidence. MDX256KiB
-  player allocation, compiler/offset restrictions and runtime playback separate.
-- Compiler default remains mmlx (export API/CLI and roundtrip CLI), explicit mxc.
+User Nemesi95 sweep: normalization8/16/24/32/64ms, FM-state24 throughout.
+All settings24/25 success; same NEME9525 variable-rate PCM blocker.
+MDX totals (24 successful songs):275253/275081/275038/275205/279546bytes.
+64ms reduces encoded loop pairs2059->1889 and omits2414 whole FM gates
+versus1 at8ms. Five PCM-bearing PDX files have identical hashes across runs.
+User reports no perceived listening issue; defaults remain unchanged.
+Read-only aggregation, no private reconversion/code changes. See diagnostics
+nemesi95_normalization_sweep_20261023 and external note
+field_notes/2026-10-23_nemesi95_normalization_sweep.md.
 
-## Validation and artifacts
+## Latest user baseline (no normalization sweep)
 
-253 public/authored checks passed. Actual helper exact1200000 boundary accepted,
-+1 and post-packpaddingoverflow rejected. Authored20*65535B assets->18reps,
-20events0omits, sourcehashesunchanged:PDX1311468->1180398B, MDX877B+MML generated.
-Inspect outputs/diagnostics/pdx_byte_budget_20261021/inspection.json and CSVs.
-Canonical public opm_segapcm4/4 exported with defaultbudget96; result CSV has
-PDXbytecap/actualfit. No private conversion/regression/listening.
+Read-only results: Sion II 7/8 and Nemesi95 24/25 success (31/33 combined,
+previously19/33). SIONII06 confirms FM-state24ms / normalization8ms in pass JSON.
+SIONII06 retains one PCM sample/playback, PDX490861bytes within cap, but fails
+MDX track8 start offset >0xfffe. NEME9525 playback0 includes rate change during
+playback as well as irregular supply; current continuous-delivery fallback
+handles irregular supply alone. Native issues=[]; variable-rate target playback
+remains unimplemented. Do not simply whitelist the additional issue.
+No private reconversion/listening or code changes in this baseline review.
+See external field_notes/2026-10-23_sion_nemesi_default_baseline.md.
 
-Docs:pcm_pdx.md,pcm_bank_reduction.md,pcm_bank_shared_sources.md,opna_force.md.
-External note:field_notes/2026-10-21_pdx_byte_budget.md.
-Prior Fujix measurements:field_notes/2026-10-21_fujix_reference_banks_and_footprint.md;
-BR4tables/114assets718130B;GR1table/74assets475413B;41regular16trackMDXstatic scans.
-Those measurements are not native playback/peak-polyphony guarantees.
+## Current defaults
 
-## Completion / supplied user regression (2026-10-22)
+- `--pcm-policy auto`: actual DAC supplies (including mixed direct B7 supplies)
+  select best-effort; no actual DAC supply selects existing strict/direct
+  handling. Unused declarations/setup do not select best-effort. Explicit
+  strict/best-effort overrides remain. Non-DAC transcoding keeps prior strict
+  behavior unless best-effort is explicitly selected.
+- `export_mdx.py` and its API omit verification VGM by default. `--vgm` requests
+  replay; legacy `--no-vgm` remains accepted. MML/MDX/required PDX still generate.
+  Internal projected-source VGM evidence remains. API default is `no_vgm=True`.
+- Earlier defaults remain: FM-state24ms (1058 samples), normalization8ms,
+  stage timeout1200seconds, mmlx compiler, EX-PDX/optional standard PDX.
 
-Implementation and review complete; no material blocker. Before interruption:
-253focusedchecks passed, then8/8 byte checks including1additional case
-(254distinct). PublicSega4/4 and authoredcapacityfinal artifacts retained.
-No further broad tests or private conversion on resume.
-User logs:GFII10/10,ABII4/9,POWRDF6/9,GLOC15/17 exported.41measuredPDX allfit
-1200000B; GFII04 1362412->1174924B andGFII06 1281216->1156224B successful.
-Ten remaining failures are MDX track-start offset0xfffe overflow, not PDXsize.
-Existingstatus pcm_projection_blocked refers to typedMDXbuild; MML/PDXretained.
-Do not claim listening/nativeplayback success or silently add an MDXsize bypass.
-Externalrecord:field_notes/2026-10-22_pdx_byte_budget_user_regression.md.
-Ignoredaggregate:outputs/diagnostics/pdx_byte_budget_20261021/user_regression_20261022.json.
-Next: report completion/causes; await user direction on any MDXsize optimization.
+## Previous mixed-supply blockers and their correction
 
-## Latest read-only inquiry (2026-10-22)
+All14 new blockers had native issues=[] and only irregular_byte_supply on
+playback0. Prior pan-upper-bit and unmapped0x17 corrections were applied.
+All14 combine direct B7 and actual DAC supplies. The old continuous-PDX fallback
+required every byte to be stream-derived, excluding mixed origin. The fallback
+now shares eligibility across single/parallel PCM projection and size profiles:
+known reset/pan, nonempty captured sample, no other source/playback issues and
+consistent supply counts. Best-effort preserves bytes but loses supply timing;
+strict rejects this explicit loss. No source flag is rewritten to eligible.
 
-mmlx0.2.0 has no optimizer flag; soundlog LZ serialized-body support is not
-exposed by mmlx and cannot solve pre-layout track-offset overflow.256KiBplayer
-allocation remains distinct. No option enabled, no conversion behavior changed.
-User reports TBOUR01/02,POWRDF02/05/06,GFII04/06 ADPCM-buffer warnings.
-All7 currentoutputs standard/mix/P-only,mostly8s/~62500B chunks,PDX327972–1174924B.
-Five part_resource_limit bank fallbacks; TBOUR01/POWRDF02 sample_loop fallback.
-Published+diagnosticPDX equal. Actual user-loadedcopies/buffer setting unmeasured.
-Public MMDSPMACTRL LOAD_PDX returns PCM-bufferinsufficient if wholePDXtransfer
-fails;1200000NanoDrive8budget does not certify MMDSP/MADRV capacity. No invented
-256KB/320KB PCM default. Existing low/ultra_low reduce total but retain~62.5KB
-maxchunks by longer16/32s chunks. No private reconversion/tests/listening.
-Record:field_notes/2026-10-22_mmlx_size_and_pcm_buffer_comparison.md.
-No MDX optimizer, smaller playbackprofile or bankresource change implemented;
-these are possible next work, pending user direction.
+Source raw bytes, control times and prior cadence diagnostics remain intact.
+The target assessment records direct/stream counts and
+byte_supply_schedule_not_preserved. Sample length after reencoding/replacement
+is not required to equal original supplied byte count. Unknown reset/play
+state, missing banks, invalid codecs/rates and other source issues still block.
 
-User follow-up:from_Fujix/mslug confirmed DACstream0/type04 longADPCM,1–2blocks,
-~1.03–1.13MB total, observedSTOP/PLAY epochs. No MDX/PDX supplied in thatfolder.
-Useful continuity/reference, not proof of MMDSP on-demand disk streaming or
-lower wholePDX memory. Few longslots alone do not reduce storedsize. Details
-appended to latest inquiryFieldNote; no conversion/backend change.
+Auto selection is recorded in assessment policy_selection, result CSV fields,
+console and TXT reports. Effective policy is separate from requested policy.
+See docs/pcm_source_and_target.md and docs/pcm_pdx.md.
 
-Raizing reference recheck (read-only):BR PDX718130B/114assets/median5321B,
-GR475413B/74assets/median3514B; no asset>=60000B. BR_BBAR22refs/1248encodedNOTE,
-GR_B068refs/261encodedNOTE, no repeat expansion or acoustic-count claim.
-Direct sample-bank reference, unlike mslug VGM supplystream. Reference PDXs
-larger than warning332832/327972B outputs; total-byte-only runtime diagnosis
-remains unproven without same-environment playback evidence. Do not infer
-selective loading from per-song used-asset sums. No conversion/code changes.
-Record:field_notes/2026-10-22_raizing_reference_bank_reuse.md.
+## Verification
 
-## Next allowed action / remaining boundaries
+Authored mixed input: default auto -> best-effort, MDX/774-byte PDX, no VGM.
+Authored direct input: auto -> strict, MDX/896-byte PDX, no VGM.
+Authored DCSG with --vgm: successful verification VGM generated.
+Inspected native observations, source supply counts, target loss and policy
+selection. Artifacts/verification.json:
+outputs/diagnostics/msm6258_mixed_delivery_20261023/
+Read-only latest14 failure summary: existing_failure_summary.csv there.
+186 relevant automated tests passed; the count is stored in verification.json.
+Architect found no remaining material issue in scope (read-only review).
+Successful compilation does not establish listening/timing equivalence.
 
-User runs local_only regression and listening, then review reported size/reuse
-metrics. Prior budget96/common MSM6258/Delta-T bank work remains saved and tested.
-Do not raise slot count to claim multibank support, crop streams or invent
-independent decoder starts. No true multibank assembler/runtime support yet.
-Do not resume enhancer/PSG musical cutout audit, private regression or unrelated
-optimization unasked. Preserve prior unrelated work/Japanese document copies
-and external notes. Public working tree does not include external private notes.
+## Preserve preceding work / next scope
+
+Single/dual DCSG-to-OPM is implemented: six tones, one interval-allocated noise
+lane, explicit approximation/force omissions, native latch-preserving loop
+replay, shared MSX note/volume-run interpretation and ordinary OPM structure.
+See docs/dcsg_to_opm.md. KNIGHT listening mismatch remains unresolved; the latest
+user report supersedes the older no-perceived-difference impression. Sweep
+size/loop statistics are not fidelity evidence.
+
+96 slots and1200000-byte PDX cap remain. EX-PDX does not fix MDX16-bit offsets or
+whole-PDX memory. AFBII01/GFII04 bank resource/ROM/internal-loop work, compact run
+capture and true multibank/enhancer work remain unfinished. Terminal handling
+keeps ordered release writes and required KC/KF/TL restorations in repeat keys.
+
+After user regression: agreed MSX catch-up and concrete MGSDRV one-attack plus
+typed control-curve prototype; loops before SW-envelope sharing. Feed validated
+work back into x68k/MUCOM. Do not automatically prune source PSG/SCC curves at
+24ms or claim the FM threshold extracts PSG drum banks. No MUCOM/MSX changes
+were made in this task.
+
+External note (separate private repository, uncommitted):
+field_notes/2026-10-23_pcm_auto_and_mixed_supply.md
+Earlier source-profile, audit, sweep and DCSG notes remain there.

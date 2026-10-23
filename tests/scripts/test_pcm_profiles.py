@@ -98,7 +98,7 @@ class PcmProfileTests(unittest.TestCase):
             self.assertEqual(rows[0]['status'],'conversion_failed')
             command,kwargs=captured[0]
             self.assertEqual(command[command.index('--pcm-profile')+1],'ultra_low')
-            self.assertEqual(kwargs['timeout'],600)
+            self.assertEqual(kwargs['timeout'],1200)
 
     def test_ultra_low_quarter_payload_f0_and_original_evidence(self):
         native=msm();before=repr(native)
@@ -153,7 +153,7 @@ class PcmProfileTests(unittest.TestCase):
     def test_batch_parser_default_and_explicit_timeout(self):
         import contextlib,io
         import export_mdx
-        for extra,expected in (([],600),(['--timeout','17'],17)):
+        for extra,expected in (([],1200),(['--timeout','17'],17)):
             with patch.object(sys,'argv',['export_mdx.py','AUTH.vgm','--outdir','unused',
                          '--pcm-profile','ultra_low',*extra]),patch.object(export_mdx,'run_batch',return_value=[]) as run,contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(export_mdx.main(),0)

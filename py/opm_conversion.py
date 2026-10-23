@@ -30,23 +30,27 @@ def _record_pcm_assessment(assessment, outdir, stem, *, requires_pdx, retained=(
     assessment.dump(outdir, stem)
 
 
-def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='strict', normalization_validator=None, normalization_source_times=None, normalization_ms=8, pitch_policy='clamp', song_loop=True, replayed_song_loop=False, pcm_analysis_override=None, source_passes_outdir=None, segapcm_source=False, segapcm_pcm=False, force=False,pcm_profile='standard',segapcm_projection='auto',pcm_bank_merge='budget96'):
+def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='auto', normalization_validator=None, normalization_source_times=None, normalization_ms=8, fm_state_ms=24, pitch_policy='clamp', song_loop=True, replayed_song_loop=False, pcm_analysis_override=None, source_passes_outdir=None, segapcm_source=False, segapcm_pcm=False, force=False,pcm_profile='standard',segapcm_projection='auto',pcm_bank_merge='budget96',pdx_format='ex-pdx'):
     source, outdir = Path(source), Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     requested_normalization = normalize_lengths
     from conversion_config import normalization_samples
+    from fm_state_runs import fm_short_state_samples
+    short_state_threshold = fm_short_state_samples(fm_state_ms)
     configured_threshold = normalization_samples(normalization_ms)
     normalize_lengths = normalization_enabled(normalize_lengths, notation=notation)
     if pitch_policy not in ('clamp', 'error'):
         raise ValueError('OPM pitch policy must be clamp or error')
     from pcm_profiles import get_profile
     get_profile(pcm_profile)
-    if pcm_policy not in ('strict', 'best-effort'):
-        raise ValueError('PCM policy must be strict or best-effort')
+    if pcm_policy not in ('auto', 'strict', 'best-effort'):
+        raise ValueError('PCM policy must be auto, strict or best-effort')
     if segapcm_projection not in ('auto', 'bank', 'mix'):
         raise ValueError('SegaPCM projection must be auto, bank or mix')
     if pcm_bank_merge not in ('budget96', 'similar', 'off'):
         raise ValueError('PCM bank merge must be budget96, similar or off')
+    if pdx_format not in ('ex-pdx', 'standard'):
+        raise ValueError('PDX format must be ex-pdx or standard')
     owned_binary = generated_binary_artifacts(outdir, source.stem)
     retained_binary = tuple(path for name in ('mdx', 'pdx')
                             if (path := outdir / (source.stem + '.' + name)).is_file()
@@ -100,7 +104,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                                           strategy=segapcm_projection, outdir=outdir, stem=source.stem,
                                           source_raw=read_vgm_bytes(source),
                                           loop_start=sega_loop,
-                                          loop_count=source_loop.get('loop_count', 1),pcm_profile=pcm_profile)
+                                          loop_count=source_loop.get('loop_count', 1),pcm_profile=pcm_profile,pdx_format=pdx_format)
             pcm_analysis.dump(outdir, source.stem)
         if pcm_profile!='standard' and pcm_analysis.playbacks and pcm_analysis_override is None and not segapcm_pcm:
             from pcm_msm_profile import project as profile_msm
@@ -196,7 +200,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             from opm_mdx_music import build_music
             def preflight_pcm(selected, *, omitted=()):
                 plan = project(pcm_analysis, stem=source.stem,
-                               sample_multiplier=selected.sample_multiplier, policy=pcm_policy,
+                               sample_multiplier=selected.sample_multiplier, policy=pcm_policy, pdx_format=pdx_format,
                                force=force,
                                tick_mapper=selected.mdx_tick,
                                omit_playback_ids=omitted, normalization_ms=normalization_ms, song_loop_start=loop_start)
@@ -261,7 +265,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             from pcm_bank_target import prepare as prepare_bank_target
             try:
                 bank_input = prepare_bank_target(pcm_original, outdir=outdir, stem=source.stem,
-                    sample_multiplier=multiplier, tick_mapper=projection.mdx_tick, policy=pcm_policy,
+                    sample_multiplier=multiplier, tick_mapper=projection.mdx_tick, policy=pcm_policy, pdx_format=pdx_format,
                     omit_playback_ids=normalization.get('omitted_pcm_playback_ids', ()),
                     normalization_ms=normalization_ms, song_loop_start=loop_start)
             except ProjectionError as error:
@@ -274,11 +278,11 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             reduction = reduce_bank(bank_input, mode=pcm_bank_merge,
                 omit_playback_ids=normalization.get('omitted_pcm_playback_ids', ()),
                 normalization_ms=normalization_ms, tick_mapper=projection.mdx_tick,
-                sample_multiplier=multiplier)
+                sample_multiplier=multiplier, pdx_format=pdx_format)
             if reduction.summary['merged_playback_count']:
                 try:
                     baseline = project(pcm_original, stem=source.stem, sample_multiplier=multiplier,
-                        tick_mapper=projection.mdx_tick, policy=pcm_policy, force=force,
+                        tick_mapper=projection.mdx_tick, policy=pcm_policy, force=force, pdx_format=pdx_format,
                         omit_playback_ids=normalization.get('omitted_pcm_playback_ids', ()),
                         normalization_ms=normalization_ms, song_loop_start=loop_start)
                     baseline_playback_ids = {r['playback_id'] for r in baseline.rows}
@@ -296,13 +300,13 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             reduction.dump(outdir, source.stem)
         if force:
             from pcm_force_capacity import select_capacity
-            select_capacity(pcm_analysis,
+            select_capacity(pcm_analysis, pdx_format=pdx_format,
                             omit_playback_ids=normalization.get('omitted_pcm_playback_ids', ()),
                             normalization_ms=normalization_ms).dump(outdir, source.stem)
         try:
             candidate = project(pcm_analysis, stem=source.stem, sample_multiplier=multiplier,
                                 tick_mapper=projection.mdx_tick,
-                                policy=pcm_policy,
+                                policy=pcm_policy, pdx_format=pdx_format,
                                 force=force,
                                 omit_playback_ids=normalization.get('omitted_pcm_playback_ids', ()),
                                 normalization_ms=normalization_ms, song_loop_start=loop_start)
@@ -380,12 +384,30 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                        if pcm_plan else {})
         try:
             structure = build_structure(projection, analysis.segments, title=title or source.stem,
-                                        loops=loops, **pcm_options, **(song_options if notation == 'structured' else {}))
+                                        loops=loops, **pcm_options, **(dict(song_options, short_state_samples=short_state_threshold if normalize_lengths else 0) if notation == 'structured' else {}))
         except (OSError, ValueError) as error:
             if pcm_assessment is not None:
                 pcm_assessment.error(str(error))
                 record_pcm_assessment(pcm_assessment, requires_pdx=bool(pcm_plan))
             raise
+        if notation == 'structured':
+            rows=structure.short_state_rows
+            with (outdir/(source.stem+'.fm.short_states.csv')).open('w',newline='',encoding='utf-8') as stream:
+                fields=list(rows[0]) if rows else ['track','note_unit','action']
+                writer=csv.DictWriter(stream,fieldnames=fields);writer.writeheader()
+                for row in rows:
+                    writer.writerow(dict(row,source_event_ids=json.dumps(row['source_event_ids'])))
+            (outdir/(source.stem+'.fm.short_states.json')).write_text(json.dumps(dict(
+                enabled=bool(normalize_lengths),threshold_ms=float(fm_state_ms),
+                threshold_samples=short_state_threshold,
+                policy='shared_msx_short_state_selection',source_unchanged=True,
+                scope='pitch/uniform carrier level; ordered operations and release tail protected',
+                omitted_states=sum(r['action']=='omit_short_state' for r in rows),
+                omitted_duration_samples=sum(r['source_end_samples']-r['source_start_samples']
+                    for r in rows if r['action']=='omit_short_state'),
+                terminal_source_writes=sum(r['action']=='retain_terminal_write' for r in rows),
+                terminal_restoration_writes=sum(r['action']=='restore_terminal_state' for r in rows),
+                clock_normalization_ms=float(normalization_ms)),indent=2)+'\n',encoding='utf-8')
         text = structure.text
         if (dump_passes and normalization and normalization['status'] == 'applied'
                 and (not has_pcm or baseline_pcm_plan is not None)):

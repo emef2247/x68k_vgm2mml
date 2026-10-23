@@ -166,10 +166,14 @@ a separate approximation strategy.
 Although MML command volume may decrease, PDX size can increase in proportion
 to sounding duration.
 
-The existing validation limits remain in effect:
+The existing packaging limits remain in effect:
 
 - 96 sample slots
-- 65,535 bytes per sample
+- Current mixed-waveform chunks are bounded to 65,535 encoded bytes each,
+  independently of the selected PDX format. EX-PDX does not automatically
+  enlarge these implementation-defined chunks.
+- 1,200,000 bytes per PDX including the table. See
+  [PDX length format](pcm_pdx.md#pdx-length-format).
 
 The same PCM profile and capacity diagnostics are used.
 

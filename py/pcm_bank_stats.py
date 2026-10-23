@@ -21,6 +21,7 @@ RESULT_FIELDS = (
     'pcm_bank_budget_limit', 'pcm_bank_forced_samples', 'pcm_bank_forced_playbacks',
     'pcm_bank_pdx_byte_limit', 'pcm_bank_pdx_byte_budget_satisfied',
     'pcm_bank_budget_input_pdx_bytes', 'pcm_bank_budget_output_pdx_bytes',
+    'pcm_bank_pdx_format', 'pcm_bank_sample_byte_limit',
 )
 
 
@@ -90,6 +91,10 @@ def summarize(folder, stem, *, allow_binary=False):
                   merge_mode=None, merge_samples_before=None, merge_samples_after=None,
                   merge_bytes_before=None, merge_bytes_after=None, merged_playback_count=None,
                   recovered_playback_count=None)
+    timing_path = folder / f'{stem}.pcm.timing.json'
+    timing = json.loads(timing_path.read_text(encoding='utf-8')) if timing_path.is_file() else {}
+    result.update(pdx_format=timing.get('pcm_pdx_format'),
+                  sample_byte_limit=timing.get('pcm_sample_byte_limit'))
     merge_path = folder / f'{stem}.pcm_bank_merge.json'
     if merge_path.is_file():
         merge = json.loads(merge_path.read_text(encoding='utf-8'))
@@ -166,7 +171,7 @@ def result_columns(summary):
             'newly_omitted_playback_count', 'retained_playback_delta',
             'budget_limit', 'forced_sample_count', 'forced_playback_count',
             'pdx_byte_limit', 'pdx_byte_budget_satisfied',
-            'budget_input_pdx_bytes', 'budget_output_pdx_bytes')
+            'budget_input_pdx_bytes', 'budget_output_pdx_bytes', 'pdx_format', 'sample_byte_limit')
     return {field: (','.join(summary[key]) if key == 'tracks' and summary.get(key) is not None
                     else summary.get(key) if summary.get(key) is not None else '')
             for field, key in zip(RESULT_FIELDS, keys)}
@@ -187,6 +192,8 @@ def format_lines(summary):
              f"payload {number('retained_payload_bytes')} bytes; tracks "
              f"{','.join(summary['tracks']) if summary.get('tracks') is not None else 'unmeasured'}; "
              f"omitted playbacks {number('omitted_playback_count')}; PDX {number('pdx_bytes')} bytes (including table)"]
+    if summary.get('pdx_format') is not None:
+        lines.append(f"  PDX format: {summary['pdx_format']}; sample byte limit {number('sample_byte_limit')}")
     if summary.get('fallback_reason'):
         lines.append('  Mix fallback: ' + str(summary['fallback_reason']).replace('\n', ' '))
     if summary.get('merge_mode') is not None:

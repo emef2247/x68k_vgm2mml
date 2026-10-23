@@ -355,12 +355,12 @@ class CliRoutes(unittest.TestCase):
             source = root / 'jitter.vgm'
             jittered_source(source, tiny_control=True)
             for name, flags in [('auto', []), ('off', ['--no-normalize-lengths'])]:
-                run = self.run_cli(source, '--outdir', root / name, '--dump-passes', *flags)
+                run = self.run_cli(source, '--outdir', root / name, '--dump-passes', '--fm-state-ms', '1', '--normalization-ms', '0.023', *flags)
                 self.assertEqual(run.returncode, 0, run.stderr)
             report = json.loads((root / 'auto/jitter.mdx.normalization.json').read_text())
             self.assertTrue(report['enabled'])
             self.assertFalse(report['adopted'])
-            self.assertIn('collapse', report['reason'])
+            self.assertEqual(report['reason'], 'no bounded target clock')
             self.assertEqual(report['notation'], 'structured')
             self.assertEqual(report['before'], report['selected'])
             self.assertEqual((root / 'auto/jitter.mdx.mml').read_bytes(),

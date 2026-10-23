@@ -203,5 +203,10 @@ def force_console_lines(outdir, stem):
             summary = json.loads(registry.read_text(encoding='utf-8'))
             lines.extend(format_register_list(summary['skipped_registers']))
             lines.append('Register details: '+summary['registers_csv'])
+    dcsg = folder / (stem + '.dcsg_opm.json')
+    if dcsg.is_file():
+        from dcsg_opm import console_lines
+        lines.extend(console_lines(json.loads(dcsg.read_text(encoding='utf-8'))))
+        lines.append('DCSG details: ' + dcsg.name)
     lines.extend(capacity_lines(folder, stem))
     return lines

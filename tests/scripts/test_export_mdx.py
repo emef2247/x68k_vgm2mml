@@ -31,6 +31,8 @@ def successful_run(command, **kwargs):
         source = Path(command[2])
         output = Path(command[command.index('--outdir') + 1])
         (output / (source.stem + '.mdx.mml')).write_text('#title "export"\nA r4\n')
+    elif command[1] == '--compile-only':
+        Path(command[3]).write_bytes(b'MDX')
     elif command[1] == '--from-mdx':
         Path(command[3]).write_bytes(b'VGM')
     else:
@@ -40,6 +42,42 @@ def successful_run(command, **kwargs):
 
 
 class ExportMdxTests(unittest.TestCase):
+    def test_fm_state_threshold_is_independent_from_clock_tolerance(self):
+        for threshold in (1,8):
+            with self.subTest(fm_state_ms=threshold), tempfile.TemporaryDirectory() as temp:
+                source,out,generator=self.prepare(Path(temp),('a.vgm',))
+                with patch('export_mdx.subprocess.run',side_effect=successful_run) as run:
+                    run_batch(source,out,generator=generator,fm_state_ms=threshold, no_vgm=False)
+                command=run.call_args_list[0].args[0]
+                self.assertEqual(command[command.index('--fm-state-ms')+1],str(threshold))
+                self.assertEqual(command[command.index('--normalization-ms')+1],'8')
+
+    def test_default_state_and_timeout_reach_canonical_converter(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source,out,generator=self.prepare(Path(temp),('a.vgm',))
+            with patch('export_mdx.subprocess.run',side_effect=successful_run) as run:
+                run_batch(source,out,generator=generator)
+            call=run.call_args_list[0]
+            command=call.args[0]
+            self.assertEqual(command[command.index('--fm-state-ms')+1],'24')
+            self.assertEqual(command[command.index('--normalization-ms')+1],'8')
+            self.assertEqual(call.kwargs['timeout'],1200)
+            self.assertEqual(command[command.index('--pcm-policy')+1],'auto')
+            self.assertTrue(any(c.args[0][1]=='--compile-only' for c in run.call_args_list))
+            self.assertFalse(any(c.args[0][1]=='--from-mdx' for c in run.call_args_list))
+
+    def test_selected_pdx_format_reaches_conversion_and_results(self):
+        for fmt in ('ex-pdx', 'standard'):
+            with self.subTest(pdx_format=fmt), tempfile.TemporaryDirectory() as temp:
+                source, out, generator = self.prepare(Path(temp), ('a.vgm',))
+                options = {} if fmt == 'ex-pdx' else dict(pdx_format=fmt)
+                with patch('export_mdx.subprocess.run', side_effect=successful_run) as run:
+                    rows = run_batch(source, out, target='opm', generator=generator, **options, no_vgm=False)
+                command = run.call_args_list[0].args[0]
+                self.assertEqual(command[command.index('--pdx-format') + 1], fmt)
+                self.assertEqual(rows[0]['pdx_format'], fmt)
+                self.assertEqual(rows[0]['status'], 'success')
+
     def test_report_write_failure_does_not_change_successful_artifact_status(self):
         with tempfile.TemporaryDirectory() as tmp:
             source, out, generator = self.prepare(Path(tmp), ('a.vgm',))
@@ -77,6 +115,14 @@ class ExportMdxTests(unittest.TestCase):
                 self.assertIn('unavailable', inspect_export_commands('helper', mdx, census, 10))
             self.assertFalse(census.exists())
             self.assertEqual(mdx.read_bytes(), b'compiled score')
+
+    def test_vgm_replay_is_opt_in_and_legacy_negative_flag_remains(self):
+        for flags,expected in (([],True),(['--vgm'],False),(['--no-vgm'],True)):
+            with self.subTest(flags=flags), patch('sys.argv',
+                    ['export_mdx.py','input.vgm','--outdir','out',*flags]), \
+                    patch('export_mdx.run_batch',return_value=[]) as run:
+                self.assertEqual(main(),0)
+            self.assertEqual(run.call_args.kwargs['no_vgm'],expected)
 
     def test_no_vgm_cli_forwards_export_choice(self):
         args = ['export_mdx.py', 'input.vgm', '--outdir', 'out', '--no-vgm']
@@ -171,7 +217,7 @@ class ExportMdxTests(unittest.TestCase):
                 source, out, generator = self.prepare(Path(temporary), ('a.vgm',))
                 with patch('export_mdx.subprocess.run', side_effect=successful_run) as run:
                     row = run_batch(source, out, generator=generator, compiler='mmlx',
-                                    normalize_lengths=requested, normalization_ms=16)[0]
+                                    normalize_lengths=requested, normalization_ms=16, no_vgm=False)[0]
                 self.assertEqual(row['status'], 'success')
                 command = run.call_args_list[0].args[0]
                 self.assertEqual(command[command.index('--normalization-ms') + 1], '16')
@@ -200,7 +246,7 @@ class ExportMdxTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 0, '', '')
             with patch('export_mdx.subprocess.run', side_effect=run), \
                     patch('export_mdx.compile_mxc', side_effect=compile_score) as compile_call:
-                row = run_batch(source, out, generator=generator, compiler='mxc')[0]
+                row = run_batch(source, out, generator=generator, compiler='mxc', no_vgm=False)[0]
             self.assertEqual(row['status'], 'success')
             self.assertEqual(row['compiler'], 'mxc')
             self.assertEqual(row['compiler_input'], '_compiler_inputs/a.vgm.mxc.mml')
@@ -220,7 +266,7 @@ class ExportMdxTests(unittest.TestCase):
                 (folder / ('a' + suffix)).write_bytes(b'stale')
             with patch('export_mdx.subprocess.run', side_effect=successful_run) as calls, \
                     patch('export_mdx.compile_mxc', side_effect=ValueError('Missing --mxc tool')):
-                row = run_batch(source, out, generator=generator, compiler='mxc')[0]
+                row = run_batch(source, out, generator=generator, compiler='mxc', no_vgm=False)[0]
             self.assertEqual(row['status'], 'compilation_failed')
             self.assertTrue(row['mml'])
             self.assertFalse(row['mdx'] or row['vgm'])
@@ -239,7 +285,7 @@ class ExportMdxTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 1, '', 'replay failed')
             with patch('export_mdx.subprocess.run', side_effect=run), \
                     patch('export_mdx.compile_mxc', side_effect=compile_score):
-                row = run_batch(source, out, generator=generator, compiler='mxc')[0]
+                row = run_batch(source, out, generator=generator, compiler='mxc', no_vgm=False)[0]
             self.assertEqual(row['status'], 'replay_failed')
             self.assertTrue(row['mdx'])
             self.assertFalse(row['vgm'])
@@ -250,7 +296,7 @@ class ExportMdxTests(unittest.TestCase):
             error = subprocess.TimeoutExpired(['run68'], 17, output=b'partial compiler output')
             with patch('export_mdx.subprocess.run', side_effect=successful_run) as calls, \
                     patch('export_mdx.compile_mxc', side_effect=error):
-                row = run_batch(source, out, generator=generator, compiler='mxc', timeout=17)[0]
+                row = run_batch(source, out, generator=generator, compiler='mxc', timeout=17, no_vgm=False)[0]
             self.assertEqual(row['status'], 'compilation_timeout')
             self.assertIn('partial compiler output', (out / row['error_log']).read_text())
             self.assertEqual(calls.call_count, 1)
@@ -275,7 +321,7 @@ class ExportMdxTests(unittest.TestCase):
             with patch('export_mdx.subprocess.run', side_effect=successful_run) as run:
                 rows = run_batch(source, out, target='opm', generator=generator, compiler="mmlx",
                                  psg_model='fm', psg_gain=.5, scc_gain=.25,
-                                 opm_pitch_policy='clamp')
+                                 opm_pitch_policy='clamp', no_vgm=False)
             self.assertEqual([r['status'] for r in rows], ['success', 'success'])
             self.assertEqual(run.call_count, 4)
             self.assertTrue(all(row['compiler_input'] == row['mml'] for row in rows))
@@ -309,7 +355,7 @@ class ExportMdxTests(unittest.TestCase):
                     return subprocess.CompletedProcess(command, 2, '', 'noise unsupported')
                 return successful_run(command, **kwargs)
             with patch('export_mdx.subprocess.run', side_effect=run):
-                rows = run_batch(source, out, target='opm', generator=generator, compiler="mmlx")
+                rows = run_batch(source, out, target='opm', generator=generator, compiler="mmlx", no_vgm=False)
             self.assertEqual([r['status'] for r in rows], ['conversion_failed', 'success'])
             self.assertEqual(sorted(p.name for p in folder.iterdir()), ['a.report.txt', 'keep.txt'])
             self.assertIn('noise unsupported', (out / rows[0]['error_log']).read_text())
@@ -327,7 +373,7 @@ class ExportMdxTests(unittest.TestCase):
                     (folder / 'pcm.mdx').write_bytes(b'typed PCM MDX')
                 return result
             with patch('export_mdx.subprocess.run', side_effect=run) as calls:
-                rows = run_batch(source, out, generator=generator, compiler="mmlx")
+                rows = run_batch(source, out, generator=generator, compiler="mmlx", no_vgm=False)
             self.assertEqual([row['status'] for row in rows], ['success', 'success'])
             self.assertEqual(rows[0]['pdx'], '')
             self.assertTrue(rows[1]['pdx'].endswith('pcm.pdx'))
@@ -356,7 +402,7 @@ class ExportMdxTests(unittest.TestCase):
                 return subprocess.CompletedProcess(command, 1, '',
                                                    'PCM replay unavailable: pinned helper limitation')
             with patch('export_mdx.subprocess.run', side_effect=run):
-                row = run_batch(source, out, generator=generator)[0]
+                row = run_batch(source, out, generator=generator, no_vgm=False)[0]
             self.assertEqual(row['status'], 'pcm_replay_unavailable')
             self.assertTrue(row['mml'] and row['mdx'] and row['pdx'])
             self.assertEqual(row['vgm'], '')
@@ -379,7 +425,7 @@ class ExportMdxTests(unittest.TestCase):
                 self.assertEqual(Path(command[2]).read_bytes(), b'typed PCM MDX')
                 return subprocess.CompletedProcess(command, 1, '', 'PCM replay unavailable: guarded')
             with patch('export_mdx.subprocess.run', side_effect=run) as calls:
-                row = run_batch(source, out, generator=generator, pcm_policy='best-effort')[0]
+                row = run_batch(source, out, generator=generator, pcm_policy='best-effort', no_vgm=False)[0]
             self.assertEqual(calls.call_args_list[0].args[0][-2:], ['--pcm-policy', 'best-effort'])
             self.assertEqual(row['status'], 'pcm_replay_unavailable')
             self.assertEqual(row['pcm_projection_status'], 'lossy')
@@ -399,7 +445,7 @@ class ExportMdxTests(unittest.TestCase):
                     validation_run='not_run', artifact_status='blocked', known_losses=[{}])))
                 return subprocess.CompletedProcess(command, 2, '', 'known held-pan loss')
             with patch('export_mdx.subprocess.run', side_effect=run) as calls:
-                row = run_batch(source, out, generator=generator)[0]
+                row = run_batch(source, out, generator=generator, no_vgm=False)[0]
             self.assertEqual(calls.call_count, 1)
             self.assertEqual(row['status'], 'pcm_projection_blocked')
             self.assertEqual(row['pcm_projection_status'], 'lossy')
@@ -407,6 +453,23 @@ class ExportMdxTests(unittest.TestCase):
             self.assertEqual(row['pcm_known_losses'], 1)
             self.assertTrue(row['pcm_assessment'])
             self.assertFalse(row['mdx'] or row['pdx'])
+
+    def test_mdx_capacity_is_not_reported_as_pcm_source_block(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source, out, generator = self.prepare(Path(tmp), ('pcm.vgm',))
+            def run(command, **kwargs):
+                folder = Path(command[command.index('--outdir') + 1])
+                (folder / 'pcm.pcm.assessment.json').write_text(json.dumps(dict(
+                    policy='best-effort', assessment_status='lossy', validation_status='unverified',
+                    validation_run='not_run', artifact_status='blocked', known_losses=[],
+                    items=[dict(code='mdx_capacity_exceeded')], block_reasons=['MDX capacity exceeded'])))
+                return subprocess.CompletedProcess(command, 2, '', 'authored capacity failure')
+            with patch('export_mdx.subprocess.run', side_effect=run) as calls:
+                row = run_batch(source, out, generator=generator, no_vgm=False)[0]
+            self.assertEqual(calls.call_count, 1)
+            self.assertEqual(row['status'], 'compilation_failed')
+            self.assertEqual(row['pcm_projection_status'], 'lossy')
+            self.assertIn('authored capacity failure', row['detail'])
 
     def test_failed_generation_retains_current_mml_and_partial_mdx(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -417,7 +480,7 @@ class ExportMdxTests(unittest.TestCase):
                     return subprocess.CompletedProcess(command, 1, '', 'playback failed')
                 return successful_run(command, **kwargs)
             with patch('export_mdx.subprocess.run', side_effect=run):
-                rows = run_batch(source, out, generator=generator, compiler="mmlx", max_ticks=2000000)
+                rows = run_batch(source, out, generator=generator, compiler="mmlx", max_ticks=2000000, no_vgm=False)
             self.assertEqual([r['status'] for r in rows], ['generation_failed', 'success'])
             self.assertTrue(rows[0]['mml'])
             self.assertTrue(rows[0]['mdx'])
@@ -436,7 +499,7 @@ class ExportMdxTests(unittest.TestCase):
                                                         stderr=b'partial stderr')
                     return successful_run(command, **kwargs)
                 with patch('export_mdx.subprocess.run', side_effect=run):
-                    rows = run_batch(source, out, generator=generator, compiler="mmlx", timeout=17)
+                    rows = run_batch(source, out, generator=generator, compiler="mmlx", timeout=17, no_vgm=False)
                 self.assertEqual([r['status'] for r in rows], [stage + '_timeout', 'success'])
                 log = (out / rows[0]['error_log']).read_text()
                 self.assertIn('partial stdout', log)
@@ -452,7 +515,7 @@ class ExportMdxTests(unittest.TestCase):
                         return subprocess.CompletedProcess(command, 0, '', '')
                     return successful_run(command, **kwargs)
                 with patch('export_mdx.subprocess.run', side_effect=run):
-                    row = run_batch(source, out, generator=generator, compiler="mmlx")[0]
+                    row = run_batch(source, out, generator=generator, compiler="mmlx", no_vgm=False)[0]
                 self.assertEqual(row['status'], stage + '_failed')
 
     def test_setup_errors_do_not_launch_conversion(self):
@@ -463,12 +526,12 @@ class ExportMdxTests(unittest.TestCase):
             with patch('export_mdx.subprocess.run') as run:
                 for src, dest in cases:
                     with self.subTest(src=src, dest=dest), self.assertRaises(ValueError):
-                        run_batch(src, dest, generator=generator, compiler="mmlx")
+                        run_batch(src, dest, generator=generator, compiler="mmlx", no_vgm=False)
                 with self.assertRaisesRegex(ValueError, 'Build'):
-                    run_batch(source, out, generator=Path(tmp) / 'missing')
+                    run_batch(source, out, generator=Path(tmp) / 'missing', no_vgm=False)
                 for value in (0, -1, 0x100000000):
                     with self.assertRaises(ValueError):
-                        run_batch(source, out, generator=generator, compiler="mmlx", max_ticks=value)
+                        run_batch(source, out, generator=generator, compiler="mmlx", max_ticks=value, no_vgm=False)
                 run.assert_not_called()
             self.assertFalse(out.exists())
 
@@ -494,7 +557,7 @@ class ExportMdxTests(unittest.TestCase):
                 self.skipTest(f'Symlink creation unavailable: {error}')
             with patch('export_mdx.subprocess.run') as run:
                 with self.assertRaisesRegex(ValueError, 'leaves'):
-                    run_batch(source, out, generator=generator, compiler="mmlx")
+                    run_batch(source, out, generator=generator, compiler="mmlx", no_vgm=False)
                 run.assert_not_called()
             self.assertEqual(outside.read_text(), 'keep unchanged')
             self.assertFalse((out / 'tracks').exists())
@@ -513,7 +576,7 @@ class ExportMdxTests(unittest.TestCase):
                 self.skipTest(f'Symlink creation unavailable: {error}')
             with patch('export_mdx.subprocess.run') as run:
                 with self.assertRaisesRegex(ValueError, 'leaves'):
-                    run_batch(source, out, generator=generator)
+                    run_batch(source, out, generator=generator, no_vgm=False)
                 run.assert_not_called()
             self.assertEqual(outside.read_text(), 'keep unchanged')
 

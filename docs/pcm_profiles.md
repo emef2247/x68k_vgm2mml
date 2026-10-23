@@ -45,7 +45,10 @@ The goal is to reduce total bank capacity usage / sample count, not the maximum 
 Independent Delta-T / native MSM use a separate route from this chunking process;
 even after rate reduction, samples exceeding the validated sample-capacity range remain subject to rejection / force omission.
 There is no guarantee that the result fits a player's PCM buffer limit or memory layout.
-The PDX limits of 96 slots and the currently validated range of 65535 bytes/sample are unchanged.
+The PDX limits remain 96 slots and 1,200,000 bytes including the table. The
+per-sample limit follows the selected format: 65,535 bytes for standard PDX,
+or the PCM8 24-bit length for EX-PDX, further bounded by the total-file budget.
+See [PDX length format](pcm_pdx.md#pdx-length-format).
 
 High-frequency content in the original PCM is lost. Existing linear interpolation has no dedicated
 anti-aliasing filter, so aliasing is also possible. ADPCM re-encoding errors, 10-bit output,
@@ -74,7 +77,7 @@ mucom88's native OPNA ADPCM-B follows a separate route preserving original bytes
 
 ## Batch conversion waiting time
 
-The default timeout in `scripts/export_mdx.py` is 600 seconds per input, per stage.
+The default timeout in `scripts/export_mdx.py` is 1200 seconds per input, per stage.
 An explicit `--timeout` takes precedence. This value does not specify a playback-duration or PCM-capacity limit.
 Rate reduction does not reduce the amount of native waveform analysis itself,
 so processing time is not guaranteed to fall to one quarter.

@@ -17,6 +17,7 @@ from mdx_compaction import compact
 from mdx_format import wrap_track
 from musical_structure import source_plan
 from mdx_duration import duration_spelling, timed
+from opm_performed_runs import HeldRun, coalesce
 
 # Register-bank order M1,M2,C1,C2 (not Key register bit order).
 CARRIERS = (8, 8, 8, 8, 12, 14, 14, 15)
@@ -114,9 +115,12 @@ class MusicUnit:
     target_note: str = ''
     fallback_reason: str = ''
     unlooped_command: str = ''
+    performed_key: tuple | None = None
 
     @property
     def key(self):
+        if self.performed_key is not None:
+            return self.kind, self.end_tick-self.start_tick, self.performed_key
         trajectory = self.trajectory
         if self.kind == 'note':
             onset = next((i for i, (_,reg,data,_) in enumerate(trajectory)
@@ -138,6 +142,8 @@ class MusicalMdx:
     uncompacted_text: str
     compaction: tuple
     inner_reports: tuple = ()
+    run_rows: tuple = ()
+    short_state_rows: tuple = ()
 
     def summary(self):
         flat = [u for units in self.units.values() for u in units]
@@ -147,7 +153,11 @@ class MusicalMdx:
             for ch in line:
                 if ch=='[': depth+=1; maximum=max(maximum,depth)
                 elif ch==']': depth-=1
-        return dict(notation='structured', song_loop_tracks=sum(u.kind=='song_loop' for u in flat),
+        return dict(notation='structured',
+                    fm_short_state_omissions=sum(r['action']=='omit_short_state' for r in self.short_state_rows),
+                    performed_run_count=len(self.run_rows),
+                    merged_performed_run_count=sum(r['action']=='merge_equal_state' for r in self.run_rows),
+                    song_loop_tracks=sum(u.kind=='song_loop' for u in flat),
                     musical_note_units=sum(u.kind=='note' for u in flat),
                     note_units=sum(u.kind=='note' for u in flat),
                     raw_units=sum(bool(u.fallback_reason) for u in flat), voices=len(self.voices),
@@ -171,11 +181,23 @@ class MusicalMdx:
         with Path(str(prefix)+'.inner_loops.csv').open('w',newline='',encoding='utf-8') as stream:
             fields=list(self.inner_reports[0]) if self.inner_reports else ['track','note_unit','status']
             writer=csv.DictWriter(stream,fieldnames=fields);writer.writeheader();writer.writerows(self.inner_reports)
+        with Path(str(prefix)+'.performed_runs.csv').open('w',newline='',encoding='utf-8') as stream:
+            fields=list(self.run_rows[0]) if self.run_rows else ['track','note_unit','action']
+            writer=csv.DictWriter(stream,fieldnames=fields);writer.writeheader()
+            for row in self.run_rows:
+                writer.writerow(dict(row,source_event_ids=json.dumps(row['source_event_ids']),
+                    actions=json.dumps(row['actions']),state=json.dumps(asdict(row['state']),separators=(',',':'))))
+        with Path(str(prefix)+'.short_states.csv').open('w',newline='',encoding='utf-8') as stream:
+            fields=list(self.short_state_rows[0]) if self.short_state_rows else ['track','note_unit','action']
+            writer=csv.DictWriter(stream,fieldnames=fields);writer.writeheader()
+            for row in self.short_state_rows:
+                writer.writerow(dict(row,source_event_ids=json.dumps(row['source_event_ids'])))
         rows,annotation=[],{}
         for track,units in self.units.items():
             for index,u in enumerate(units):
                 row=asdict(u)
                 row.pop('trajectory')
+                row['performed_key']=json.dumps(row.get('performed_key'),separators=(',',':'))
                 row['unit_id']=f'{track}:{index}'
                 row['loop_path']=[dict(r) for r in self.reports[track] if r['unit_start']<=index<r['unit_end']]
                 row['trajectory']=json.dumps([(offset,reg,data,asdict(state)) for offset,reg,data,state in u.trajectory],separators=(',',':'))
@@ -212,7 +234,7 @@ class MusicalMdx:
 
 def build_music(projection, segments, *, title='OPM music', loops=True,
                 additional_tracks=None, additional_headers=(),
-                song_loop_start=None, song_loop_event_id=None):
+                song_loop_start=None, song_loop_event_id=None, short_state_samples=0):
     from opm_pitch_projection import target_segments
     loop_tick = (projection.mdx_tick(song_loop_start)
                  if song_loop_start is not None else None)
@@ -227,6 +249,8 @@ def build_music(projection, segments, *, title='OPM music', loops=True,
     for w in projection.writes: tracks.setdefault(w.mdx_track,[]).append(w)
     voices,unit_tracks={},{}
     inner_reports=[]
+    run_rows=[]
+    short_state_rows=[]
     inner_cache={}
     for track,writes in sorted(tracks.items()):
         ch=ord(track)-65
@@ -240,7 +264,7 @@ def build_music(projection, segments, *, title='OPM music', loops=True,
         def state(write):
             return by_event[write.source_event_id].get(ch)
         def make(members,start,end,kind,command,voice=None,pitch='',reason='',
-                 source_start=None,source_end=None,unlooped=None):
+                 source_start=None,source_end=None,unlooped=None,performed_key=None):
             if source_start is None:
                 source_start=members[0].source_vgmticks if members else source_cursor
             if source_end is None:
@@ -250,7 +274,7 @@ def build_music(projection, segments, *, title='OPM music', loops=True,
             return MusicUnit(track,start,end,source_start,source_end,kind,command,
                 tuple(w.source_event_id for w in members),
                 tuple(sid for w in members for sid in w.source_segment_ids),trajectory,voice,pitch,reason,
-                command if unlooped is None else unlooped)
+                command if unlooped is None else unlooped,performed_key)
         def marker():
             nonlocal cursor, source_cursor, marker_emitted
             if cursor < loop_tick:
@@ -310,28 +334,50 @@ def build_music(projection, segments, *, title='OPM music', loops=True,
                     reason='unencodable_pitch_transition'
                 elif tone[0] not in voices and len(voices)>=256:
                     reason='voice_bank_full'
+                short_runs=None;terminal_writes=()
+                if short_state_samples and reason in ('','same_tick_post_key_setup'):
+                    from opm_short_states import prepare
+                    short_plan,decisions=prepare(writes,onset,off,state,projection.mdx_tick,
+                                                threshold=short_state_samples)
+                    short_runs=short_plan.runs if short_plan else None
+                    if short_runs:
+                        supported=all(note_spelling(r.state) is not None and r.state.noise_enabled!=1
+                                      for r in short_runs)
+                        supported &= tone[0] in voices or len(voices)<256
+                        if supported:
+                            reason='';terminal_writes=short_plan.terminal_writes
+                        else:
+                            short_runs=None;terminal_writes=()
+                            decisions=tuple(dict(row,action='not_applied',reason='unsupported_target_state')
+                                if row['action']=='omit_short_state' else row for row in decisions)
+                    short_state_rows.extend(dict(row,track=track,note_unit=len(units)) for row in decisions)
                 if not reason:
+                    initial=short_runs[0].state if short_runs else s.state
+                    tone=tone_and_level(initial)
+                    spelling=note_spelling(initial)
                     base,attenuation=tone
                     vid=voices.setdefault(base,len(voices))
                     octv,name,detune=spelling
                     pan=dict(s.state.channel_registers)[0x20+ch]>>6
                     body=[f'y{w.register},{w.data}' for w in writes[i:onset]
                           if not (w.register==0x20+ch or w.register in (0x28+ch,0x30+ch) or w.register>=0x40)]
+                    entry_actions=tuple((w.register,w.data) for w in writes[i:onset]
+                        if not (w.register==0x20+ch or w.register in (0x28+ch,0x30+ch) or w.register>=0x40))
                     body.append(f'@{vid} @v{127-attenuation} p{pan} q8 D{detune} o{octv}')
                     position=onset+1;start=cursor;current=s.state
-                    slices=[];keys=[];pending=[];effects=[]
-                    while start<writes[off].mdx_tick:
+                    runs=[];pending=[];actions=[];run_ids=[first.source_event_id]
+                    current_level=attenuation
+                    while short_runs is None and start<writes[off].mdx_tick:
                         stop=position
                         next_time=writes[position].mdx_tick if position<off else writes[off].mdx_tick
                         if next_time>start:
-                            o,n,d=note_spelling(current)
-                            slices.append(' '.join(pending+[f'D{d} o{o}',timed(n,next_time-start,held=next_time<writes[off].mdx_tick)]))
-                            keys.append((next_time-start,current,tuple(effects)))
-                            pending=[];effects=[]
+                            runs.append(HeldRun(start,next_time,current,tuple(pending),tuple(actions),tuple(run_ids)))
+                            pending=[];actions=[];run_ids=[]
                             start=next_time
                         if position>=off: break
                         while stop<off and writes[stop].mdx_tick==start: stop+=1
                         group=writes[position:stop]
+                        run_ids.extend(w.source_event_id for w in group)
                         updated=next((state(w).state for w in reversed(group) if state(w) is not None),current)
                         level=level_for_tone(updated,base)
                         # A uniform carrier attenuation is a channel volume,
@@ -341,24 +387,47 @@ def build_music(projection, segments, *, title='OPM music', loops=True,
                             if w.register in (0x28+ch,0x30+ch) and start<writes[off].mdx_tick: continue
                             if tl_group and level is not None and 0x60<=w.register<0x80: continue
                             pending.append(f'y{w.register},{w.data}')
-                            if w.register in (1,0x14): effects.append((w.register,w.data))
-                        if tl_group and level is not None: pending.append(f'@v{127-level}')
+                            actions.append(('register',w.register,w.data))
+                            current_level=None  # Raw writes invalidate target setter reuse.
+                        if tl_group and level is not None and level != current_level:
+                            pending.append(f'@v{127-level}')
+                            actions.append(('volume',level))
+                        if tl_group:
+                            current_level=level
                         current=updated;position=stop
                     # Controls exactly at the release boundary have no held
                     # duration but still define the released chip state.
                     # Retain them explicitly after the note's automatic off.
-                    keys=tuple(keys)
+                    if short_runs is not None:
+                        runs=list(short_runs);position=off;pending=[];actions=[]
+                    merged,membership=coalesce(runs)
+                    slices=[]
+                    for run in merged:
+                        o,n,d=note_spelling(run.state)
+                        slices.append(' '.join(list(run.commands)+[f'D{d} o{o}',
+                            timed(n,run.end_tick-run.start_tick,held=run.end_tick<writes[off].mdx_tick)]))
+                    for ordinal,(run,(target_index,joined)) in enumerate(zip(runs,membership)):
+                        target=merged[target_index]
+                        run_rows.append(dict(track=track,note_unit=len(units),run_index=ordinal,
+                            target_run_index=target_index,action='merge_equal_state' if joined else 'retain',
+                            source_start_tick=run.start_tick,source_end_tick=run.end_tick,
+                            target_start_tick=target.start_tick,target_end_tick=target.end_tick,
+                            source_event_ids=run.source_event_ids,actions=run.actions,state=run.state))
+                    keys=tuple(run.key for run in merged)
                     if keys not in inner_cache:
                         inner_cache[keys]=source_plan(keys)
                     folded,child_report=inner_cache[keys].render(slices) if loops else (' '.join(slices),[])
                     inner_reports.extend(dict(r,track=track,note_unit=len(units)) for r in child_report)
-                    release=[f'y{w.register},{w.data}' for w in writes[position:off]]
+                    release_controls=tuple((w.register,w.data) for w in writes[position:off])+terminal_writes
+                    release=[f'y{reg},{value}' for reg,value in release_controls]
                     unlooped=' '.join(body+[' '.join(slices)]+pending+release)
                     body.append(folded)
                     body.extend(pending)
                     body.extend(release)
                     units.append(make(writes[i:off+1],cursor,writes[off].mdx_tick,'note',' '.join(body),vid,f'o{octv}{name}',
-                                      unlooped=unlooped))
+                                      unlooped=unlooped,performed_key=(initial,entry_actions,keys,
+                                          tuple(actions),release_controls,
+                                          terminal.state)))
                     cursor=writes[off].mdx_tick;source_cursor=writes[off].source_vgmticks;i=off+1
                     continue
             # Released/setup controls and unsupported edges remain explicit.
@@ -412,7 +481,7 @@ def build_music(projection, segments, *, title='OPM music', loops=True,
             raise ValueError('Additional MDX tracks overlap the native OPM tracks')
         unit_tracks.update(additional_tracks)
     return render_music_tracks(unit_tracks,tuple(voices),title=title,
-        sample_multiplier=projection.sample_multiplier,loops=loops,inner_reports=inner_reports,
+        sample_multiplier=projection.sample_multiplier,loops=loops,inner_reports=inner_reports,run_rows=run_rows,short_state_rows=short_state_rows,
         additional_headers=additional_headers,
         comments=(('; Musical OPM/PCM notes and source-linked control trajectories.' if additional_tracks
                    else '; Musical OPM notes and source-linked control trajectories.'),
@@ -420,7 +489,7 @@ def build_music(projection, segments, *, title='OPM music', loops=True,
 
 
 def render_music_tracks(unit_tracks, voices, *, title, sample_multiplier=1,
-                        loops=True, inner_reports=(), comments=None, additional_headers=()):
+                        loops=True, inner_reports=(), run_rows=(), short_state_rows=(), comments=None, additional_headers=()):
     """Assemble track units with exact loops and shared MDX compaction.
 
     Units supply command, unlooped_command and key; their source evidence
@@ -446,4 +515,4 @@ def render_music_tracks(unit_tracks, voices, *, title, sample_multiplier=1,
         plain+=wrap_track(track,' '.join(u.unlooped_command for u in units))
         uncompacted+=wrap_track(track,text);structured+=wrap_track(track,result)
     return MusicalMdx(unit_tracks,tuple(voices),plans,reports,'\n'.join(structured)+'\n',
-                      '\n'.join(plain)+'\n','\n'.join(uncompacted)+'\n',tuple(decisions),tuple(inner_reports))
+                      '\n'.join(plain)+'\n','\n'.join(uncompacted)+'\n',tuple(decisions),tuple(inner_reports),tuple(run_rows),tuple(short_state_rows))

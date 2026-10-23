@@ -124,7 +124,9 @@ def build_parser():
     timing.add_argument('--normalize-lengths', action=argparse.BooleanOptionalAction, default=None,
                         help='Attempt safe target-clock correction (default: ON for structured MDX; MGS opt-in)')
     timing.add_argument('--normalization-ms', type=float, default=8,
-                        help='MDX original whole-note omission threshold and maximum boundary movement in ms (default: 8; only with normalization enabled)')
+                        help='MDX whole-note omission threshold and maximum boundary movement in ms (default: 8; only with normalization enabled)')
+    timing.add_argument('--fm-state-ms', type=float, default=24,
+                        help='Eligible intra-note FM-state omission threshold in ms (default: 24; independent of --normalization-ms)')
     advanced = parser.add_argument_group('Advanced MDX notation and chip projection')
     advanced.add_argument('--notation', choices=['structured', 'legacy', 'registers'], default='structured',
                         help='Native MDX notation (default: structured)')
@@ -146,8 +148,10 @@ def build_parser():
     fidelity = parser.add_argument_group('Target fidelity policies')
     fidelity.add_argument('--opm-pitch-policy', choices=['clamp', 'error'], default=None,
                         help='OPM pitch range policy: default native/FM=clamp, additive=error')
-    fidelity.add_argument('--pcm-policy', choices=['strict', 'best-effort'],
-                        help='Native PCM target policy: strict (default) blocks known loss; best-effort reports defined loss')
+    fidelity.add_argument('--pcm-policy', choices=['auto', 'strict', 'best-effort'],
+                        help='PCM policy: auto (default) selects best-effort for observed DAC supplies, otherwise native strict; explicit policies override')
+    fidelity.add_argument('--pdx-format', choices=('ex-pdx', 'standard'), default='ex-pdx',
+                        help='PDX length format: ex-pdx (default, 32-bit sample lengths) or standard (16-bit)')
     fidelity.add_argument('--pcm-profile',choices=('standard','low','ultra_low'),default='standard',
                         help='PCM target size/quality profile; low/ultra_low cap derived playback rate near7.8/3.9kHz')
     fidelity.add_argument('--segapcm-projection', choices=('auto', 'bank', 'mix'), default='auto',
@@ -202,6 +206,8 @@ def main():
     try:
         from conversion_config import normalization_samples
         normalization_samples(args.normalization_ms)
+        from fm_state_runs import fm_short_state_samples
+        fm_short_state_samples(args.fm_state_ms)
         normalize = normalization_enabled(args.normalize_lengths, notation=args.notation, target=args.target)
     except ValueError as error:
         parser.error(str(error))
@@ -258,7 +264,7 @@ def main():
         parser.error('Conversion report leaves its output directory')
     report = dict(target_format=args.target, compatibility_target=compatibility_target,
                   notation=args.notation, normalization_requested=args.normalize_lengths,
-                  normalization_enabled=normalize, normalization_ms=args.normalization_ms, status='preflight')
+                  normalization_enabled=normalize, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms, status='preflight')
     def record_report():
         with open(report_path, 'w', encoding='utf-8') as stream:
             json.dump(report, stream, indent=2)
@@ -270,7 +276,7 @@ def main():
         report['retained_binary_artifacts'] = [path.name for name in ('mdx', 'pdx')
             if (path := Path(song_dir) / (base_name + '.' + name)).is_file() and path not in owned_binary]
         suffixes = ('.mml', '.normalization.json') if args.target == 'mgs' else (
-            '.mdx.mml', '.opna-opm.json', '.mdx.normalization.json',
+            '.mdx.mml', '.dcsg_opm.json', '.dcsg_opm.forced_omissions.csv', '.dcsg_opm.approximations.csv', '.opna-opm.json', '.mdx.normalization.json',
             '.opna_ssg.omissions.csv', '.opna_ssg.omissions.json',
             '.opna_fm.omissions.csv', '.opna_fm.omissions.json', '.opna.unmodeled.csv',
             '.opna_force.skipped_registers.csv', '.opna_force.skipped_registers.json',
@@ -305,7 +311,7 @@ def main():
         report['chip_projection'] = route
         report['force_requested'] = args.force
         if args.force and (args.target != 'mdx' or route not in (
-                'opna-fm-to-opm', 'native-opm-pcm', 'opm-segapcm-source', 'psg-scc-to-opm')):
+                'opna-fm-to-opm', 'native-opm-pcm', 'opm-segapcm-source', 'psg-scc-to-opm', 'dcsg-to-opm')):
             raise ValueError('--force requires a supported MDX source route and --target mdx')
         if args.fm_only and (args.target != 'mdx' or route != 'opm-segapcm-source'
                              or 'opm' not in usage['used_chips']):
@@ -325,8 +331,8 @@ def main():
                           or route == 'opm-segapcm-source' and not args.fm_only
                           or route == 'native-opm-pcm' and 'pcm' in usage['used_chips']
                           or route=='psg-scc-to-opm' and args.psg_output=='pcm')
-        report['pcm_options'] = dict(applicable=pcm_applicable, policy=args.pcm_policy or 'strict',
-                                    profile=args.pcm_profile, bank_merge=args.pcm_bank_merge,
+        report['pcm_options'] = dict(applicable=pcm_applicable, policy=args.pcm_policy or 'auto',
+                                    profile=args.pcm_profile, bank_merge=args.pcm_bank_merge, pdx_format=args.pdx_format,
                                     bank_merge_applicable=pcm_applicable,
                                     generator_configured=bool(args.pcm_generator))
         if compatibility_target == 'opm-additive' and args.psg_model not in (None, 'additive'):
@@ -346,6 +352,30 @@ def main():
         record_report()
         parser.error(str(error))
 
+    if route == 'dcsg-to-opm':
+        from dcsg_conversion import convert
+        from dcsg_opm import console_lines
+        try:
+            if args.notation not in ('structured', 'registers') or args.track_layout != 'channels':
+                raise ValueError('DCSG OPM projection supports structured/registers notation and channel tracks')
+            if any(v is not None for v in (args.psg_model, args.psg_gain, args.scc_gain, args.scc_model, args.scc_voice_bank)):
+                raise ValueError('PSG/SCC projection options do not apply to DCSG input')
+            mml, plan = convert(vgm_path, song_dir, notation=args.notation,
+                title=args.title if args.title is not None else title_from_gd3(vgm_path, base_name, args.gd3_language),
+                loops=not args.no_loops, song_loop=not args.no_song_loop,
+                normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms,
+                fm_state_ms=args.fm_state_ms, pitch_policy=args.opm_pitch_policy or 'clamp', force=args.force)
+        except (OSError, ValueError) as error:
+            report.update(status='blocked', reason=str(error))
+            record_report()
+            parser.error(str(error))
+        report.update(status='generated', projection_settings=plan.settings)
+        record_report()
+        for line in console_lines(plan):
+            print(line)
+        print(f'MDX MML: {mml}')
+        return
+
     if route == 'opna-fm-to-opm':
         from opna_opm import convert
         try:
@@ -353,9 +383,9 @@ def main():
                 track_layout=args.track_layout, notation=args.notation,
                 loops=not args.no_loops, song_loop=not args.no_song_loop,
                 title=args.title if args.title is not None else title_from_gd3(vgm_path, base_name, args.gd3_language),
-                normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms,
-                pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'strict',pcm_profile=args.pcm_profile,
-                pcm_bank_merge=args.pcm_bank_merge,
+                normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms,
+                pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'auto',pcm_profile=args.pcm_profile,
+                pcm_bank_merge=args.pcm_bank_merge, pdx_format=args.pdx_format,
                 pitch_policy=args.opm_pitch_policy or 'clamp', force=args.force)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
@@ -399,6 +429,9 @@ def main():
             assessment = json.loads(assessment_path.read_text(encoding='utf-8'))
             print(f'PCM projection: {assessment["assessment_status"]}; validation: '
                   f'{assessment["validation_status"]} ({assessment["validation_run"]})')
+            selection = assessment.get('policy_selection', {})
+            if selection.get('requested') == 'auto':
+                print(f"PCM policy: auto -> {selection['effective']} ({selection['reason']})")
             print(f'PCM known losses: {len(assessment["known_losses"])}; assessment: {assessment_path}')
         return
 
@@ -409,13 +442,13 @@ def main():
                                 scc_gain=.125 if args.scc_gain is None else args.scc_gain,
                                 scc_model=args.scc_model or ('additive' if compatibility_target=='opm-additive' else 'fm-additive'),
                                 scc_voice_bank=args.scc_voice_bank,source_selection=source_selection,psg_output=args.psg_output,
-                                pcm_policy=args.pcm_policy or "strict",pcm_profile=args.pcm_profile,pcm_generator=args.pcm_generator,
+                                pcm_policy=args.pcm_policy or "auto",pcm_profile=args.pcm_profile,pcm_generator=args.pcm_generator,pdx_format=args.pdx_format,
                                 title=args.title if args.title is not None else title_from_gd3(vgm_path, base_name, args.gd3_language),
                                 psg_model=args.psg_model or ('additive' if compatibility_target == 'opm-additive' else 'fm'),
                                 pitch_policy=args.opm_pitch_policy,
                                 dump_passes=args.dump_passes or args.debug,
                                 notation=args.notation, loops=not args.no_loops, song_loop=not args.no_song_loop,
-                                normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms,
+                                normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms,
                                 force=args.force)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
@@ -443,18 +476,18 @@ def main():
                                 track_layout=args.track_layout, notation=args.notation,
                                 loops=not args.no_loops, song_loop=not args.no_song_loop, title=args.title,
                                 gd3_language=args.gd3_language, normalize_lengths=args.normalize_lengths,
-                                pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'strict',pcm_profile=args.pcm_profile,
+                                pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'auto',pcm_profile=args.pcm_profile,
                                 pitch_policy=args.opm_pitch_policy or 'clamp',
-                                normalization_ms=args.normalization_ms,
+                                normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms,
                                 segapcm_source=route == 'opm-segapcm-source',
                                 segapcm_pcm=route == 'opm-segapcm-source' and not args.fm_only,
-                                segapcm_projection=args.segapcm_projection, pcm_bank_merge=args.pcm_bank_merge,
+                                segapcm_projection=args.segapcm_projection, pcm_bank_merge=args.pcm_bank_merge, pdx_format=args.pdx_format,
                                 force=args.force)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()
             parser.error(str(error))
-        report.update(status='generated', pcm_policy=args.pcm_policy or 'strict',
+        report.update(status='generated', pcm_policy=args.pcm_policy or 'auto',
                       pitch_policy=args.opm_pitch_policy or 'clamp')
         record_report()
         if args.fm_only:
@@ -478,6 +511,9 @@ def main():
         if os.path.isfile(assessment_path):
             with open(assessment_path, encoding='utf-8') as stream:
                 assessment = json.load(stream)
+            selection = assessment.get('policy_selection', {})
+            if selection.get('requested') == 'auto':
+                print(f"PCM policy: auto -> {selection['effective']} ({selection['reason']})")
             print(f'PCM projection: {assessment["assessment_status"]}; validation: {assessment["validation_status"]} ({assessment["validation_run"]})')
             for loss in assessment['known_losses'][:5]:
                 print(f'PCM known loss {loss["code"]}: samples {loss["start_vgmticks"]}..{loss["end_vgmticks"]}, '

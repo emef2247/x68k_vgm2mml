@@ -79,7 +79,10 @@ source evidence. See [continuations](pcm_bank_continuations.md) for details.
 Actually traversed audible sample loops, missing complete-view ROM bytes,
 song-loop-held parts and explicit capture/variant resource limits still block
 the bank route. End-page FF is handled only where the runtime reaches its wrapped zero boundary without an earlier wrap.
-The verified one-bank96-slot and65535-byte-per-sample scope is retained.
+The one-bank 96-slot and 1,200,000-byte total budget are retained. Standard
+PDX limits each sample to 65,535 bytes; the default EX-PDX target uses the
+PCM8 24-bit length, further bounded by the total-file budget. See
+[PDX length format](pcm_pdx.md#pdx-length-format).
 Song-loop seams must be independent playback boundaries; a gate held across
 `L`, including an active source-EOF continuation, uses the mixed fallback.
 

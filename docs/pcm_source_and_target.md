@@ -18,6 +18,66 @@ PDX and any readable rendering must consume the same immutable binding.
 Future Z_MUSIC output must consume source evidence with its own
 placement; neither MDX text nor PDX slot numbers become the common IR.
 
+## Automatic PCM policy selection
+
+`--pcm-policy auto` is the default in the canonical converter and batch export.
+It selects from actual captured DAC Stream Control supplies, not clock/header
+flags or unused stream setup:
+
+| Source supply | Effective policy |
+| --- | --- |
+| DAC supplies, including mixed direct B7 and DAC supply | best-effort |
+| Direct writes without actual DAC supply | strict native/direct handling |
+| Other projections without DAC supply | existing strict projection |
+
+Explicit `--pcm-policy strict` or `best-effort` overrides automatic selection.
+Auto never repairs an unresolved reset, unknown play state, missing data bank,
+unsupported codec, invalid rate or malformed command. Those checks remain.
+Low-rate transcoding remains a declared loss; auto permits it only when its
+source supply selects best-effort, or when best-effort is explicitly requested.
+
+The target assessment saves `policy_selection` (requested, effective, reason,
+observed supply count and source origin). Batch CSV retains the requested and
+effective policies and reason; console and TXT reports show the selection.
+
+For an otherwise eligible independent reset with only irregular byte supply,
+best-effort can project captured bytes into continuous PDX delivery whether
+those bytes came from direct writes, DAC supply, or both. Native source timing,
+byte order and source eligibility flags remain unchanged. Target loss
+`byte_supply_schedule_not_preserved` records direct/stream byte counts, cadence
+error and unsupplied PLAY tail. Strict still rejects that timing loss. This
+fallback is not a claim that pauses, FIFO state or waveform timing are exact.
+Single/parallel bank preflight and size profiles share its eligibility check.
+
+## MSM6258 virtual-register interpretation
+
+The VGM byte reader retains every B7 address/value. Interpreting that address
+is a separate stage. The following compatibility behavior follows the pinned
+[libvgm MSM6258 implementation](https://github.com/ValleyBell/libvgm/blob/70e1d1fad8c03df2ce4bfb13f8599c56920dcdc8/emu/cores/okim6258.c),
+not a new claim about physical MSM6258 registers:
+
+- Pan register2 uses low disable bits0/1 for audio. Upper bits remain in raw
+  transfers and control data; `pan_non_audio_bits` observations retain their
+  values. They do not invalidate an otherwise representable source.
+- Virtual address0x17 has no reference write handler. It is retained as
+  `unmapped_register_17` source evidence, without inferring a pan/clock alias
+  or confusing it with the VGM stream chip identifier0x17. Best-effort target
+  projection may omit it with `unmapped_register_17_not_projected`; strict
+  projection rejects that explicit loss. Other unsupported addresses retain
+  their existing blocking behavior.
+- Direct bytes supplied while known/assumed stopped become
+  `direct_supply_while_stopped` observations, just as derived stream supplies
+  already do. Best-effort projection omits those supplies using the reference
+  stop-to-PLAY FIFO-reset profile and reports
+  `stopped_direct_supply_not_projected`. Active playback sample bytes and raw
+  supply history remain distinct and unchanged. Native FIFO behavior remains
+  unverified. Data supplied with an unknown play state still block projection,
+  including best-effort mode.
+
+Source observations, effective pan, target omissions and runtime uncertainty
+are written separately into native CSV/JSON and target assessment CSV/JSON.
+The changes do not establish waveform equivalence or solve capacity limits.
+
 Finite bank-4 DAC stream supplies are a separate derived table with triggering
 command, transfer sequence, original bank/block position and VGM time. They do
 not masquerade as original B7 writes. The source scheduling profile is pinned
@@ -89,8 +149,11 @@ player; six named listening artifacts passed in the user's MMDSP environment,
 not all possible drivers or inputs. Retained bank/slot/sample-size limits are
 the current verified projection scope, not newly established extension limits.
 Held pan is still deliberately omitted and diagnosed as projection loss;
-immediate extension pan/reset behavior remains unverified. Above-65535 sample
-support is blocked as unverified, without claiming a proven target-format loss.
+immediate extension pan/reset behavior remains unverified. Sample-length
+eligibility now follows the selected format: standard PDX uses 16-bit lengths;
+EX-PDX stores 32-bit lengths, bounded by the PCM8 24-bit interface and the
+1,200,000-byte total-file budget. This does not establish runtime playback
+validation. See [PDX length format](pcm_pdx.md#pdx-length-format).
 Inspect the actual serialized mode before reporting generation success; an old
 helper must not silently emit the former standard-nine profile.
 

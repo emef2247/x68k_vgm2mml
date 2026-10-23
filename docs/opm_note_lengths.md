@@ -27,6 +27,12 @@ as a musical attack grid. Enabling correction is not an input rejection reason.
 PSG/SCC projected output checks original source boundaries and cumulative timing
 through the intermediate OPM lattice before accepting a nominated clock.
 
+Exact positive-state grouping and shared inner/outer loop processing are
+described in [performed structure](opm_performed_structure.md). This grouping
+preserves the projected state/time trajectory. The separate configurable
+short-state projection described there may intentionally omit eligible pitch
+and uniform carrier-level intervals before exact grouping.
+
 ## Reuse and target boundary
 
 `py/opm_note_normalization.py` feeds native OPM rising Key edges and PCM playback
@@ -43,8 +49,9 @@ nearest absolute MDX tick conversion on that timer, with bounded ordered
 allocation when a protected interval would collapse (see
 [clock projection](opm_clock_projection.md#protected-interval-tick-allocation)). The source origin
 remains sample zero. The fitted phase and grid are recorded but are not used to
-snap individual attacks. MGSDRV gate inference, `q` generation and short-state
-pruning are specific to that compatibility target and are not applied to OPM.
+snap individual attacks. MGSDRV gate inference and `q` generation remain
+compatibility-target-specific. The MSX-derived short-state selector also serves
+the OPM adapter, with target-specific protection as described above.
 
 The 12/6 values are score-grid subdivisions, not a rule that discards or snaps
 source intervals of six ticks or fewer. The 735-sample cap is a maximum timing
@@ -56,8 +63,11 @@ musical fit alone no longer prevents correction.
 
 Before clock normalization, complete source Key-On/Key-Off gates of at most
 352 samples (8 ms at 44100 Hz, rounded down) may be omitted from the target.
-`--normalization-ms N` changes both this original whole-gate omission threshold
-and the maximum absolute target boundary movement. It defaults to 8, accepts
+`--normalization-ms N` changes this original whole-gate omission threshold
+and maximum absolute target boundary movement. Eligible intra-note FM states
+have a separate `--fm-state-ms` threshold, default 24 ms (1058 source samples).
+Changing the state threshold leaves the default 8 ms clock tolerance intact.
+These decisions do not permit deleting every control within either interval. It defaults to 8, accepts
 positive finite values of at least one source sample (1/44.1 ms), and is inactive
 with `--no-normalize-lengths`. `vgm2mml.py` and `scripts/export_mdx.py` pass it
 through OPM, PSG/SCC and PCM paths. For example:
@@ -67,8 +77,9 @@ python scripts/export_mdx.py tests/fixtures/public/opm/from_fm \
   --outdir outputs/listen/opm/from_fm_16ms --no-vgm --normalization-ms 16
 ```
 
-The decision covers the whole sounding gate, never a short control slice in
-a longer note. Partial changes, repeated Key-On requests, unclosed gates and
+This whole-gate decision covers a complete sounding gate. The separate
+intra-note selector applies only to eligible pitch/uniform-level states in a
+longer note; it protects ordered effects and the release state. Partial changes, repeated Key-On requests, unclosed gates and
 gates crossing a loop boundary are retained conservatively. PSG/SCC uses the
 original source-map timestamps before intermediate OPM rounding. Source
 Segments, State, PCM IR and original sample bytes remain unchanged, as does

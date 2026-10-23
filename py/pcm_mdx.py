@@ -1,5 +1,6 @@
 """MDX-only PCM binding and projection of backend-neutral source evidence."""
 import csv
+import json
 from dataclasses import asdict, dataclass, replace
 from copy import copy
 from fractions import Fraction
@@ -9,10 +10,10 @@ import re
 import subprocess
 import sys
 
-from pcm_capacity import PDX_BYTE_LIMIT, PDX_TABLE_BYTES, packed_pdx_bytes
+from pcm_capacity import PDX_BYTE_LIMIT, PDX_TABLE_BYTES, packed_pdx_bytes, sample_byte_limit
 from mdx_duration import duration_spelling
 from opm_mdx import mdx_tick, projected_samples
-from pcm_assessment import PcmAssessment, ProjectionError, PAN_EVIDENCE
+from pcm_assessment import PcmAssessment, ProjectionError, PAN_EVIDENCE, select_pcm_policy
 from pcm_stream import REFERENCE_REVISION
 
 # Standard MXDRV F0..F4 nibble rates, not incoming VGM byte-write rates.
@@ -70,6 +71,7 @@ class PcmMdxProjection:
     force_capacity: object = None
     pcm_profile: str = 'standard'
     pcm_payload_bytes: int = 0
+    pdx_format: str = 'ex-pdx'
 
     @property
     def boundary_times(self):
@@ -79,6 +81,7 @@ class PcmMdxProjection:
     def summary(self):
         projected = self.source_origin != 'native_msm6258'
         return dict(pcm_profile=self.pcm_profile,pcm_payload_bytes=self.pcm_payload_bytes,
+                    pcm_pdx_format=self.pdx_format, pcm_sample_byte_limit=sample_byte_limit(self.pdx_format),
                     pcm_pdx_byte_limit=PDX_BYTE_LIMIT,
                     pcm_pdx_estimated_bytes=(PDX_TABLE_BYTES + self.pcm_payload_bytes) if self.bindings else 0,
                     pcm_pdx_estimate_within_budget=not self.bindings or PDX_TABLE_BYTES + self.pcm_payload_bytes <= PDX_BYTE_LIMIT,
@@ -129,6 +132,9 @@ class PcmMdxProjection:
     def write_manifest(self, outdir, stem):
         folder = Path(outdir) / (stem + '.pcm')
         folder.mkdir(parents=True, exist_ok=True)
+        (folder / 'format.json').write_text(json.dumps(dict(
+            pdx_format=self.pdx_format, sample_byte_limit=sample_byte_limit(self.pdx_format),
+            pdx_byte_limit=PDX_BYTE_LIMIT, slot_limit=96), indent=2) + '\n', encoding='utf-8')
         path = folder / 'target.tsv'
         with path.open('w', newline='', encoding='utf-8') as stream:
             stream.write('kind\tvalue\tticks\n')
@@ -152,18 +158,39 @@ def boundaries(analysis):
                         | {c.vgmticks for c in analysis.controls}))
 
 
-def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playback_ids=(), normalization_ms=8,
-            tick_mapper=None, song_loop_start=None, force=False):
+def _continuous_delivery_eligible(playback, analysis, samples):
+    """Target fallback for captured bytes; reencoding may change target size."""
+    sample = samples.get(playback.sample_id)
+    stream_bytes = playback.stream_transfer_end - playback.stream_transfer_start
+    return (set(playback.issues) == {'irregular_byte_supply'}
+            and playback.decoder_reset_known and playback.pan is not None
+            and not analysis.issues and sample is not None
+            and playback.supplied_bytes > 0
+            and bool(sample.encoded_bytes)
+            and 0 <= stream_bytes <= playback.supplied_bytes)
+
+
+def project(analysis, *, stem, sample_multiplier=1, policy='auto', omit_playback_ids=(), normalization_ms=8,
+            tick_mapper=None, song_loop_start=None, force=False, pdx_format='ex-pdx'):
     """Bind unchanged samples; omit nominated notes within the source-time policy."""
+    maximum = sample_byte_limit(pdx_format)
+    policy, selection = select_pcm_policy(policy, analysis)
     if getattr(analysis, 'parallel_playbacks', False):
-        return _project_parallel(analysis, stem=stem, sample_multiplier=sample_multiplier,
-                                 policy=policy, omit_playback_ids=omit_playback_ids,
-                                 normalization_ms=normalization_ms, tick_mapper=tick_mapper,
-                                 song_loop_start=song_loop_start, force=force)
+        try:
+            result = _project_parallel(analysis, stem=stem, sample_multiplier=sample_multiplier,
+                                     policy=policy, omit_playback_ids=omit_playback_ids,
+                                     normalization_ms=normalization_ms, tick_mapper=tick_mapper,
+                                     song_loop_start=song_loop_start, force=force, pdx_format=pdx_format)
+        except ProjectionError as error:
+            error.assessment.policy_selection = selection
+            raise
+        result.assessment.policy_selection = selection
+        return result
     from conversion_config import normalization_samples
     omission_bound = normalization_samples(normalization_ms)
     target_tick = tick_mapper or (lambda t: mdx_tick(t, sample_multiplier))
     assessment = PcmAssessment(policy)
+    assessment.policy_selection = selection
     for item in getattr(analysis, 'target_evidence', ()):
         assessment.add(**item)
     def reject(detail, *, code='projection_undefined', status='unverified', criterion='eligibility'):
@@ -198,20 +225,19 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
             assessment.block('Standard PDX target requires 4-bit low-nibble-first MSM6258 ADPCM')
         if not sample.encoded_bytes or len(sample.encoded_bytes) > 0xffffff:
             reject('PDX sample must contain 1..16777215 encoded bytes', status='fail', code='invalid_sample_length')
-        if len(sample.encoded_bytes) > 65535 and not force:
-            assessment.add('sample', 'unverified', 'sample_length_exceeds_projection_scope',
-                           'Samples above 65535 bytes are outside the verified projection scope; '
-                           'extended-mode playback has not been validated and no truncation fallback is defined',
-                           cause='implementation_scope', source_value=len(sample.encoded_bytes),
-                           evidence='Earlier PCM1 low-word limit is not an extended-mode limit')
-            assessment.block('Sample length exceeds verified 65535-byte projection scope; no defined fallback')
+        if len(sample.encoded_bytes) > maximum and not force:
+            assessment.add('sample', 'lossy', 'sample_length_overflow',
+                           f'{pdx_format} sample exceeds {maximum} encoded bytes; no truncation',
+                           cause='target_constraint', source_value=len(sample.encoded_bytes),
+                           projected_value=maximum)
+            assessment.block(f'{pdx_format} sample length exceeds {maximum} bytes')
     if assessment.block_reasons:
         raise ProjectionError('; '.join(assessment.block_reasons), assessment)
     capacity = None
     omit_ids = set(omit_playback_ids)
     if force:
         from pcm_force_capacity import select_capacity
-        capacity = select_capacity(analysis, omit_playback_ids=omit_ids, normalization_ms=normalization_ms)
+        capacity = select_capacity(analysis, omit_playback_ids=omit_ids, normalization_ms=normalization_ms, pdx_format=pdx_format)
     capacity_omit_ids = capacity.omitted_playback_ids if capacity is not None else frozenset()
     binding_samples = capacity.analysis.samples if capacity is not None else analysis.samples
     estimated_pdx_bytes = packed_pdx_bytes(binding_samples)
@@ -225,8 +251,10 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
                        fallback='finite_source_pass', source_value=analysis.source_loop_vgmticks,
                        projected_value=None)
     for observation in analysis.observations:
-        if observation.code == 'stream_supply_while_stopped':
-            assessment.add('delivery', 'lossy', 'stopped_stream_supply_not_projected',
+        if observation.code in ('stream_supply_while_stopped', 'direct_supply_while_stopped'):
+            code = ('stopped_direct_supply_not_projected' if observation.code == 'direct_supply_while_stopped'
+                    else 'stopped_stream_supply_not_projected')
+            assessment.add('delivery', 'lossy', code,
                            'Supplies during chip STOP are retained in source IR but omitted from PDX playback',
                            cause='target_constraint', source_event_id=observation.source_event_id,
                            start_vgmticks=observation.vgmticks,
@@ -236,10 +264,23 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
             assessment.add('buffer', 'unverified', 'native_buffer_reset_unconfirmed',
                            'Stopped-byte carryover is resolved only under the libvgm reset profile; '
                            'native buffered-data behavior is unverified', scope='runtime_validation')
+        elif observation.code == 'pan_non_audio_bits':
+            assessment.add('pan', 'pass', observation.code, observation.detail,
+                           scope='source_interpretation', source_event_id=observation.source_event_id,
+                           start_vgmticks=observation.vgmticks,
+                           evidence=f'libvgm {REFERENCE_REVISION} okim6258_update pan & 0x01/0x02')
+        elif observation.code == 'unmapped_register_17':
+            assessment.add('source_evidence', 'lossy', 'unmapped_register_17_not_projected',
+                           observation.detail, cause='source_unresolved',
+                           source_event_id=observation.source_event_id,
+                           start_vgmticks=observation.vgmticks,
+                           fallback='ignore_unmapped_write_under_libvgm_profile',
+                           evidence=f'libvgm {REFERENCE_REVISION} okim6258_write: no 0x17 handler')
     bindings = tuple(PcmBinding(s.sample_id, 0, i, f'samples/{s.sample_id:03}.adpcm')
                      for i, s in enumerate(binding_samples))
     by_sample = {b.sample_id: b for b in bindings}
-    source_sample_ids = {s.sample_id for s in analysis.samples}
+    source_samples = {s.sample_id: s for s in analysis.samples}
+    source_sample_ids = set(source_samples)
     by_event = {c.source_event_id: c for c in analysis.controls}
     units, rows, commands, omitted = [], [], [], []
     cursor = source_cursor = 0
@@ -313,10 +354,7 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
                               source_start, source_end))
 
     for p in analysis.playbacks:
-        schedule_fallback = (set(p.issues) == {'irregular_byte_supply'}
-                             and p.decoder_reset_known and p.pan is not None
-                             and p.stream_transfer_end - p.stream_transfer_start == p.supplied_bytes
-                             and p.supplied_bytes > 0 and not analysis.issues)
+        schedule_fallback = _continuous_delivery_eligible(p, analysis, source_samples)
         if (not p.independently_playable and not schedule_fallback) or p.sample_id not in source_sample_ids:
             for reason in p.issues:
                 known = reason in ('rate_change_during_playback', 'unsupported_adpcm3')
@@ -329,11 +367,13 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
                    + ', '.join(p.issues), code='independent_sample_unknown')
         if schedule_fallback:
             assessment.add('delivery', 'lossy', 'byte_supply_schedule_not_preserved',
-                           'Timestamped stream byte writes are projected as continuous PDX delivery; '
+                           'Timestamped direct/stream byte writes are projected as continuous PDX delivery; '
                            'a sample ends at byte exhaustion even if source PLAY remains asserted',
                            cause='target_constraint', playback_id=p.playback_id,
                            start_vgmticks=p.start_vgmticks, end_vgmticks=p.end_vgmticks,
-                           source_value=dict(max_cadence_error_vgmticks=p.delivery_max_error_vgmticks,
+                           source_value=dict(stream_supplied_bytes=p.stream_transfer_end-p.stream_transfer_start,
+                                             direct_supplied_bytes=p.supplied_bytes-(p.stream_transfer_end-p.stream_transfer_start),
+                                             max_cadence_error_vgmticks=p.delivery_max_error_vgmticks,
                                              unsupplied_play_tail_vgmticks=p.unfed_tail_vgmticks),
                            fallback='continuous_pdx_delivery')
         try:
@@ -471,13 +511,14 @@ def project(analysis, *, stem, sample_multiplier=1, policy='strict', omit_playba
                             clock_rows, assessment, tuple(commands), tuple(omitted),
                             getattr(analysis, 'source_origin', 'native_msm6258'), capacity,
                             getattr(analysis,'pcm_profile','standard'),
-                            sum(len(s.encoded_bytes) for s in binding_samples))
+                            sum(len(s.encoded_bytes) for s in binding_samples), pdx_format)
 
 
 def _project_parallel(analysis, **options):
     """Allocate independent gates without stealing; reuse one global binding."""
     from conversion_config import normalization_samples
-    from pcm_force_capacity import select_capacity, SLOT_LIMIT, VERIFIED_SAMPLE_BYTES
+    from pcm_force_capacity import select_capacity, SLOT_LIMIT
+    maximum = sample_byte_limit(options['pdx_format'])
     force = options['force']
     # Capacity/voice omissions must not conceal malformed source evidence.
     # Reuse ordinary sample/control preflight before selecting any binding.
@@ -486,13 +527,11 @@ def _project_parallel(analysis, **options):
     object.__setattr__(preflight, 'parallel_playbacks', False)
     object.__setattr__(preflight, '_capacity_validation_only', True)
     project(preflight, **options)
-    sample_ids = {s.sample_id for s in analysis.samples}
+    source_samples = {s.sample_id: s for s in analysis.samples}
+    sample_ids = set(source_samples)
     control_ids = {c.source_event_id for c in analysis.controls}
     for p in analysis.playbacks:
-        fallback = (set(p.issues) == {'irregular_byte_supply'}
-                    and p.decoder_reset_known and p.pan is not None
-                    and p.stream_transfer_end-p.stream_transfer_start == p.supplied_bytes
-                    and p.supplied_bytes > 0 and not analysis.issues)
+        fallback = _continuous_delivery_eligible(p, analysis, source_samples)
         reason = None
         if (not p.independently_playable and not fallback) or p.sample_id not in sample_ids:
             reason = 'independent sample evidence is unresolved'
@@ -577,7 +616,7 @@ def _project_parallel(analysis, **options):
             # ninth voice never reaches capacity selection or consumes a slot.
             capacity_candidates.append(playback)
             sample = samples_by_id[playback.sample_id]
-            if (len(sample.encoded_bytes) > VERIFIED_SAMPLE_BYTES or
+            if (len(sample.encoded_bytes) > maximum or
                     playback.sample_id not in retained_sample_ids and
                     (len(retained_sample_ids) >= SLOT_LIMIT or
                      retained_pdx_bytes + len(sample.encoded_bytes) > PDX_BYTE_LIMIT)):
@@ -593,7 +632,7 @@ def _project_parallel(analysis, **options):
         capacity_input = copy(analysis)
         object.__setattr__(capacity_input, 'playbacks', tuple(capacity_candidates))
         capacity = select_capacity(capacity_input, omit_playback_ids=omit_ids,
-                                   normalization_ms=options['normalization_ms'])
+                                   normalization_ms=options['normalization_ms'], pdx_format=options['pdx_format'])
         view = capacity.analysis
     # Slot binding belongs to surviving target events, not unused source assets.
     # Every lane receives this same pruned ordering, so rebinding is global.
@@ -675,6 +714,9 @@ def write_pdx(plan, analysis, outdir, stem, *, generator=None):
     folder.mkdir(parents=True, exist_ok=True)
     (folder / 'samples').mkdir(exist_ok=True)
     samples = {s.sample_id: s for s in analysis.samples}
+    maximum = sample_byte_limit(plan.pdx_format)
+    if any(not 0 < len(samples[b.sample_id].encoded_bytes) <= maximum for b in plan.bindings):
+        raise ValueError(f'{plan.pdx_format} sample_length_overflow: limit {maximum} bytes')
     estimated_bytes = packed_pdx_bytes(samples[b.sample_id] for b in plan.bindings)
     if estimated_bytes > PDX_BYTE_LIMIT:
         (out / plan.pdx_name).unlink(missing_ok=True)
@@ -713,7 +755,9 @@ def write_pdx(plan, analysis, outdir, stem, *, generator=None):
     for slot in range(96):
         offset, length = struct.unpack_from('>II', payload, slot*8)
         if slot in expected:
-            if not 768 <= offset <= len(payload) or offset+length > len(payload) or payload[offset:offset+length] != expected[slot]:
+            if (length != len(expected[slot]) or length > maximum or
+                    not 768 <= offset <= len(payload) or offset+length > len(payload) or
+                    payload[offset:offset+length] != expected[slot]):
                 reject(f'PDX payload does not match canonical sample at slot {slot}')
         elif offset or length:
             reject(f'PDX builder populated unallocated slot {slot}')

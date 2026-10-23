@@ -45,7 +45,7 @@ def _bounded(path, output):
 def _save_results(output, rows):
     fields = ('input', 'status', 'detail', 'compiler', 'compiler_input',
               'compiler_native_mdx', 'compiler_metadata', 'max_ticks', 'mml', 'mdx', 'vgm', 'pdx',
-              'pcm_policy', 'pcm_projection_status', 'pcm_validation_status',
+              'pdx_format', 'pcm_policy', 'pcm_policy_requested', 'pcm_policy_reason', 'pcm_projection_status', 'pcm_validation_status',
               'pcm_validation_run', 'pcm_known_losses', 'pcm_assessment', 'report',
               'report_status', 'report_error', 'error_log', 'safe_stem', 'source_sha256', *PCM_BANK_FIELDS)
     with _bounded(output / 'results.csv', output).open('w', encoding='utf-8', newline='') as stream:
@@ -68,21 +68,23 @@ def inspect_export_commands(generator, mdx, census, timeout):
         return f'MDX command statistics unavailable: {str(error).strip()[:180]}'
 
 
-def run_batch(source, output, *, target='mdx', generator=None, timeout=600,
+def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
               max_ticks=None,psg_model=None,psg_gain=None,scc_gain=None,scc_model=None,scc_voice_bank=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mmlx', mxc=None, run68=None,
-              normalize_lengths=None, normalization_ms=8, no_vgm=False, song_loop=True, listening_layout=False, _title=None,
-              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output='opm',segapcm_projection='auto',pcm_bank_merge='budget96'):
+              normalize_lengths=None, normalization_ms=8, fm_state_ms=24, no_vgm=True, song_loop=True, listening_layout=False, _title=None,
+              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output='opm',segapcm_projection='auto',pcm_bank_merge='budget96',pdx_format='ex-pdx'):
     if listening_layout:
         from export_listening import run_listening_batch
         return run_listening_batch(source, output, core=run_batch, options=dict(
             target=target, generator=generator, timeout=timeout, max_ticks=max_ticks,
             psg_model=psg_model,psg_gain=psg_gain,scc_gain=scc_gain,scc_model=scc_model,scc_voice_bank=scc_voice_bank,
             opm_pitch_policy=opm_pitch_policy, pcm_policy=pcm_policy, compiler=compiler,
-            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, no_vgm=no_vgm, song_loop=song_loop, fm_only=fm_only, force=force,pcm_profile=pcm_profile,psg_only=psg_only,scc_only=scc_only,psg_output=psg_output,segapcm_projection=segapcm_projection,pcm_bank_merge=pcm_bank_merge))
+            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, fm_state_ms=fm_state_ms, no_vgm=no_vgm, song_loop=song_loop, fm_only=fm_only, force=force,pcm_profile=pcm_profile,psg_only=psg_only,scc_only=scc_only,psg_output=psg_output,segapcm_projection=segapcm_projection,pcm_bank_merge=pcm_bank_merge,pdx_format=pdx_format))
     source, output = Path(source).resolve(), Path(output).resolve()
     from conversion_config import normalization_samples
     normalization_samples(normalization_ms)
+    from fm_state_runs import fm_short_state_samples
+    fm_short_state_samples(fm_state_ms)
     from pcm_profiles import get_profile
     get_profile(pcm_profile)
     if psg_only and scc_only:raise ValueError('--psg-only and --scc-only are mutually exclusive')
@@ -90,8 +92,8 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=600,
         raise ValueError('Target must be mdx, opm or opm-additive')
     if compiler not in ('mxc', 'mmlx'):
         raise ValueError('Compiler must be mxc or mmlx')
-    if pcm_policy not in (None, 'strict', 'best-effort'):
-        raise ValueError('PCM policy must be strict or best-effort')
+    if pcm_policy not in (None, 'auto', 'strict', 'best-effort'):
+        raise ValueError('PCM policy must be auto, strict or best-effort')
     if pcm_policy is not None and target != 'mdx':
         raise ValueError('--pcm-policy requires --target mdx')
     if timeout <= 0 or (max_ticks is not None and not 0 < max_ticks <= 0xffffffff):
@@ -121,7 +123,9 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=600,
         raise ValueError('SegaPCM projection must be auto, bank or mix')
     if pcm_bank_merge not in ('budget96', 'similar', 'off'):
         raise ValueError('PCM bank merge must be budget96, similar or off')
-    options = ['--pcm-bank-merge',pcm_bank_merge,'--pcm-profile',pcm_profile,'--psg-output',psg_output,
+    if pdx_format not in ('ex-pdx', 'standard'):
+        raise ValueError('PDX format must be ex-pdx or standard')
+    options = ['--pdx-format',pdx_format,'--pcm-bank-merge',pcm_bank_merge,'--pcm-profile',pcm_profile,'--psg-output',psg_output,
                '--segapcm-projection',segapcm_projection]
     if psg_only:options.append('--psg-only')
     if scc_only:options.append('--scc-only')
@@ -129,7 +133,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=600,
         options.append('--force')
     if fm_only:
         options.append('--fm-only')
-    options.extend(['--normalization-ms', str(normalization_ms)])
+    options.extend(['--normalization-ms', str(normalization_ms), '--fm-state-ms', str(fm_state_ms)])
     if normalize_lengths is not None:
         options.append('--normalize-lengths' if normalize_lengths else '--no-normalize-lengths')
     for flag, value in (('--psg-model', psg_model), ('--psg-gain', psg_gain),
@@ -152,7 +156,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=600,
         compiler_input = _bounded(output / '_compiler_inputs' /
                                   relative.with_suffix(relative.suffix + '.mxc.mml'), output)
         native_copy, compiler_metadata = (_bounded(p, output) for p in compiler_evidence_paths(compiler_input))
-        row = dict(input=str(relative), status='', detail='', compiler=compiler, max_ticks='',
+        row = dict(input=str(relative), status='', detail='', compiler=compiler, max_ticks='', pdx_format=pdx_format,
                    mml='', mdx='', vgm='', pdx='', error_log='', compiler_input='',
                    compiler_native_mdx='', compiler_metadata='', pcm_policy='',
                    pcm_projection_status='', pcm_validation_status='',
@@ -193,7 +197,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=600,
                 command.append('--no-song-loop')
             if target == 'mdx':
                 command.extend(['--pcm-generator', str(generator),
-                                '--pcm-policy', pcm_policy or 'strict'])
+                                '--pcm-policy', pcm_policy or 'auto'])
             if _title is not None:
                 command.extend(['--title', _title])
             run = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
@@ -265,13 +269,18 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=600,
             row['pcm_assessment'] = str(assessment.relative_to(output))
             try:
                 report = json.loads(assessment.read_text(encoding='utf-8'))
+                selection = report.get('policy_selection', {})
+                row.update(pcm_policy_requested=selection.get('requested', pcm_policy or 'auto'),
+                           pcm_policy_reason=selection.get('reason', ''))
                 row.update(pcm_policy=report['policy'],
                            pcm_projection_status=report['assessment_status'],
                            pcm_validation_status=report['validation_status'],
                            pcm_validation_run=report['validation_run'],
                            pcm_known_losses=len(report['known_losses']))
                 if stage == 'conversion' and report['artifact_status'] == 'blocked':
-                    row['status'] = 'pcm_projection_blocked'
+                    mdx_capacity = any(item.get('code') == 'mdx_capacity_exceeded'
+                                       for item in report.get('items', []))
+                    row['status'] = 'compilation_failed' if mdx_capacity else 'pcm_projection_blocked'
             except (OSError, ValueError, KeyError, TypeError) as error:
                 row['status'] = 'assessment_failed'
                 row['detail'] += f'\nCannot read PCM assessment: {error}'
@@ -314,6 +323,8 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=600,
         rows.append(row)
         _save_results(output, rows)
         print(f"{_display_name or relative}: {row['status']}", flush=True)
+        if row.get('pcm_policy_requested') == 'auto' and row['pcm_policy']:
+            print(f"PCM policy: auto -> {row['pcm_policy']} ({row['pcm_policy_reason']})", flush=True)
         for line in bank_console_lines(bank_summary):
             print(line, flush=True)
         if force:
@@ -342,18 +353,24 @@ def main():
     parser.add_argument('--normalize-lengths', action=argparse.BooleanOptionalAction, default=None,
                         help='Safe structured MDX target-clock correction (default: ON)')
     parser.add_argument('--normalization-ms', type=float, default=8,
-                        help='Original whole-note omission threshold and maximum target boundary movement in ms (default: 8; ignored with --no-normalize-lengths)')
+                        help='Whole-note omission threshold and maximum target boundary movement in ms (default: 8; ignored with --no-normalize-lengths)')
+    parser.add_argument('--fm-state-ms', type=float, default=24,
+                        help='Eligible intra-note FM-state omission threshold in ms (default: 24)')
     parser.add_argument('--compiler', choices=('mxc', 'mmlx'), default='mmlx',
                         help='FM-only MML compiler (default mmlx); typed PCM uses mmlx')
     parser.add_argument('--mxc', type=Path, help='Native MXC.X compiler')
     parser.add_argument('--run68', type=Path, help='run68 executable for native MXC')
     parser.add_argument('--generator', type=Path,
                         help='Rust replay helper and default mmlx/typed PCM compiler')
-    parser.add_argument('--timeout', type=positive, default=600, help='Seconds per stage per input (default: 600)')
+    parser.add_argument('--timeout', type=positive, default=1200, help='Seconds per stage per input (default: 1200)')
     parser.add_argument('--max-ticks', type=positive, help='Playback limit; default derived from source waits')
     parser.add_argument('--no-song-loop', action='store_true', help='Export one finite source pass, without the declared VGM song loop')
-    parser.add_argument('--no-vgm', action='store_true',
-                        help='Export MML, MDX and optional PDX without replay VGM generation')
+    replay = parser.add_mutually_exclusive_group()
+    replay.add_argument('--vgm', dest='no_vgm', action='store_false',
+                        help='Also replay the generated MDX to a verification VGM (off by default)')
+    replay.add_argument('--no-vgm', dest='no_vgm', action='store_true',
+                        help='Compatibility option: omit verification VGM (already the default)')
+    parser.set_defaults(no_vgm=True)
     parser.add_argument('--force', action='store_true',
                         help='Partial MDX output: omit unsupported OPNA HW effects and excess PCM samples; list all losses')
     parser.add_argument('--fm-only', action='store_true',
@@ -368,8 +385,10 @@ def main():
     parser.add_argument('--scc-model',choices=('additive','additive8','fm-additive','fm-fm'),help='SCC voice model (default fm-additive; fit missing bank automatically)')
     parser.add_argument('--scc-voice-bank',type=Path)
     parser.add_argument('--opm-pitch-policy', choices=('clamp', 'error'))
-    parser.add_argument('--pcm-policy', choices=('strict', 'best-effort'),
-                        help='Native PCM projection policy; default strict')
+    parser.add_argument('--pcm-policy', choices=('auto', 'strict', 'best-effort'),
+                        help='PCM policy: auto (default), strict or best-effort; auto follows observed DAC supply')
+    parser.add_argument('--pdx-format',choices=('ex-pdx','standard'),default='ex-pdx',
+                        help='PDX sample lengths: ex-pdx (default, 32-bit) or standard (16-bit)')
     parser.add_argument('--pcm-profile',choices=('standard','low','ultra_low'),default='standard',
                         help='PCM output rate/size profile (default: standard)')
     parser.add_argument('--segapcm-projection',choices=('auto','bank','mix'),default='auto',
@@ -383,8 +402,8 @@ def main():
                          timeout=args.timeout, max_ticks=args.max_ticks, psg_model=args.psg_model,
                          psg_gain=args.psg_gain,scc_gain=args.scc_gain,scc_model=args.scc_model,scc_voice_bank=args.scc_voice_bank,
                           opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy,
-                          normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, no_vgm=args.no_vgm,
-                          listening_layout=True, song_loop=not args.no_song_loop, fm_only=args.fm_only, force=args.force,pcm_profile=args.pcm_profile,psg_only=args.psg_only,scc_only=args.scc_only,psg_output=args.psg_output,segapcm_projection=args.segapcm_projection,pcm_bank_merge=args.pcm_bank_merge)
+                          normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms, no_vgm=args.no_vgm,
+                          listening_layout=True, song_loop=not args.no_song_loop, fm_only=args.fm_only, force=args.force,pcm_profile=args.pcm_profile,psg_only=args.psg_only,scc_only=args.scc_only,psg_output=args.psg_output,segapcm_projection=args.segapcm_projection,pcm_bank_merge=args.pcm_bank_merge,pdx_format=args.pdx_format)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     success = sum(row['status'] == 'success' for row in rows)

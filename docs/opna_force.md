@@ -69,17 +69,18 @@ order.
 
 - At most 96 samples per bank. Once full, omit new samples while continuing to
   reuse already admitted samples.
-- Omit an entire sample exceeding the verified 65,535 encoded-byte per-sample
-  scope; do not truncate it. It consumes no slot, so later samples that fit can
+- Omit an entire sample exceeding the selected format's encoded-byte limit
+  (65,535 for standard PDX; PCM8 24-bit length for EX-PDX); do not truncate it. It consumes no slot, so later samples that fit can
   still be admitted.
 - Playbacks referring to omitted samples become rests, preserving song end and
   loop positions.
 - If all PCM is omitted, generate the remaining FM MML without requiring an empty
   PDX.
 
-65,535 bytes is the currently verified projection scope, not the PDX format's
-intrinsic limit. It also differs from MUCOM's 256 KiB bank limit; no 256 KiB total
-capacity limit is added here. Source IR analysis and generation needed for final
+Standard PDX has a 65,535-byte sample-length limit; EX-PDX stores a 32-bit
+length, bounded here by the PCM8 24-bit interface and the 1,200,000-byte total
+file budget. These differ from MUCOM's 256 KiB bank limit; no 256 KiB total
+capacity limit is added here. See [PDX length format](pcm_pdx.md#pdx-length-format). Source IR analysis and generation needed for final
 clock alignment still run, so force does not necessarily shorten conversion time.
 
 Capacity omission is distinct from normalization's short-gate omission. `--force`

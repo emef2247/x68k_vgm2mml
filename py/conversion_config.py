@@ -41,7 +41,7 @@ def inspect_source(source):
         item = dict(command=f'{cmd:#04x}', address=pos, source_samples=event.vgmticks)
         chip = {0x54: 'opm', 0xa4: 'opm', 0x56: 'opna', 0x57: 'opna',
                 0xa6: 'opna', 0xa7: 'opna', 0xa0: 'psg', 0xd2: 'scc',
-                0x51: 'opll', 0xb7: 'pcm', 0xc0: 'segapcm'}.get(cmd)
+                0x51: 'opll', 0x50: 'dcsg', 0x30: 'dcsg', 0x4f: 'dcsg', 0x3f: 'dcsg', 0xb7: 'pcm', 0xc0: 'segapcm'}.get(cmd)
         if chip:
             chips.add(chip)
             first.setdefault(chip, item)
@@ -113,7 +113,7 @@ def inspect_source(source):
     opm_offset = 0x30 if header['version'] >= 0x110 else 0x10
     opm_clock = int.from_bytes(raw[opm_offset:opm_offset + 4], 'little')
     opll_clock = int.from_bytes(raw[0x10:0x14], 'little') if header['version'] >= 0x110 else 0
-    declarations = dict(opm=opm_clock, opna=header['opna_clock_raw'],
+    declarations = dict(dcsg=int.from_bytes(raw[0x0c:0x10], 'little'), opm=opm_clock, opna=header['opna_clock_raw'],
                         opll=opll_clock, psg=header['ay_clock_raw'],
                         scc=header['scc_clock_raw'], pcm=header['msm6258_clock_raw'],
                         segapcm=header['segapcm_clock_raw'])
@@ -158,6 +158,8 @@ def select_mdx_route(usage, *, compatibility_target=None):
         return 'opm-segapcm-source'
     if chips and chips <= {'opm', 'pcm'}:
         return 'native-opm-pcm'
+    if chips == {'dcsg'}:
+        return 'dcsg-to-opm'
     if chips == {'opna'}:
         return 'opna-fm-to-opm'
     if chips and chips <= {'psg', 'scc'}:

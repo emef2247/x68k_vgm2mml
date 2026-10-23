@@ -14,6 +14,7 @@ from pathlib import Path
 from msm6258 import PcmAnalysis, PcmPlayback, PcmSample, TransferLog
 from opna_adpcm import encode_msm6258
 from pcm_profiles import get_profile
+from pcm_capacity import sample_byte_limit
 from segapcm_playback import _Rom
 from pcm8_volume import project_pcm8_volume
 
@@ -67,8 +68,9 @@ class BankAnalysis(PcmAnalysis):
         path.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 
 
-def _project_finite(trace, native, *, source_raw, loop_start=None, loop_count=1, pcm_profile='standard'):
+def _project_finite(trace, native, *, source_raw, loop_start=None, loop_count=1, pcm_profile='standard', pdx_format='ex-pdx'):
     """Convert complete finite views once, independently of each gate duration."""
+    maximum = sample_byte_limit(pdx_format)
     profile = get_profile(pcm_profile)
     starts = {e.source.event_id: e for e in trace.state_events}
     cursors = {e.event_id: e for e in native.runtime_events if e.kind == 'control_write'}
@@ -140,8 +142,8 @@ def _project_finite(trace, native, *, source_raw, loop_start=None, loop_count=1,
         frame_count = (boundary - cursor + delta - 1) // delta
         wanted = Fraction(frame_count, 1) * profile.rate / source_rate
         count = max(2, 2 * round(wanted / 2))
-        if count // 2 > 65535:
-            unsupported('sample_length', 'A complete reusable asset exceeds the verified 65535-byte PDX sample scope', gate)
+        if count // 2 > maximum:
+            unsupported('sample_length', f'A complete reusable asset exceeds the {maximum}-byte {pdx_format} sample limit', gate)
         identity = dict(chip_instance=gate.chip_instance, rom_generation=state.rom_generation,
             bank=bank, address_fixed=cursor, end_address_fixed=boundary, delta=delta,
             source_bytes_sha256=hashlib.sha256(source_bytes).hexdigest(), pcm_profile=profile.name,
