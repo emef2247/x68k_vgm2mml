@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from msm6258 import PcmAnalysis
+from pcm_capacity import sample_byte_limit, PDX_BYTE_LIMIT, PDX_TABLE_BYTES
 
 
 @dataclass(frozen=True)
@@ -28,12 +29,15 @@ def prepare(analysis, *, outdir, stem, **projection_options):
         path.write_text(json.dumps(dict(status='blocked', source_unchanged=True,
             items=error.assessment.items, reasons=error.assessment.block_reasons), indent=2) + '\n', encoding='utf-8')
         raise
-    eligible = any(0 < len(s.encoded_bytes) <= 65535 for s in analysis.samples)
+    maximum = min(sample_byte_limit(projection_options.get('pdx_format', 'ex-pdx')),
+                  PDX_BYTE_LIMIT - PDX_TABLE_BYTES)
+    eligible = any(0 < len(s.encoded_bytes) <= maximum for s in analysis.samples)
     path.write_text(json.dumps(dict(status='validated', source_unchanged=True,
         capacity_scope='capacity omissions allowed for source validation only; final selection follows reduction',
         bank_available=eligible,
         source_origin=getattr(analysis, 'source_origin', 'native_msm6258'),
-        fallback_reason=None if eligible else 'no existing sample within verified target byte scope',
+        pdx_format=projection_options.get('pdx_format', 'ex-pdx'), sample_byte_limit=maximum,
+        fallback_reason=None if eligible else 'no existing sample within selected sample/file byte budget',
         source_sample_count=len(analysis.samples), source_playback_count=len(analysis.playbacks),
         items=checked.assessment.items), indent=2) + '\n', encoding='utf-8')
     if not eligible:

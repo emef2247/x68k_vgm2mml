@@ -50,11 +50,21 @@ PSGは通常OPMへ変換しますが、連続PCMとして再構築し、X68000�
 
 OPMのみのMML生成にRustコンパイラは不要です。現行のPCM経路では試聴用MDX／PDXの補助生成も同じ処理内で行うため、外部helperのビルドが必要です。準備方法は[docs/mdx_compiler_setup.md](docs/mdx_compiler_setup.md)を参照してください。
 
+PDXは既定でEX-PDX形式（`--pdx-format ex-pdx`）を生成します。従来形式は `--pdx-format standard` で選択できます。[形式と互換性](docs/pcm_pdx.md#pdx-length-format)を参照してください。
+
 PDXは参照表込みで1,200,000 bytesを上限とします。既定の `--pcm-bank-merge budget96` は、対応するPCM候補から代表音を選び、96枠と総容量の両方に収めます。置換・容量の診断は[PCMバンク削減](docs/pcm_bank_reduction.md)を参照してください。
 
 PCMの出力容量を抑えたい場合は `--pcm-profile low` または `--pcm-profile ultra_low` と `--pcm-policy best-effort` を指定できます。標準設定は維持し、低レートの出力用PCMを生成します。[対応音源・容量と音質の関係](docs/pcm_profiles.md)を参照してください。
 
 SegaPCMは、固定条件の有限サンプルを再利用するバンク方式を優先します。初版の対象外となる途中の設定変更・サンプル内ループなどがある場合は、曲全体を従来のミックス方式へ戻し、理由を記録します。`--segapcm-projection auto|bank|mix` の使い方と制約は[再利用PCMサンプルバンク](docs/pcm_sample_bank_design.md)を参照してください。
+
+## DCSG（SN76489）からMDXへ
+
+単体・2チップのDCSG入力をOPMへ投影できます。最大6トーンと共有ノイズchを使い、既存の音符・反復構造化へ接続します。未対応ノイズや重複区間は`--force`で理由を表示して省略します。[対応範囲と中間結果](docs/dcsg_to_opm.md)を参照してください。
+
+## 確認用VGMの出力
+
+`scripts/export_mdx.py`は既定でMML・MDX・必要なPDXを生成します。MDXの再生結果を確認用VGMにも書き戻したい場合だけ`--vgm`を指定してください。従来の`--no-vgm`は互換用に残していますが、省略できます。
 
 ## VGMの曲全体ループ
 
@@ -65,11 +75,10 @@ MDX用MMLでは `L` で曲ループを表現します。展開方式と対応範
 有限1周で終了させたい場合は `--no-song-loop` を指定してください。これは、MML内の有限反復圧縮を無効にする `--no-loops` とは別の設定です。
 
 ```bash
-python scripts/export_mdx.py input.vgm --outdir outputs/listen/input --no-vgm
+python scripts/export_mdx.py input.vgm --outdir outputs/listen/input
 
 python scripts/export_mdx.py input.vgm \
   --outdir outputs/listen/finite \
-  --no-vgm \
   --no-song-loop
 ```
 
@@ -100,8 +109,7 @@ SCCのみを比較試聴したい場合は、次のように実行できます�
 python scripts/export_mdx.py INPUT_DIRECTORY \
   --outdir outputs/listen/scc \
   --scc-only \
-  --compiler mmlx \
-  --no-vgm
+  --compiler mmlx
 ```
 
 8倍音加算モデルを使用する例:
@@ -110,8 +118,7 @@ python scripts/export_mdx.py INPUT_DIRECTORY \
 python scripts/export_mdx.py INPUT_DIRECTORY \
   --outdir outputs/listen/scc_additive8 \
   --scc-model additive8 \
-  --compiler mmlx \
-  --no-vgm
+  --compiler mmlx
 ```
 
 FM音色探索を使用する `fm-additive` および `fm-fm` には、WSL上のGCC・NumPyおよび外部YM2151 coreが必要です。`additive` と `additive8` では音色探索を行いません。
@@ -135,8 +142,7 @@ python scripts/export_mdx.py INPUT_DIRECTORY \
   --outdir outputs/listen/psg_pcm \
   --psg-output pcm \
   --pcm-policy best-effort \
-  --psg-gain 0.8 \
-  --no-vgm
+  --psg-gain 0.8
 ```
 
 主なオプションは次のとおりです。
@@ -155,8 +161,7 @@ python scripts/export_mdx.py INPUT_DIRECTORY \
   --psg-output pcm \
   --pcm-policy best-effort \
   --pcm-profile low \
-  --psg-gain 0.8 \
-  --no-vgm
+  --psg-gain 0.8
 ```
 
 サンプリング周波数を下げることでPCM容量を削減できますが、高域成分が失われるため音質も低下します。詳細は[PCM出力プロファイル](docs/pcm_profiles.md)を参照してください。
@@ -187,13 +192,13 @@ OPNAのADPCM-Bも対応範囲内でMML・PCM IRを生成できます。元のPCM
 # OPNAのFM・ADPCM-Bから再生確認用MDX／PDXを出力
 python scripts/export_mdx.py input.vgm \
   --outdir outputs/listen/opna \
-  --no-vgm \
   --pcm-policy best-effort
 ```
 
 PCM参照を含むMMLとPCM IRが主な出力です。上記の `scripts/export_mdx.py` は試聴用MDX／PDXを一括出力する補助スクリプトです。PCMの型付き命令列とMDX／PDX生成の関係は[docs/pcm_pdx.md](docs/pcm_pdx.md)を参照してください。
 
-- `strict`（既定）: 既知の意味損失を伴う投影は停止
+- `auto`（既定）: 実際のDACストリーム供給があれば`best-effort`、なければ従来の直接入力経路（`strict`）を選択。直接書き込みとの混在もDAC供給ありとして扱い、選択理由を記録
+- `strict`: 既知の意味損失を伴う投影は停止
 - `best-effort`: 定義済み近似の範囲内で生成し、失われる情報を診断情報として記録
 
 ### SegaPCMを含むVGMからMML・PCM IRを生成する
@@ -203,14 +208,14 @@ PCM参照を含むMMLとPCM IRが主な出力です。上記の `scripts/export_
 ```bash
 # FM＋PCMの試聴用MML／MDX／PDX／TXT生成
 python scripts/export_mdx.py INPUT_DIRECTORY \
-  --outdir outputs/listen/segapcm --no-vgm --pcm-policy best-effort
+ --outdir outputs/listen/segapcm --pcm-policy best-effort
 
 # FM部のみのMMLを生成。PCM音声の再生解析・ターゲット投影を省略
 python vgm2mml.py input.vgm --outdir outputs/segapcm_fm --fm-only --dump-passes
 
 # 試聴用MML／MDX／TXT生成。scripts/export_mdx.py実行時に--fm-onlyを指定すると、PDXは生成されません。
 python scripts/export_mdx.py INPUT_DIRECTORY \
-  --outdir outputs/listen/segapcm_fm --fm-only --no-vgm
+ --outdir outputs/listen/segapcm_fm --fm-only
 ```
 
 変換の詳細は[docs/segapcm_segments.md](docs/segapcm_segments.md)を参照してください。
@@ -234,7 +239,8 @@ MDX側の主なオプションは次のとおりです。
 | `--notation structured` | 音符・制御軌跡・有限反復による表記（既定） |
 | `--notation legacy` / `registers` | 互換表記／レジスタ制御表記 |
 | `--normalize-lengths` / `--no-normalize-lengths` | structured MDXの長さ補正の有効／無効 |
-| `--normalization-ms MS` | 正規化前の短い発音の省略閾値と出力時刻の最大移動量 |
+| `--normalization-ms MS` | 短い発音の省略閾値と出力時刻の最大移動量（既定8ms） |
+| `--fm-state-ms MS` | FM内部の短い音程・音量状態の省略閾値（既定24ms、時刻補正とは独立。[詳細](docs/opm_performed_structure.md)） |
 | `--no-loops` | 有限反復の生成を無効化 |
 | `--psg-model fm\|additive` | PSGからOPMへの音色投影モデル |
 | `--scc-model additive\|additive8\|fm-additive\|fm-fm` | SCC音色モデル（既定fm-additive）。[詳細](docs/scc_fm_projection.md) |
@@ -243,7 +249,8 @@ MDX側の主なオプションは次のとおりです。
 | `--scc-only` / `--scc_only` | SCCだけを出力。元のPSG解析結果は保持 |
 | `--psg-output opm\|pcm` | PSGの出力先（既定opm）。PCMはbest-effortを指定。[詳細](docs/psg_pcm.md) |
 | `--psg-gain` / `--scc-gain` | PSG／SCC投影時の音量調整 |
-| `--pcm-policy strict\|best-effort` | PCM投影で既知損失を許容するか |
+| `--pcm-policy auto\|strict\|best-effort` | PCM投影で既知損失を許容するか |
+| `--pdx-format ex-pdx\|standard` | PDX形式（既定ex-pdx）。[詳細](docs/pcm_pdx.md#pdx-length-format) |
 | `--pcm-profile standard\|low\|ultra_low` | PCM出力の容量・音質設定（既定standard）。[詳細](docs/pcm_profiles.md) |
 | `--force` | 未対応のPSG／SSG／OPNA機能と容量超過PCMを省略し続行（[docs/opna_force.md](docs/opna_force.md)） |
 | `--dump-passes` | 中間CSV・診断ファイルを保存 |
@@ -262,14 +269,14 @@ python vgm2mml.py --help
 
 ## トラブルシューティング
 
-`scripts/export_mdx.py`のタイムアウトは各入力・各処理段階につき既定600秒です。`--timeout 秒数`で変更できます。
+`scripts/export_mdx.py`のタイムアウトは各入力・各処理段階につき既定1200秒です。`--timeout 秒数`で変更できます。
 
 未対応のPSG／SSG／OPNA機能やPCM容量超過で変換が停止する場合は、`--force`で扱える部分の出力を試せます。未対応のノイズ・ハードウェアエンベロープなどの影響区間や、容量超過のPCMを省略して続行します。元のSegment・PCM IRは保持します。
 
 ```bash
 python scripts/export_mdx.py INPUT_DIRECTORY \
   --outdir outputs/listen/force \
-  --no-vgm --compiler mmlx --pcm-policy best-effort --force
+  --compiler mmlx --pcm-policy best-effort --force
 ```
 
 各曲の処理後に、省略・近似した内容をパート、ポート、レジスタ、処理内容、件数、理由の一覧で表示します。チャンネル不足によるパートの省略も確認できます。詳細は各曲のTXTレポートと診断CSV・JSONに保存します。
@@ -281,7 +288,7 @@ python scripts/export_mdx.py INPUT_DIRECTORY \
 ```bash
 python scripts/export_mdx.py INPUT_DIRECTORY \
   --outdir outputs/listen/mmlx \
-  --no-vgm --compiler mmlx
+  --compiler mmlx
 ```
 
 入力に必要なオプション（`--fm-only` や `--pcm-policy best-effort` など）は、元のコマンドと同じ指定を残してください。
@@ -293,7 +300,7 @@ python scripts/export_mdx.py INPUT_DIRECTORY \
 ```bash
 python scripts/export_mdx.py INPUT_DIRECTORY \
   --outdir outputs/listen/finite \
-  --no-vgm --compiler mmlx --no-song-loop
+  --compiler mmlx --no-song-loop
 ```
 
 この指定では曲全体の無限ループが無効になります。MML内の有限反復 `[ ... ]n` による圧縮は維持します。有限1周でもMDXのサイズ制限を超える場合は、エラーが残ります。

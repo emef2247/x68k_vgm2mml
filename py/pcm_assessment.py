@@ -42,11 +42,25 @@ def aggregate(items):
                  if status in statuses), 'unverified')
 
 
+def select_pcm_policy(requested, analysis):
+    """Resolve auto from observed supply, never from unused header declarations."""
+    if requested not in ('auto', 'strict', 'best-effort'):
+        raise ValueError('PCM policy must be auto, strict or best-effort')
+    supplies = len(getattr(analysis, 'stream_supplies', ()))
+    effective = ('best-effort' if supplies else 'strict') if requested == 'auto' else requested
+    return effective, dict(requested=requested, effective=effective,
+        reason=('observed_dac_stream_supplies' if supplies else 'no_observed_dac_stream_supplies')
+               if requested == 'auto' else 'explicit_policy',
+        stream_supply_count=supplies,
+        source_origin=getattr(analysis, 'source_origin', 'native_msm6258'))
+
+
 class PcmAssessment:
     def __init__(self, policy):
         if policy not in ('strict', 'best-effort'):
             raise ValueError('PCM policy must be strict or best-effort')
         self.policy = policy
+        self.policy_selection = dict(requested=policy, effective=policy, reason='explicit_policy')
         self.target_profile = TARGET_PROFILE
         self.active_pcm_tracks = ['P']
         self.artifact_status = 'pending'
@@ -92,7 +106,7 @@ class PcmAssessment:
                  scope='artifact', cause='implementation_or_external_tool')
 
     def as_dict(self):
-        return dict(schema_version=1, policy=self.policy, target_profile=self.target_profile,
+        return dict(schema_version=1, policy=self.policy, policy_selection=self.policy_selection, target_profile=self.target_profile,
                     target_layout=dict(track_count=16, pcm_mode_command='E8',
                                        active_pcm_tracks=self.active_pcm_tracks,
                                        inactive_pcm_tracks=[t for t in 'PQRSTUVW' if t not in self.active_pcm_tracks]),

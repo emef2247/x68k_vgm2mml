@@ -325,7 +325,8 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False, *
                   loop_event_id=source_loop.get('replay_start_event_id'))
         from opna_pcm_bank import project as project_pcm_bank
         pcm_bridge = project_pcm_bank(projection_pcm, source_raw=read_vgm_bytes(source),
-            loop_start=loop_start, pcm_profile=options.get('pcm_profile', 'standard'))
+            loop_start=loop_start, pcm_profile=options.get('pcm_profile', 'standard'),
+            pdx_format=options.get('pdx_format', 'ex-pdx'))
         finite_pcm_bank = pcm_bridge is not None
         if finite_pcm_bank:
             pcm_bridge.dump(outdir, source.stem)
@@ -370,7 +371,7 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False, *
                         finite_sample_bank=finite_pcm_bank,
                         native_issues=[issue.code for issue in native_pcm.issues],
                         candidate_pdx_samples=len(pcm_bridge.samples), pdx_distinct_samples=None,
-                        policy=options.get('pcm_policy', 'strict'),
+                        policy=options.get('pcm_policy', 'auto'),
                         integration='transcoded MSM6258 IR to shared-clock MDX P track and external PDX packer'),
             source_loop=source_loop, passes_retained=dump_passes,
             source_map=str(Path('projected_opm') / mapping.name) if dump_passes else None)

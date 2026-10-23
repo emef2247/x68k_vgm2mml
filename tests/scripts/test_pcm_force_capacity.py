@@ -1,5 +1,6 @@
 """Authored PCM capacity cases; no private fixtures or external compiler."""
 from dataclasses import replace
+from functools import partial
 import json
 from pathlib import Path
 import sys
@@ -14,6 +15,11 @@ from pcm_assessment import ProjectionError
 from pcm_force_capacity import select_capacity
 from pcm_mdx import project
 from opm_conversion import convert
+
+# These fixtures exercise the legacy 16-bit sample-length policy.
+select_capacity = partial(select_capacity, pdx_format='standard')
+project = partial(project, pdx_format='standard')
+convert = partial(convert, pdx_format='standard')
 
 
 class ForceCapacityTests(unittest.TestCase):
@@ -54,7 +60,7 @@ class ForceCapacityTests(unittest.TestCase):
         self.assertEqual([s.sample_id for s in view.analysis.samples], [1, 2])
         self.assertEqual(source, original)
         self.assertEqual(len(source.samples[0].encoded_bytes), 65536)
-        self.assertEqual(view.rows[0]['cap_kind'], 'verified_sample_byte_scope')
+        self.assertEqual(view.rows[0]['cap_kind'], 'sample_length_overflow')
         self.assertEqual(view.analysis.source_end_vgmticks, source.source_end_vgmticks)
         self.assertEqual([b.sample_id for b in project(source, stem='large', force=True).bindings], [1, 2])
         with self.assertRaises(ProjectionError):

@@ -110,7 +110,7 @@ def _encoded_command_summary(folder, stem):
 
 def _plain_text(lines):
     sections = {'Export summary', 'Source observations', 'Compiled target',
-                'Output normalization', 'PCM assessment', 'Diagnostics'}
+                'Output normalization', 'FM internal state projection', 'PCM assessment', 'Diagnostics'}
     rendered = []
     section = None
     for line in lines:
@@ -183,6 +183,7 @@ def write_export_report(source, folder, stem, row):
     lines = ['Export summary', '', f'Input: {source.name}', f'Export: {row["status"]}',
              'Export success means files generated; native playback/display is not tested.',
              f'Route: {conversion.get("chip_projection", "unmeasured")}',
+             f'PDX format: {row.get("pdx_format", "unmeasured")}',
              f'Compiler: {row.get("compiler", "unmeasured")}', '', 'Source observations', '']
     try:
         stats = source_statistics(source)
@@ -267,6 +268,18 @@ def write_export_report(source, folder, stem, row):
                          'nominal target clock, not measured driver interrupt load')
         lines.extend(optional('Rejected clock diagnostics',
                      lambda: _rejected_clock_summary(normalization), []))
+    fm_states = (optional('FM short states', lambda: _json(folder / f'{stem}.fm.short_states.json'), {})
+                 if target_current else {})
+    if fm_states:
+        lines.extend(['', 'FM internal state projection', '',
+            f'FM state threshold: {fm_states.get("threshold_ms")} ms; '
+            f'{fm_states.get("threshold_samples")} original samples; '
+            f'enabled={fm_states.get("enabled")}; independent of clock normalization',
+            f'Omitted internal states: {fm_states.get("omitted_states", 0)}; '
+            f'omitted duration {fm_states.get("omitted_duration_samples", "unmeasured")} source samples',
+            f'Release terminal writes: {fm_states.get("terminal_source_writes", 0)} source writes; '
+            f'{fm_states.get("terminal_restoration_writes", 0)} target state restorations; '
+            'released state retained'])
     lines.extend(['', 'PCM assessment', ''])
     lines.extend(optional('PCM bank statistics',
                  lambda: bank_console_lines(folder, stem, allow_binary=bool(row.get('pdx'))), []))
@@ -281,6 +294,11 @@ def write_export_report(source, folder, stem, row):
                       'PCM encoded payload: ' + (optional('PCM payload',
                           lambda: _pdx_payload_check(folder, stem, folder / f'{stem}.pdx'), 'unmeasured')
                           if pcm_current else 'unmeasured (no current generated PCM pair)')])
+
+        selection = assessment.get('policy_selection', {})
+        if selection.get('requested') == 'auto':
+            lines.append(f"PCM automatic selection: auto -> {selection['effective']}; "
+                         f"{selection['reason']}; DAC supplies={selection.get('stream_supply_count', 'unknown')}")
 
         def frequencies():
             rows = _csv(folder / f'{stem}.pcm_projection.csv')
@@ -344,6 +362,10 @@ def write_export_report(source, folder, stem, row):
         capacity = capacity_lines(folder, stem)
         if capacity:
             lines.extend(['', 'Diagnostics', '', *capacity])
+    if conversion.get('chip_projection') == 'dcsg-to-opm':
+        from dcsg_opm import console_lines
+        lines.extend(['', *console_lines(conversion.get('projection_settings', {})),
+                      'DCSG details: ' + stem + '.dcsg_opm.json'])
     for exclusion in conversion.get('excluded_sources', []):
         lines.append(f'Target omission: {exclusion["chip"]}; {exclusion["reason"]}')
     if row.get('detail') or unavailable:

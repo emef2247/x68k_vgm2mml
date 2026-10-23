@@ -10,7 +10,7 @@ import math
 
 
 from pcm_capacity import (SLOT_LIMIT, MAX_SAMPLE_BYTES, PDX_BYTE_LIMIT,
-                          PDX_TABLE_BYTES, packed_pdx_bytes)
+                          PDX_TABLE_BYTES, packed_pdx_bytes, sample_byte_limit)
 AC_NOISE_FLOOR = 128.0
 
 
@@ -69,7 +69,8 @@ def _reserve_representative(selected, representative, samples):
     return sorted([*selected, representative])
 
 
-def enforce_budget(original, strict):
+def enforce_budget(original, strict, *, pdx_format='ex-pdx'):
+    maximum = sample_byte_limit(pdx_format)
     # Imported lazily to let reduce_bank dispatch without a circular module
     # initialization dependency, and to keep <=96/disabled paths lightweight.
     from pcm_bank_reduce import (ReductionResult, ReducedPlayback, _decode,
@@ -83,10 +84,12 @@ def enforce_budget(original, strict):
     referenced = {p.sample_id for p in strict.analysis.playbacks if p.sample_id is not None}
     active = Counter(p.sample_id for p in strict.analysis.playbacks
                      if p.sample_id is not None and not playback_rows[p.playback_id]['explicit_omission'])
+    candidate_limit = min(maximum, PDX_BYTE_LIMIT - PDX_TABLE_BYTES)
     candidates = sorted(sid for sid in referenced
-                        if len(strict_samples[sid].encoded_bytes) <= MAX_SAMPLE_BYTES)
+                        if len(strict_samples[sid].encoded_bytes) <= candidate_limit)
     summary = dict(strict.summary)
     summary.update(mode='budget96', budget_limit=SLOT_LIMIT,
+        pdx_format=pdx_format, budget_max_sample_bytes=maximum,
         budget_byte_limit=PDX_BYTE_LIMIT,
         budget_input_pdx_bytes=packed_pdx_bytes(strict_samples[sid] for sid in referenced),
         budget_input_sample_count=len(referenced), forced_sample_count=0,
@@ -105,7 +108,7 @@ def enforce_budget(original, strict):
                      for row in strict.sample_rows)
         return ReductionResult(target, rows, strict.playback_rows, summary)
     if not candidates:
-        raise ValueError('PCM budget96 has no existing independently playable sample within the 65535-byte target limit')
+        raise ValueError(f'PCM budget96 has no existing independently playable sample within the {candidate_limit}-byte {pdx_format} sample/file budget')
     try:
         import numpy as np
     except ImportError as exc:
@@ -135,7 +138,7 @@ def enforce_budget(original, strict):
     if required_gates:
         earliest_gate = min(min(counts) for counts in required_gates.values())
         if not any(_ac_peak(decoded[sid][:earliest_gate], np) > AC_NOISE_FLOOR for sid in selected):
-            onset_candidates = [sid for sid in source if len(source[sid].encoded_bytes) <= MAX_SAMPLE_BYTES
+            onset_candidates = [sid for sid in source if len(source[sid].encoded_bytes) <= candidate_limit
                                 and _ac_peak(decoded[sid][:earliest_gate], np) > AC_NOISE_FLOOR]
             if not onset_candidates:
                 raise ValueError('PCM budget96 has no bounded representative audible within the earliest active gate')
@@ -270,7 +273,7 @@ def enforce_budget(original, strict):
         forced_sample_count=len(forced_ids),
         forced_playback_count=sum(r.get('budget_forced', False) for r in result_rows),
         forced_worst_errors=errors, budget_similarity_bounds_enforced=False,
-        budget_max_sample_bytes=MAX_SAMPLE_BYTES)
+        budget_max_sample_bytes=maximum)
     assert len(target.samples) <= SLOT_LIMIT
     assert packed_pdx_bytes(target.samples) <= PDX_BYTE_LIMIT
     assert {p.sample_id for p in target.playbacks if p.sample_id is not None} <= selected_set

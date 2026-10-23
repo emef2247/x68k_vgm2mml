@@ -244,7 +244,7 @@ def _rejection(metrics, fit, seconds, *, spectral_only=False):
 
 
 def reduce_bank(analysis, *, mode='budget96', omit_playback_ids=(), normalization_ms=8,
-                tick_mapper=None, sample_multiplier=None):
+                tick_mapper=None, sample_multiplier=None, pdx_format='ex-pdx'):
     """Reduce a separate post-clock target view before slot/voice allocation.
 
     All representatives are existing immutable ADPCM assets. Every member is
@@ -252,12 +252,14 @@ def reduce_bank(analysis, *, mode='budget96', omit_playback_ids=(), normalizatio
     actual unshifted, unwarped decoded output with quantized gain is checked for
     every distinct affected gate/gain condition, including missing/extra tails.
     """
+    from pcm_capacity import sample_byte_limit
+    sample_byte_limit(pdx_format)
     if mode == 'budget96':
         strict = reduce_bank(analysis, mode='similar', omit_playback_ids=omit_playback_ids,
             normalization_ms=normalization_ms, tick_mapper=tick_mapper,
-            sample_multiplier=sample_multiplier)
+            sample_multiplier=sample_multiplier, pdx_format=pdx_format)
         from pcm_bank_budget import enforce_budget
-        return enforce_budget(analysis, strict)
+        return enforce_budget(analysis, strict, pdx_format=pdx_format)
     if mode not in ('similar', 'off'):
         raise ValueError('PCM bank merge mode must be budget96, similar or off')
     if not math.isfinite(normalization_ms) or normalization_ms < 0:

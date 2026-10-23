@@ -46,7 +46,7 @@ def project(native,*,pcm_profile='standard'):
         return native
     # Preserve all ordinary source blockers; target quality cannot resolve them.
     if native.issues or native.options&8:return native
-    from pcm_mdx import RATES
+    from pcm_mdx import RATES, _continuous_delivery_eligible
     by_id={s.sample_id:s for s in native.samples}
     samples=[];playbacks=[];mapping=[];identities={};cache={}
     def bind(sample):
@@ -57,9 +57,7 @@ def project(native,*,pcm_profile='standard'):
         return identities[key]
     for p in native.playbacks:
         sample=by_id.get(p.sample_id)
-        schedule_fallback=(set(p.issues)=={'irregular_byte_supply'} and p.decoder_reset_known
-            and p.pan is not None and p.stream_transfer_end-p.stream_transfer_start==p.supplied_bytes
-            and p.supplied_bytes>0)
+        schedule_fallback=_continuous_delivery_eligible(p,native,by_id)
         eligible=(sample is not None and bool(sample.encoded_bytes) and sample.codec=='msm6258-adpcm4-low-first'
                   and (p.independently_playable or schedule_fallback) and p.rate_hz>0)
         if not eligible:

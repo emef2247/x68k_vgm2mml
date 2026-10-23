@@ -71,8 +71,8 @@ class CommonPcmBankTests(unittest.TestCase):
         source = replace(source, samples=(replace(source.samples[0], encoded_bytes=payload,
             sha256=hashlib.sha256(payload).hexdigest()),))
         with tempfile.TemporaryDirectory() as folder:
-            self.assertIsNone(prepare(source, outdir=folder, stem='LONG', policy='best-effort'))
-            self.assertEqual(len(project(source, stem='LONG', policy='best-effort', force=True).bindings), 0)
+            self.assertIsNone(prepare(source, outdir=folder, stem='LONG', policy='best-effort', pdx_format='standard'))
+            self.assertEqual(len(project(source, stem='LONG', policy='best-effort', force=True, pdx_format='standard').bindings), 0)
 
 
 if __name__ == '__main__':

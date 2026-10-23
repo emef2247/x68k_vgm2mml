@@ -16,6 +16,7 @@ from opna_adpcm import decode_adpcm_b, encode_msm6258
 from opna_pcm import ProjectedPcmAnalysis
 from pcm8_volume import project_pcm8_volume
 from pcm_profiles import get_profile
+from pcm_capacity import sample_byte_limit
 
 MAX_DECODED_SAMPLES = 1000000
 MAX_TOTAL_SAMPLES = 8000000
@@ -64,9 +65,10 @@ class ProjectedBankAnalysis(ProjectedPcmAnalysis):
         return path
 
 
-def project(native, *, source_raw, loop_start=None, pcm_profile='standard'):
+def project(native, *, source_raw, loop_start=None, pcm_profile='standard', pdx_format='ex-pdx'):
     """Return a finite bank, or None for controls/resources outside this scope."""
     from pcm_mdx import RATES
+    maximum = sample_byte_limit(pdx_format)
     profile = get_profile(pcm_profile)
     source_raw = bytes(source_raw)
     if hashlib.sha256(source_raw).hexdigest() != native.source_sha256:
@@ -118,7 +120,7 @@ def project(native, *, source_raw, loop_start=None, pcm_profile='standard'):
             count_value = Fraction(len(source.encoded_bytes) * 2) * target_rate / rate
             count = -(-count_value.numerator // count_value.denominator)
             if (len(source.encoded_bytes) * 2 > MAX_DECODED_SAMPLES
-                    or count > 65535 * 2 or total + count > MAX_TOTAL_SAMPLES):
+                    or count > maximum * 2 or total + count > MAX_TOTAL_SAMPLES):
                 return None
             decoded = decode_adpcm_b(source.encoded_bytes)
             pcm = []
@@ -129,7 +131,7 @@ def project(native, *, source_raw, loop_start=None, pcm_profile='standard'):
                 fraction = position - lo
                 pcm.append(round(decoded[lo] * (1 - fraction) + decoded[hi] * fraction))
             encoded, error = encode_msm6258(pcm)
-            if not encoded or len(encoded) > 65535:
+            if not encoded or len(encoded) > maximum:
                 return None
             if encoded not in payload_ids:
                 sample_id = len(samples)

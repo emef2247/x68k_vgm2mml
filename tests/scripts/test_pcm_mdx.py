@@ -199,6 +199,47 @@ class PcmMdxTests(unittest.TestCase):
         self.assertIn('consumed_nibbles_unknown',
                       [item['code'] for item in plan.assessment.as_dict()['unverified_items']])
 
+    def test_irregular_direct_and_mixed_supplies_have_explicit_target_fallback(self):
+        from generate_pcm_fixtures import data_block,stream_setup,stream_fast_start
+        start=write(0,1)+write(2,0)+write(0,2)
+        direct=vgm(start+write(1,0x12)+wait(30)+write(1,0x34)+wait(100)+write(0,1))
+        mixed=vgm(data_block(bytes.fromhex('12 34 56 78'))+stream_setup()+start+
+                  write(1,0x9a)+stream_fast_start()+wait(8)+write(1,0xbc)+wait(114)+write(0,1))
+        for name,raw,expected,direct_count,stream_count in (
+                ('direct',direct,bytes.fromhex('12 34'),2,0),
+                ('mixed',mixed,bytes.fromhex('9a 12 34 bc 56 78'),2,4)):
+            with self.subTest(origin=name):
+                native=analyze(raw);before=repr(native)
+                self.assertFalse(native.issues)
+                self.assertEqual(native.playbacks[0].issues,('irregular_byte_supply',))
+                self.assertFalse(native.playbacks[0].independently_playable)
+                self.assertEqual(native.samples[0].encoded_bytes,expected)
+                with self.assertRaises(ProjectionError) as caught:
+                    project(native,stem=name,policy='strict')
+                self.assertIn('byte_supply_schedule_not_preserved',
+                              [i['code'] for i in caught.exception.assessment.as_dict()['known_losses']])
+                plan=project(native,stem=name,policy='best-effort')
+                self.assertEqual(repr(native),before)
+                self.assertEqual(len([u for u in plan.units if u.kind=='pcm_note']),1)
+                loss=next(i for i in plan.assessment.items if i['code']=='byte_supply_schedule_not_preserved')
+                self.assertEqual(loss['fallback'],'continuous_pdx_delivery')
+                self.assertEqual(loss['source_value']['direct_supplied_bytes'],direct_count)
+                self.assertEqual(loss['source_value']['stream_supplied_bytes'],stream_count)
+                self.assertEqual(plan.rows[0]['delivery_fallback'],'continuous_pdx_delivery')
+                from copy import copy
+                parallel=copy(native)
+                object.__setattr__(parallel,'parallel_playbacks',True)
+                parallel_plan=project(parallel,stem=name+'_parallel',policy='best-effort')
+                self.assertEqual(len([u for u in parallel_plan.units if u.kind=='pcm_note']),1)
+                self.assertEqual(parallel_plan.rows[0]['delivery_fallback'],'continuous_pdx_delivery')
+                broken=replace(native,playbacks=(replace(native.playbacks[0],stream_transfer_end=native.playbacks[0].stream_transfer_start+len(expected)+1),))
+                with self.assertRaises(ProjectionError):
+                    project(broken,stem=name,policy='best-effort')
+                unknown=replace(native,playbacks=(replace(native.playbacks[0],decoder_reset_known=False,
+                    issues=('irregular_byte_supply','decoder_start_unknown_or_continuation')),))
+                with self.assertRaises(ProjectionError):
+                    project(unknown,stem=name,policy='best-effort')
+
     def test_stopped_stream_supply_is_inspectable_target_loss(self):
         raw = next(raw for name, raw, _ in stream_cases() if name == 'stream_stopped_supply_restart')
         analysis = analyze(raw)
@@ -222,12 +263,37 @@ class PcmMdxTests(unittest.TestCase):
                       [item['code'] for item in plan.assessment.as_dict()['known_losses']])
         self.assertEqual(len([u for u in plan.units if u.kind == 'pcm_note']), 2)
 
-    def test_direct_stopped_data_remains_unresolved_under_best_effort(self):
+    def test_direct_stopped_data_uses_explicit_best_effort_profile(self):
         analysis = analyze(vgm(write(0, 1) + write(1, 0x34) + wait(6)))
+        before=analysis
         with self.assertRaises(ProjectionError) as caught:
-            project(analysis, stem='direct_stopped', policy='best-effort')
+            project(analysis, stem='direct_stopped', policy='strict')
+        self.assertIn('stopped_direct_supply_not_projected',
+                      [item['code'] for item in caught.exception.assessment.as_dict()['known_losses']])
+        plan=project(analysis,stem='direct_stopped',policy='best-effort')
+        self.assertEqual(analysis,before)
+        self.assertFalse([u for u in plan.units if u.kind=='pcm_note'])
+        unknown=analyze(vgm(write(1,0x34)+wait(6)),initialization='explicit')
+        with self.assertRaises(ProjectionError) as caught:
+            project(unknown,stem='unknown',policy='best-effort')
         self.assertIn('data_outside_known_playback',
                       [item['code'] for item in caught.exception.assessment.as_dict()['unverified_items']])
+
+    def test_upper_pan_and_unmapped_17_preserve_playable_sample(self):
+        body,_=playback(bytes(range(32)))
+        native=analyze(vgm(write(0,1)+write(1,0x56)+write(2,0x88)+write(0x17,0x10)+body))
+        original=native
+        plan=project(native,stem='observations',policy='best-effort')
+        self.assertEqual(native,original)
+        self.assertTrue(any(u.kind=='pcm_note' for u in plan.units))
+        self.assertEqual(native.samples[0].encoded_bytes,bytes(range(32)))
+        loss_codes={item['code'] for item in plan.assessment.as_dict()['known_losses']}
+        self.assertIn('unmapped_register_17_not_projected',loss_codes)
+        self.assertIn('stopped_direct_supply_not_projected',loss_codes)
+        self.assertTrue(any(i['code']=='pan_non_audio_bits' and i['status']=='pass'
+                            for i in plan.assessment.items))
+        with self.assertRaises(ProjectionError):
+            project(native,stem='strict_observations',policy='strict')
 
     def test_long_playback_holds_before_duration_chunk_without_retrigger(self):
         commands, _ = playback(bytes(range(256)) * 4)
@@ -238,20 +304,18 @@ class PcmMdxTests(unittest.TestCase):
         self.assertEqual(timed, [('hold', ''), ('note', 256), ('note', 256)])
         self.assertIn('n0,%256 & n0,%256', plan.units[0].command)
 
-    def test_unverified_extended_sample_length_is_blocked_in_both_policies(self):
+    def test_standard_sample_length_overflow_is_blocked_in_both_policies(self):
         _, raw, _ = next(cases())
         analysis = analyze(raw)
         sample = replace(analysis.samples[0], encoded_bytes=bytes(65536))
         analysis = replace(analysis, samples=(sample,))
         for policy in ('strict', 'best-effort'):
             with self.assertRaises(ProjectionError) as caught:
-                project(analysis, stem='long', policy=policy)
+                project(analysis, stem='long', policy=policy, pdx_format='standard')
             report = caught.exception.assessment.as_dict()
             self.assertEqual(report['artifact_status'], 'blocked')
-            self.assertFalse(report['known_losses'])
-            gap = next(i for i in report['unverified_items']
-                       if i['code'] == 'sample_length_exceeds_projection_scope')
-            self.assertEqual(gap['cause'], 'implementation_scope')
+            item = next(i for i in caught.exception.assessment.items if i['code'] == 'sample_length_overflow')
+            self.assertEqual(item['cause'], 'target_constraint')
 
     def test_source_invalid_and_unresolved_are_distinct(self):
         commands, _ = playback(bytes(range(16)))
@@ -353,9 +417,9 @@ class PcmMdxTests(unittest.TestCase):
         a = analyze(vgm(cmd[:-3] + write(2, 1) + cmd[-3:]))
         self.assertFalse(project(a, stem='end').units[0].command.rstrip().endswith('&'))
 
-    def test_irregular_supply_and_rate_change_fail_before_any_target_sample_claim(self):
+    def test_strict_irregular_supply_and_unsupported_rate_are_diagnosed(self):
         cmd = write(0, 2) + write(1, 0x12) + wait(20) + write(1, 0x34) + wait(5) + write(0, 1)
-        with self.assertRaisesRegex(ValueError, 'irregular_byte_supply'):
+        with self.assertRaisesRegex(ValueError, 'byte_supply_schedule_not_preserved'):
             project(analyze(vgm(cmd)), stem='irregular')
         cmd, _ = playback(bytes(range(16)), clock=1234567)
         with self.assertRaisesRegex(ValueError, 'no exact standard MDX'):

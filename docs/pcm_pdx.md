@@ -41,7 +41,7 @@ internal decoded-PCM workspace is not part of this encoded-file budget.
 MDX file capacity, compiler/offset limits and PDX capacity are separate checks.
 
 Projection and packing enforce the aggregate byte budget, as well as one
-bank's 96 slots and the 65,535-byte per-sample projection scope. The default
+bank's 96 slots and the selected format's per-sample byte limit. The default
 `budget96` policy selects existing representatives within both budgets for
 eligible MSM6258, Delta-T and SegaPCM target assets. Explicit `similar` / `off`
 reject an oversized bank; `--force` may omit whole samples instead. PSG PCM has
@@ -52,6 +52,29 @@ is removed and reported as failure. No payload is truncated. Size compliance
 is separate from runtime playback validation. Adding banks must not bypass the
 total file budget. See [bank reduction](pcm_bank_reduction.md) for selection
 order and diagnostics.
+
+## PDX length format
+
+`--pdx-format ex-pdx` is the default for conversion and batch export.
+`--pdx-format standard` retains the conventional layout for players that need
+it. Both use one 96-entry table with eight bytes per entry. Standard PDX
+stores a 32-bit offset, a reserved zero word and a 16-bit sample length;
+EX-PDX uses a 32-bit offset and 32-bit sample length. The current PCM8 target
+also limits each EX-PDX sample to `0x00ffffff` encoded bytes, because the high
+byte of the playback argument carries its mode. In practice the operational
+1,200,000-byte total budget is tighter.
+
+The format choice does not change source State, Segments or PCM IR. It changes
+target eligibility and packing checks; it does not split long source samples
+or introduce decoder restarts. The selected format and limits appear in
+`<stem>.pcm.timing.json`, `<stem>.pcm/format.json`, bank statistics and batch
+`results.csv`. The typed `target.tsv` command schema remains unchanged.
+
+EX-PDX requires a compatible playback driver. Successful generation and
+packing do not prove native playback. EX-PDX does not reduce the memory needed
+to load the PDX, remove the 96-slot target limit, or relax MDX compiler and
+16-bit track-offset restrictions. Player RAM and decoded-PCM workspace remain
+separate from the encoded-file budget.
 
 ## Implemented scope
 
@@ -78,10 +101,11 @@ order and diagnostics.
   binary note chunk; its readable tie follows the chunk. Canonical PCM output
   is currently uncompressed; readable MML may use exact finite repeats.
   Runtime STOP/reset equivalence remains unverified.
-- One bank of 96 samples, each at most 65535 bytes in the currently verified
-  projection scope. Longer samples remain blocked as unverified extension
-  behavior, not as proven extended-mode format loss. Encoded bytes remain unchanged; no waveform
-  deduplication, resampling or ADPCM re-encoding is used.
+- One bank of 96 samples. Standard PDX permits at most 65,535 bytes per
+  sample; EX-PDX uses a 32-bit stored length, bounded here by the PCM8
+  interface's 24-bit length and the separate total-file budget. Native encoded
+  sample bytes remain unchanged at binding; optional target bank reduction is
+  described separately in [bank reduction](pcm_bank_reduction.md).
 - PCM-only songs and native OPM+PCM songs use the same inferred MDX clock and
   common source end. The existing six-VGM-sample boundary error bound includes
   PCM start/end and controls. Structured MDX normalization defaults ON, but
@@ -321,6 +345,19 @@ Z_MUSIC version/compiler/container choices remain future decisions.
 Sources: [VGM 1.71 specification](https://github.com/vgmrips/vgmplay-legacy/blob/master/VGMPlay/vgmspec171.txt),
 [MSM6258 behavior](https://github.com/mamedev/mame/blob/master/src/devices/sound/okim6258.cpp),
 [X68000 chip configuration](https://github.com/mamedev/mame/blob/master/src/mame/sharp/x68k.cpp),
-[PDX format](https://github.com/vampirefrog/mdxtools/blob/master/docs/PDX.md).
+[PDX format](https://github.com/vampirefrog/mdxtools/blob/master/docs/PDX.md),
+[MXDRV 2.06+17 Rel.X5-S source](https://github.com/vampirefrog/x68kd11s/blob/master/sound/mxdrv/2.06%2B17_Rel.X5-S/mxdrv17.s),
+[soundlog 0.15.0 documentation](https://docs.rs/soundlog/0.15.0/soundlog/).
+The reference MXDRV PCM8 path reads the long length at `L000f28` and masks
+it to 24 bits at `L000f8e`; this is distinct from the native PCM1 low-word path.
 Dependency behavior is verified against the pinned Cargo sources and helper
 tests, rather than inferred from successful final file generation.
+
+## Optional verification VGM export
+
+`export_mdx.py` defaults to MML/MDX and required PDX output without replaying
+MDX to a verification VGM. Use `--vgm` to request that additional replay.
+The older `--no-vgm` remains accepted and is equivalent to the default.
+The Python batch API defaults to `no_vgm=True`; callers needing replay pass
+`no_vgm=False`. This choice does not suppress intermediate projected-source
+VGM evidence required by the conversion pipeline.

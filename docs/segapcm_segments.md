@@ -88,8 +88,10 @@ The union of native active gates is packaged into at-most8-second chunks,
 split at the MDX `L` boundary and EOF. Fractional gate bounds round outward by
 less than one source sample. Chunks are packaging units, not source notes;
 short tails cannot be omitted by whole-gate normalization. Exact identical
-encoded payloads share a slot. The existing96-slot/65535-byte verified limits
-still apply. After common FM/PCM clock selection, each original audio interval
+encoded payloads share a slot. The 96-slot and 1,200,000-byte total limits
+still apply. Mixed-waveform chunks remain bounded to 65,535 encoded bytes
+each by their packaging implementation. The selected PDX format controls
+sample eligibility separately; see [PDX length format](pcm_pdx.md#pdx-length-format). After common FM/PCM clock selection, each original audio interval
 is resampled to its final scheduled gate, using an even ADPCM sample count
 within one F4 sample of its target duration. Inspect
 `.segapcm_pcm_mapping.csv` and `.segapcm_pcm_bridge.json` for the mapping,

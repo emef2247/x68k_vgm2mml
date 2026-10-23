@@ -217,6 +217,8 @@ class PcmAnalysis:
             consumption_origin='unknown_not_emulated', cadence_tolerance_vgmticks=1,
             stream_scheduling_model=SCHEDULING_MODEL,
             stream_reference_revision=REFERENCE_REVISION,
+            register_interpretation_profile='libvgm-msm6258-pan-low2-unmapped17',
+            register_reference_revision=REFERENCE_REVISION,
             codec_flag_profile='libvgm-bit2-set-is-adpcm4',
             stream_transfer_count=len(self.stream_supplies),
             transfer_count=len(self.transfers), sample_count=len(self.samples),
@@ -254,6 +256,7 @@ def analyze(raw, *, initialization='reset', loop_count=1):
     decoder = StreamDecoder(raw)
     observations = []
     stopped_stream_supply = []
+    stopped_direct_supply = []
     buckets = {}
     active = None
     end = 0
@@ -354,11 +357,11 @@ def analyze(raw, *, initialization='reset', loop_count=1):
                 active['bytes'].append(value)
                 active['ticks'].append(tick)
                 active['last'] = event_id
-            elif derived and playing is False:
-                stopped_stream_supply.append((event_id, tick))
+            elif playing is False:
+                (stopped_stream_supply if derived else stopped_direct_supply).append((event_id, tick))
             else:
                 issue('data_outside_known_playback', event_id, tick,
-                      'Data supplied while stopped or with unknown play state')
+                      'Data supplied with unknown play state')
             return
         reset = False
         if reg == 0:
@@ -388,7 +391,9 @@ def analyze(raw, *, initialization='reset', loop_count=1):
                 if active is not None and not active['bytes']:
                     active['pan'] = pan
                 if value & ~3:
-                    issue('reserved_pan_bits', event_id, tick, f'Pan value {value:#x}')
+                    observations.append(PcmIssue('pan_non_audio_bits', event_id, tick,
+                        f'Raw pan {value:#x}; effective disable bits {pan:#x}; '
+                        'libvgm output uses only bits 0 and 1; raw value retained'))
             elif reg == 0x0b:
                 clock_buffer[3] = value
                 clock = int.from_bytes(bytes(clock_buffer), 'little')
@@ -403,6 +408,10 @@ def analyze(raw, *, initialization='reset', loop_count=1):
                     active['clock'], active['divider'] = clock, divider
         elif 8 <= reg <= 10:
             clock_buffer[reg - 8] = value
+        elif reg == 0x17:
+            observations.append(PcmIssue('unmapped_register_17', event_id, tick,
+                f'Register 0x17 data {value:#x} has no handler in the libvgm MSM6258 '
+                'write dispatcher; no hardware alias inferred; raw write retained'))
         else:
             issue('unsupported_register', event_id, tick, f'MSM6258 register {reg:#x}')
             if active is not None:
@@ -458,6 +467,12 @@ def analyze(raw, *, initialization='reset', loop_count=1):
         observations.append(PcmIssue('stream_supply_while_stopped', first_id, first_tick,
             f'{len(stopped_stream_supply)} derived supplies while known/assumed stopped; '
             f'last tick {stopped_stream_supply[-1][1]}; all supplies retained. '
+            'libvgm stop-to-play clears its FIFO; native buffered-data behavior is unverified'))
+    if stopped_direct_supply:
+        first_id, first_tick = stopped_direct_supply[0]
+        observations.append(PcmIssue('direct_supply_while_stopped', first_id, first_tick,
+            f'{len(stopped_direct_supply)} direct B7 supplies while known/assumed stopped; '
+            f'last tick {stopped_direct_supply[-1][1]}; all transfers retained. '
             'libvgm stop-to-play clears its FIFO; native buffered-data behavior is unverified'))
     if loop_address is not None and loop_tick is None:
         issue('invalid_loop_address', None, end, 'Loop offset does not address a command boundary')

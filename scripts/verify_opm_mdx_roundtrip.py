@@ -108,6 +108,8 @@ def main():
     parser.add_argument('--mdxdump',type=Path,help='External mdxtools executable for reference/generated MDX metadata audit')
     parser.add_argument('--track-layout', choices=('channels', 'conductor'), default='channels')
     parser.add_argument('--generator', type=Path, default=ROOT / 'scripts/mdx_fixture_generator/target/release' / ('mdx-fixture-generator' + suffix))
+    parser.add_argument('--pdx-format', choices=('ex-pdx', 'standard'), default='ex-pdx',
+                        help='PDX length format (default ex-pdx)')
     parser.add_argument('--compiler', choices=('mxc', 'mmlx'), default='mmlx',
                         help='FM MML compiler (default mmlx); comparator is unchanged')
     parser.add_argument('--mxc', type=Path, help='Native MXC.X compiler')
@@ -167,7 +169,7 @@ def main():
             mml, source_analysis, projection = convert(source, folder, dump_passes=True, track_layout=args.track_layout,
                                                         notation=args.notation, loops=not args.no_loops,title=args.title,
                                                         normalize_lengths=args.normalize_lengths,
-                                                        pcm_generator=args.generator)
+                                                        pcm_generator=args.generator, pdx_format=args.pdx_format)
             tolerance = 6
             correction = json.loads((folder / (source.stem + '.mdx.normalization.json')).read_text(encoding='utf-8'))
             row['length_normalization'] = correction

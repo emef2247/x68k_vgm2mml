@@ -4,7 +4,7 @@ from pcm_waveform_mdx import (CHUNK_TICKS, MAX_BYTES, TARGET_RATE,
     ProjectedWaveformAnalysis as ProjectedSegaPcmAnalysis, project as project_waveform, _loss)
 
 
-def project(native, *, source_raw, loop_start=None, loop_count=1,pcm_profile='standard'):
+def project(native, *, source_raw, loop_start=None, loop_count=1,pcm_profile='standard',pdx_format='ex-pdx'):
     evidence = []
     if native.reset_profile:
         evidence.append(dict(criterion='source_interpretation', status='unverified',

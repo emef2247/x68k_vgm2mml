@@ -26,6 +26,20 @@ def report_text(path):
 
 
 class ExportReportTests(unittest.TestCase):
+    def test_fm_state_threshold_and_terminal_recovery_are_reported_separately(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder=Path(tmp);path=source(folder/'a.vgm',b'\x62')
+            (folder/'a.mdx.normalization.json').write_text(json.dumps(dict(
+                status='applied',normalization_ms=8,enabled=True)))
+            (folder/'a.fm.short_states.json').write_text(json.dumps(dict(
+                enabled=True,threshold_ms=1,threshold_samples=44,omitted_states=3,
+                omitted_duration_samples=60,terminal_source_writes=2,terminal_restoration_writes=1)))
+            text=report_text(write_export_report(path,folder,'a',dict(status='success')))
+            self.assertIn('Normalization parameter: 8 ms',text)
+            self.assertIn('FM state threshold: 1 ms; 44 original samples',text)
+            self.assertIn('2 source writes; 1 target state restorations',text)
+            self.assertIn('omitted duration 60 source samples',text)
+
     def test_encoded_note_census_is_distinct_from_source_requests(self):
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
