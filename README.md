@@ -88,8 +88,4 @@ OPNA FM→OPMおよびPSG／SSG→OPMは、[vgm-conv](https://github.com/digital
 
 解析とMML・PCM IR生成はPythonで実装しています。外部ツールは主にコンパイル、再生確認、比較、およびテスト生成に使用します。現行のPCM経路に必要なhelperを含め、準備方法は[docs/mdx_compiler_setup.md](docs/mdx_compiler_setup.md)を参照してください。
 
-## Export package layout
-
-Final MML/MDX/PDX files are flat under each source-directory package's `tracks/`.
-Diagnostics and staged inputs are separate. See [output layout](docs/output_layout.md).
 Omit `--outdir` to place packages beside source VGM files.
