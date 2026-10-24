@@ -53,21 +53,6 @@ VGMには音符ではなく音源レジスタへの書き込みが記録され�
 
 PCM容量、MDXトラックサイズ、プレイヤーのメモリ制約などによって変換・再生できない場合があります。曲ループの位置やMDXサイズが原因の場合は、`--no-song-loop` を試してください。
 
-## 詳細資料
-
-- [MDXコンパイラ・再生環境の準備](docs/mdx_compiler_setup.md)
-- [FMの演奏構造と状態の整理](docs/opm_performed_structure.md)
-- [VGMの曲全体ループ](docs/vgm_loop.md)
-- [DCSGからOPMへの変換](docs/dcsg_to_opm.md)
-- [SCCからOPMへの投影](docs/scc_fm_projection.md)
-- [PSGからPCMへの投影](docs/psg_pcm.md)
-- [PCM／PDXの対応範囲と形式](docs/pcm_pdx.md)
-- [PCMサンプルバンクと容量削減](docs/pcm_sample_bank_design.md)
-- [SegaPCMの解析・投影](docs/segapcm_segments.md)
-- [変換の原則と制約](docs/project_knowledge.md)
-
-詳細設定や検証用オプションは、`python scripts/export_mdx.py --help` と各資料を参照してください。
-
 ## 構成
 
 - `vgm2mml.py`：単体VGMの解析・MML生成
