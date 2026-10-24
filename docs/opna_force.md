@@ -118,7 +118,8 @@ whole register is distinct from omitting the effect of some of its bits.
   `projection_settings` in the latter.
 
 Detailed CSV/JSON files for listening exports are under `_diagnostics`; the
-TXT intended for distribution is under `tracks/<stem>/`. Omitted durations of
+TXT reports also remain under `_diagnostics/<stem>/`; final listening files
+are flat under `tracks/` (see [output layout](output_layout.md)). Omitted durations of
 simultaneous channels may overlap: their sum is not a reduction in song length.
 Successful generation does not guarantee audio identity or physical playback.
 

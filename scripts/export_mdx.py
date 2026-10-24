@@ -347,7 +347,7 @@ def positive(value):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', type=Path, help='VGM/VGZ file or directory to scan recursively')
-    parser.add_argument('--outdir', type=Path, required=True, help='Separate output tree')
+    parser.add_argument('--outdir', type=Path, help='Output tree; omitted: packages beside source VGM files')
     parser.add_argument('--target', choices=('mdx', 'opm', 'opm-additive'), default='mdx', metavar='{mdx}',
                          help='MDX output with automatic source route (opm/opm-additive are deprecated aliases)')
     parser.add_argument('--normalize-lengths', action=argparse.BooleanOptionalAction, default=None,
@@ -407,7 +407,8 @@ def main():
     except (OSError, ValueError) as error:
         parser.error(str(error))
     success = sum(row['status'] == 'success' for row in rows)
-    print(f'{success}/{len(rows)} exported; results: {args.outdir / "results.csv"}')
+    output_root = args.outdir or (args.input if args.input.is_dir() else args.input.parent)
+    print(f'{success}/{len(rows)} exported; results: {output_root / "_diagnostics/results.csv"}')
     return 0 if success == len(rows) and not any(row.get('report_status') == 'failed' for row in rows) else 1
 
 

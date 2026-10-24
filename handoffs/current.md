@@ -1,3 +1,15 @@
+# Export package layout checkpoint (2026-10-24)
+
+Default export_mdx now retains source-relative parent directories and publishes
+flat tracks/ bundles, per-package diagnostics/source copies/manifests/results.
+Omitted --outdir uses adjacent packages. Legacy manifests are protected, not
+migrated. Failed reruns retain successful bundles and record latest attempt.
+Validation: 51 focused tests passed. Independent public root/nested-package
+checks passed, including repeated stems and partial reruns. Public CLOCK and
+SEGAONE compiled; SEGAONE MDX references the adjacent flat PDX correctly.
+No music interpretation or private-fixture conversion changed. See
+docs/output_layout.md. No staging, commit or push.
+
 # Active checkpoint: PCM auto policy and optional verification VGM
 
 2026-10-23: requested changes saved in the working tree. No staging, commit or
