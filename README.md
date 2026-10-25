@@ -1,13 +1,27 @@
 # x68k_vgm2mml
 
-VGMに記録されたレジスタ操作から音符・音価・音量・音色などの演奏情報を抽出し、X68000向けの構造化されたMML（MDX用）とPCM IRを生成するツールです。対応する入力ではMDX／PDXも一括出力できます。
-元のVGMのレジスタ操作を、検査可能な中間表現（State／Segment／PCM IR）として保持し、音楽的に構造化されたMMLへ変換することを目指しています。Python 3.10以降を使用します。
+VGMに記録されたレジスタ操作から音符・音価・音量・音色などの演奏情報を抽出し、X68000向けの構造化されたMML（MDX用）とPCM IRを生成するツールです。
+Python 3.10以降を使用します。
 
 ## 使い方
+
+### VGMファイルを指定してMML及びPCM IRを生成
+
+```bash
+# MMLのみ生成
+python vgm2mml.py INPUT.vgm --outdir OUTDIR
+```
+
+もし、MMLの生成からMDXの生成までを自動で行いたい場合は、`scripts/export_mdx.py`(後述）を利用してください。
+
+
+### VGMファイルを含むディレクトリを指定して、MML,PCM IRとmdx/pdxを一括変換
+
 
 VGMファイルを置いたディレクトリを指定して、一括変換します。
 
 ```bash
+#MMLだけではなくMDX/PDXまで一括自動変換。
 python scripts/export_mdx.py INDIR --outdir OUTDIR --force
 ```
 
@@ -17,7 +31,12 @@ VGMの曲全体ループを使わず、1周だけ出力する場合：
 python scripts/export_mdx.py INDIR --outdir OUTDIR --force --no-song-loop
 ```
 
-既定の設定で、MML・MDX・必要なPDX・変換レポートを生成します。出力先の `results.csv` と各曲のTXTレポートで、成功・失敗や近似・省略の内容を確認できます。
+MDXの生成にはMXCまたはmmlxなどのMDXコンパイラが必要です。PDXの生成にはsoundlogを利用しています。
+
+これらの環境構築については、[環境構築](docs/mdx_compiler_setup.ja.md) を参照してください。
+
+これら外部ツールを自動でインストールしたい場合は [scripts/setup_tools.sh](scripts/setup_tools.sh) を利用してください。
+
 
 ### 主なオプション
 
@@ -26,7 +45,7 @@ python scripts/export_mdx.py INDIR --outdir OUTDIR --force --no-song-loop
 | `--outdir OUTDIR` | 変換結果の出力先ディレクトリ |
 | `--force` | 未対応の演奏要素や容量超過PCMなど、許容された範囲を診断付きで省略して続行 |
 | `--no-song-loop` | VGMの曲全体ループを使わず、1周で終了するMDXを生成 |
-| `--normalization-ms MS` | 短い発音の省略・時刻補正の基準（既定8ms）。小さいほど細かなイベントを残す |
+| `--psg-output {opm,pcm}` | PSGの演奏情報をOPMまたはPCMのどちらに変換するかを選択 |
 | `--timeout SECONDS` | 各入力・各処理段階のタイムアウト（既定1200秒） |
 
 `--force` を指定しても、すべての入力が変換できるわけではありません。省略・近似が発生した場合はレポートを確認してください。
@@ -49,14 +68,14 @@ python scripts/export_mdx.py INDIR --outdir OUTDIR --force --no-song-loop
 
 VGMには音符ではなく音源レジスタへの書き込みが記録されているため、MML生成時には発音・音量・音色・音程などを解釈します。異なる音源への投影では近似が発生します。
 
-**MML生成、MDX／PDXへのコンパイル、X68000での再生確認は別の検証段階です。** コンパイルに成功しても、元の音声との一致や実機・エミュレータでの再生成功を保証するものではありません。
+**MML生成、MDX/PDXへのコンパイル、X68000での再生確認は別の検証段階です。** コンパイルに成功しても、元の音声との一致や実機・エミュレータでの再生成功を保証するものではありません。
 
 PCM容量、MDXトラックサイズ、プレイヤーのメモリ制約などによって変換・再生できない場合があります。曲ループの位置やMDXサイズが原因の場合は、`--no-song-loop` を試してください。
 
 ## 構成
 
 - `vgm2mml.py`：単体VGMの解析・MML生成
-- `scripts/export_mdx.py`：MML・MDX・PDXの一括生成とレポート出力
+- `scripts/export_mdx.py`：MML・MDX/PDXの一括生成とレポート出力
 - `py/`：音源解析、中間表現、ターゲット生成
 - `scripts/`：検証・比較・補助ツール
 
