@@ -42,6 +42,9 @@ def summarize(folder, stem, *, allow_binary=False):
     folder = Path(folder)
     selection = folder / f'{stem}.segapcm_projection.json'
     route_label = 'SegaPCM'
+    c140_selection = folder / f'{stem}.c140_projection.json'
+    if c140_selection.is_file():
+        selection, route_label = c140_selection, 'C140'
     if selection.is_file():
         value = json.loads(selection.read_text(encoding='utf-8'))
     else:
@@ -65,7 +68,7 @@ def summarize(folder, stem, *, allow_binary=False):
                                 asset_payload_bytes=shared['input_payload_bytes']))
         route_label = 'PCM'
     if not isinstance(value, dict) or not isinstance(value.get('stats', {}), dict):
-        raise ValueError('SegaPCM projection statistics must be JSON objects')
+        raise ValueError('PCM projection statistics must be JSON objects')
     source = value.get('stats', {})
     fallback = value.get('fallback')
     if isinstance(fallback, dict):
@@ -195,7 +198,7 @@ def format_lines(summary):
     if summary.get('pdx_format') is not None:
         lines.append(f"  PDX format: {summary['pdx_format']}; sample byte limit {number('sample_byte_limit')}")
     if summary.get('fallback_reason'):
-        lines.append('  Mix fallback: ' + str(summary['fallback_reason']).replace('\n', ' '))
+        lines.append(('  Source limitation: ' if summary.get('route_label') == 'C140' else '  Mix fallback: ') + str(summary['fallback_reason']).replace('\n', ' '))
     if summary.get('merge_mode') is not None:
         lines.extend([f"  Bank reduction: {summary['merge_mode']}; samples {number('merge_samples_before')} -> "
                       f"{number('merge_samples_after')}; payload {number('merge_bytes_before')} -> {number('merge_bytes_after')} bytes",

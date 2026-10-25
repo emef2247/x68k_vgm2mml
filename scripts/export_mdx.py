@@ -173,6 +173,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
                              folder / (path.stem + '.report.txt'), census,
                              folder / (path.stem + '.conversion.json'),
                              folder / (path.stem + '.segapcm_projection.json'),
+                             folder / (path.stem + '.c140_projection.json'),
                              folder / (path.stem + '.pcm_bank.stats.json'),
                              *(folder / (path.stem + suffix) for suffix in
                                ('.pcm_bank_merge.json', '.pcm_bank_merge.samples.csv', '.pcm_bank_merge.playbacks.csv', '.pcm_bank.source_validation.json')),

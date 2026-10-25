@@ -41,7 +41,7 @@ def inspect_source(source):
         item = dict(command=f'{cmd:#04x}', address=pos, source_samples=event.vgmticks)
         chip = {0x54: 'opm', 0xa4: 'opm', 0x56: 'opna', 0x57: 'opna',
                 0xa6: 'opna', 0xa7: 'opna', 0xa0: 'psg', 0xd2: 'scc',
-                0x51: 'opll', 0x50: 'dcsg', 0x30: 'dcsg', 0x4f: 'dcsg', 0x3f: 'dcsg', 0xb7: 'pcm', 0xc0: 'segapcm'}.get(cmd)
+                0x51: 'opll', 0x50: 'dcsg', 0x30: 'dcsg', 0x4f: 'dcsg', 0x3f: 'dcsg', 0xb7: 'pcm', 0xc0: 'segapcm', 0xd4: 'c140'}.get(cmd)
         if chip:
             chips.add(chip)
             first.setdefault(chip, item)
@@ -87,6 +87,9 @@ def inspect_source(source):
             elif kind == 0x81:
                 chips.add('opna')
                 first.setdefault('opna', item)
+            elif kind == 0x8d:
+                chips.add('c140')
+                first.setdefault('c140', item)
             elif kind == 0x80:
                 chips.add('segapcm')
                 first.setdefault('segapcm', item)
@@ -116,7 +119,7 @@ def inspect_source(source):
     declarations = dict(dcsg=int.from_bytes(raw[0x0c:0x10], 'little'), opm=opm_clock, opna=header['opna_clock_raw'],
                         opll=opll_clock, psg=header['ay_clock_raw'],
                         scc=header['scc_clock_raw'], pcm=header['msm6258_clock_raw'],
-                        segapcm=header['segapcm_clock_raw'])
+                        segapcm=header['segapcm_clock_raw'], c140=header['c140_clock_raw'])
     has_song_loop = bool(int.from_bytes(raw[0x1c:0x20], 'little'))
     initialization = {}
     if chips & {'opm', 'opna'} and 'psg' in chips and psg_silent and psg_volumes == [0, 0, 0]:
@@ -154,6 +157,8 @@ def select_mdx_route(usage, *, compatibility_target=None):
         if not chips or not chips <= {'psg', 'scc'}:
             raise ValueError('Compatibility --target opm/opm-additive requires PSG/SCC source commands')
         return 'psg-scc-to-opm'
+    if 'c140' in chips and chips <= {'opm', 'c140'}:
+        return 'opm-c140-source'
     if 'segapcm' in chips and chips <= {'opm', 'segapcm'}:
         return 'opm-segapcm-source'
     if chips and chips <= {'opm', 'pcm'}:

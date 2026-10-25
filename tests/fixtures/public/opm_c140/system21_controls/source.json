@@ -1,0 +1,6 @@
+{
+  "origin": "Project-authored arithmetic waveform and register sequence; no ROM-derived content",
+  "sha256": "2e7a05ad0957727887001016f6981c1f6fb63c19c339955229b3af96a7948076",
+  "chip_type": 1,
+  "clock_raw": 12288000
+}

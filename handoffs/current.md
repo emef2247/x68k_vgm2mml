@@ -1,3 +1,55 @@
+# C140 capture budget retained at48m (2026-10-25)
+
+User requests keeping the relaxed conversion limit despite BURNFC03 playback
+reporting an MXDRV track-buffer shortage. MAX_TOTAL_FRAMES now48,000,000
+(previous32m); per-gate/completion/target/PDX limits unchanged. docs/c140.md
+updated. This retains the successful diagnostic conversion condition; it does
+not fix or diagnose the reported native track-buffer error. No private rerun.
+README unchanged; no staging/commit/push. Full regression remains user-owned.
+
+---
+
+# BURNFC03 capture-budget investigation (2026-10-25)
+
+User requested focused investigation; BURNFC03 source/probe now authorized.
+Existing total_resource_limit gate2400 is the32m aggregate native-frame guard,
+not ROM/PDX limits. Algebraic accounting:35,058,325 frames over71.102s;
+reproduces64.65s rejection. Two held internal-loop voices last37.854s each.
+An in-process48m override with force + finite pass succeeded in597s:
+80 samples/1988 retained playbacks;694 omitted (all8-voice allocation);
+MDX49978 bytes,EX-PDX808873 bytes. Outputs separate under
+outputs/diagnostics/c140_burnfc03_20261025/expanded_budget. Not a batch mmlx
+rerun or listening check. Default and conversion code unchanged.
+
+See external field_notes/2026-10-25_burnfc03_capture_budget.md and ignored
+analysis_ja.md. Next possible change: bounded configurable capture budget;
+longer-term incremental capture/reuse. No other BURNFC files investigated.
+No staging/commit/push; preserve all previous C140 working-tree changes.
+
+---
+
+# Initial C140 bank implementation (2026-10-25)
+
+Saved native C140 System 2/21 source evidence, pinned runtime voice reconstruction,
+and shared PCM8/EX-PDX bank projection. See docs/c140.md and external field_notes/
+2026-10-25_c140_sample_bank.md. Auto selects best-effort for this exact source.
+No mix fallback; unsupported variants and missing observed ROM remain explicit.
+Optional one-shot completion is cached/budgeted and falls back on unavailable
+unplayed tails. Native source evidence remains separate from target capacity.
+
+Validation:21 authored C140 checks passed, including pinned C-core oracle and
+three public binary conversions. Relevant existing exporter/route/policy/stats
+checks passed. Authorized BURNFC01 default succeeds; BURNFC02 requires --force
+--no-song-loop for finite output (81 samples,295 retained/125 omitted playbacks,
+110902-byte PDX). Normal song-loop continuation remains guarded. User owns full
+local_only regression/listening. SALAMAND.log records10/10 user successes.
+
+README unchanged; no staging/commit/push. Private/generated/reference-core data
+remain ignored. Do not begin OKIM6295 or silently fake loop-seam attacks. Next:
+user regression; investigate reported target/projection issues from diagnostics.
+
+---
+
 # PSG PCM auto policy and FM compiler consistency (2026-10-25)
 
 Saved: auto selects best-effort for exact projected_msm6258_from_psg origin;

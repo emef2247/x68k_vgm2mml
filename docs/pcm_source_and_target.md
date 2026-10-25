@@ -28,6 +28,7 @@ flags or unused stream setup:
 | Source supply or selected conversion | Effective policy |
 | --- | --- |
 | Explicit PSG-to-PCM projection (`--psg-output pcm`) | best-effort |
+| C140-to-MSM6258 sample-bank transcoding | best-effort |
 | DAC supplies, including mixed direct B7 and DAC supply | best-effort |
 | Direct writes without actual DAC supply | strict native/direct handling |
 | Other projections without DAC supply | existing strict projection |

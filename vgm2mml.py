@@ -284,7 +284,7 @@ def main():
             '.pcm.force_capacity.csv', '.pcm.force_capacity.json',
             '.mdx.normalization.csv', '.mdx.before.normalize.mml',
             '.pcm.timing.json', '.pcm.assessment.json', '.pcm.assessment.csv',
-            '.pcm_bank_merge.json', '.pcm_bank_merge.samples.csv', '.pcm_bank_merge.playbacks.csv', '.pcm_bank.source_validation.json',
+            '.pcm_bank_merge.json', '.pcm_bank_merge.samples.csv', '.pcm_bank_merge.playbacks.csv', '.pcm_bank.source_validation.json', '.c140_projection.json',
             '.pcm_target_commands.csv', '.pcm_projection.csv', '.pcm_clock.csv', '.pcm_bindings.csv')
         owned = list(owned_binary) + [Path(song_dir) / (base_name + suffix) for suffix in suffixes]
         if args.target == 'mdx':
@@ -311,7 +311,7 @@ def main():
         report['chip_projection'] = route
         report['force_requested'] = args.force
         if args.force and (args.target != 'mdx' or route not in (
-                'opna-fm-to-opm', 'native-opm-pcm', 'opm-segapcm-source', 'psg-scc-to-opm', 'dcsg-to-opm')):
+                'opna-fm-to-opm', 'native-opm-pcm', 'opm-segapcm-source', 'opm-c140-source', 'psg-scc-to-opm', 'dcsg-to-opm')):
             raise ValueError('--force requires a supported MDX source route and --target mdx')
         if args.fm_only and (args.target != 'mdx' or route != 'opm-segapcm-source'
                              or 'opm' not in usage['used_chips']):
@@ -321,13 +321,15 @@ def main():
             report['excluded_sources'] = [dict(chip='segapcm', reason='Explicit --fm-only diagnostic export')]
         elif route == 'opm-segapcm-source':
             report['chip_projection'] = 'opm-segapcm-pdx'
+        elif route == 'opm-c140-source':
+            report['chip_projection'] = 'opm-c140-pdx'
         source_selection='psg' if args.psg_only else 'scc' if args.scc_only else 'all'
         if source_selection!='all' and route!='psg-scc-to-opm':
             raise ValueError('--psg-only/--scc-only require a PSG/SCC input and --target mdx')
         report['source_selection']=source_selection
         if args.psg_output=='pcm' and (route!='psg-scc-to-opm' or args.scc_only or args.notation!='structured'):
             raise ValueError('--psg-output pcm requires structured PSG/SCC MDX input and cannot combine with --scc-only')
-        pcm_applicable = (route == 'opna-fm-to-opm'
+        pcm_applicable = (route in ('opna-fm-to-opm', 'opm-c140-source')
                           or route == 'opm-segapcm-source' and not args.fm_only
                           or route == 'native-opm-pcm' and 'pcm' in usage['used_chips']
                           or route=='psg-scc-to-opm' and args.psg_output=='pcm')
@@ -339,7 +341,7 @@ def main():
             raise ValueError('--target opm-additive requires the additive PSG model')
         if route == 'psg-scc-to-opm' and (args.notation == 'legacy' or args.track_layout != 'channels'):
             raise ValueError('PSG/SCC OPM projection supports structured/registers notation and channel tracks')
-        if route in ('native-opm-pcm', 'opna-fm-to-opm', 'opm-segapcm-source') and any(v is not None for v in (args.psg_model,args.psg_gain,args.scc_gain,args.scc_model,args.scc_voice_bank)):
+        if route in ('native-opm-pcm', 'opna-fm-to-opm', 'opm-segapcm-source', 'opm-c140-source') and any(v is not None for v in (args.psg_model,args.psg_gain,args.scc_gain,args.scc_model,args.scc_voice_bank)):
             raise ValueError('PSG/SCC projection options do not apply to native MDX')
         report['status'] = 'resolved'
         record_report()
@@ -479,6 +481,7 @@ def main():
                                 pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'auto',pcm_profile=args.pcm_profile,
                                 pitch_policy=args.opm_pitch_policy or 'clamp',
                                 normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms,
+                                c140_pcm=route == 'opm-c140-source',
                                 segapcm_source=route == 'opm-segapcm-source',
                                 segapcm_pcm=route == 'opm-segapcm-source' and not args.fm_only,
                                 segapcm_projection=args.segapcm_projection, pcm_bank_merge=args.pcm_bank_merge, pdx_format=args.pdx_format,
