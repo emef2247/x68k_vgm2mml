@@ -220,3 +220,11 @@ experiments, earlier conservative behavior, test counts and listening results
 remain in the external notes `field_notes/2026-10-11_short_gate_checkpoint.md`
 and `field_notes/2026-10-10_shared_output_normalization.md`; an old checkpoint
 is not a fresh validation of the current implementation.
+
+## PCM compilation consistency
+
+FM-only input rebuilt for typed PCM assembly uses the same selected
+`--fm-state-ms` threshold and normalization ON/OFF as the readable structured
+MML. Omitting that option on the second build would restore raw held controls
+and could exceed MDX track-offset capacity despite compact readable MML.
+Baseline-before-normalization dumps remain intentionally unfiltered evidence.

@@ -1,3 +1,40 @@
+# PSG PCM auto policy and FM compiler consistency (2026-10-25)
+
+Saved: auto selects best-effort for exact projected_msm6258_from_psg origin;
+explicit strict and native/direct/DAC selection retain their rules. The typed
+PCM compiler's FM-only rebuild now receives the same short_state_samples as
+the readable MML, including configured threshold and normalization OFF. This
+fixes a missing-option path, not a new musical approximation. Source evidence,
+PCM assets/typed commands, baseline dumps and README are unchanged.
+
+SALAMD01's existing diagnostics showed MDX track2 offset >0xfffe with a
+476015-byte FM compiler input versus54548-byte readable MML. Its694338-byte
+PDX fit the configured byte budget. Do not claim the file-size budget guarantees
+playback memory. No local_only reconversion; user owns regression/listening.
+Authored focused tests passed:6PCM policy,3PSG PCM,10FM short-state checks.
+Public PSG+SCC batch validation and final review are recorded in the private note.
+No staging, commit or push. Preserve earlier staged curve-backport changes.
+
+---
+
+# Shared PSG/SCC source-curve backport (2026-10-25)
+
+Changes saved for: PSG/SCC -> OPM, including the existing SSG-to-PSG adapter; PSG -> PCM packaging.
+Shared pure engines are synchronized with MSX; native adapters call analyze /
+project at44100Hz before existing structure and target projection. Source
+Segments/controls remain intact. Source-SSG register labels are mapped explicitly;
+mixer writes stay protected. MGSDRV syntax/bank/tie rules were NOT transplanted.
+DCSG and inherited MGS extract_notes are unchanged.
+
+Minimal validation: 4 new native/packaging tests,2 existing PSG PCM,5 OPM performance,5 SCC projection tests passed.
+No local_only fixture conversion or broad regression. The user owns listening
+and full regression. Do not launch expensive compilers/emulators/catalog runs.
+README unchanged. See docs/msx_curve_interpretation.md and external field_notes/
+2026-10-25_shared_msx_curve_backport.md. No staging/commit/push. Preserve unrelated
+working-tree files, including MUCOM's pre-existing -w.mub.
+
+---
+
 # Export package layout checkpoint (2026-10-24)
 
 Default export_mdx now retains source-relative parent directories and publishes
@@ -110,3 +147,11 @@ were made in this task.
 External note (separate private repository, uncommitted):
 field_notes/2026-10-23_pcm_auto_and_mixed_supply.md
 Earlier source-profile, audit, sweep and DCSG notes remain there.
+
+Public CLI check: scale_rom1.vgm -> PSG-to-OPM MDX MML succeeded with --dump-passes; artifacts are under outputs/diagnostics/curve_backport_20261025/psg_opm. No private regression was rerun.
+
+Final review: silent-channel rest groups are retained in PCM diagnostics but cannot block complete sounding-group cuts. Authored packaging coverage includes a long overlapping rest.
+
+Final validation: public psg_scc_001 exported MDX/PDX successfully with --psg-output pcm --scc-model additive --no-song-loop and no policy override; auto selected best-effort. Focused review found no critical issue. SALAMD01 itself has not been reconverted.
+
+User follow-up: SALAMD01 PSG-to-PCM conversion succeeded and listening was confirmed after the FM compiler-setting fix (12 samples/playbacks, 0 omitted; EX-PDX 694338 bytes). User rerun explicitly used best-effort; auto was covered separately by public/authored checks.

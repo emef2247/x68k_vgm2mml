@@ -19,6 +19,21 @@ from vgm_timing import command_times
 
 
 class PsgPcmMdxTests(unittest.TestCase):
+    def test_auto_allows_explicit_psg_transcoding_but_strict_still_blocks(self):
+        from pcm_mdx import project as bind
+        from pcm_assessment import ProjectionError
+        samples=array('h',[4000 if i%40<20 else 0 for i in range(4410) for _ in (0,1)])
+        native=PsgPlayback(Fraction(44100),4410,samples,
+            (PlaybackGate(0,Fraction(0),Fraction(4410),0,None,(0,),'source_end'),),(),{})
+        waveform=project(native,source_raw=b'authored')
+        plan=bind(waveform,stem='AUTH')
+        self.assertEqual(plan.assessment.policy_selection['effective'],'best-effort')
+        self.assertEqual(plan.assessment.policy_selection['reason'],'explicit_psg_pcm_projection')
+        self.assertTrue(plan.assessment.as_dict()['known_losses'])
+        with self.assertRaises(ProjectionError) as caught:
+            bind(waveform,stem='AUTH',policy='strict')
+        self.assertEqual(caught.exception.assessment.policy_selection['reason'],'explicit_policy')
+
     def test_exact_writer_sorts_original_time_and_preserves_loop_and_eof(self):
         writes=[TargetWrite(0,'psg',0,0,5,mdx_tick(5),5,0x28+5,64,'later',),
                 TargetWrite(1,'psg',1,0,1,mdx_tick(1),6,0x28+6,65,'earlier',)]

@@ -382,9 +382,11 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                             additional_headers=(f'#pcmfile "{pcm_plan.pdx_name}"',
                                 '; Readable PCM projection; canonical MDX uses .pcm/target.tsv.'))
                        if pcm_plan else {})
+        structure_options = (dict(song_options, short_state_samples=short_state_threshold if normalize_lengths else 0)
+                             if notation == 'structured' else song_options)
         try:
             structure = build_structure(projection, analysis.segments, title=title or source.stem,
-                                        loops=loops, **pcm_options, **(dict(song_options, short_state_samples=short_state_threshold if normalize_lengths else 0) if notation == 'structured' else {}))
+                                        loops=loops, **pcm_options, **structure_options)
         except (OSError, ValueError) as error:
             if pcm_assessment is not None:
                 pcm_assessment.error(str(error))
@@ -457,7 +459,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         from pcm_mdx import write_mdx
         try:
             fm_structure = build_structure(projection, analysis.segments,
-                                           title=title or source.stem, loops=loops, **song_options)
+                                           title=title or source.stem, loops=loops, **structure_options)
             write_mdx(pcm_plan, fm_structure, outdir, source.stem, generator=pcm_generator)
         except (OSError, ValueError) as error:
             if not isinstance(error, ProjectionError):

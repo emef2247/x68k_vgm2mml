@@ -4,12 +4,12 @@ from dataclasses import replace
 import json
 from pathlib import Path
 
-from mml_envelopes import extract_notes,settings
+from mml_envelopes import Note,settings
 from musical_structure import source_plan
 from psg_note_units import interval_end
 
 
-def interpret(segments,*,end=None):
+def analyze(segments,*,end=None):
     view={}
     for ch,rows in segments.items():
         values=[]
@@ -21,10 +21,23 @@ def interpret(segments,*,end=None):
             scale=(s.scale if s.scale!='r' else '') if audible else 'r'
             values.append(replace(s,ticks=s.vgmticks,l=stop-s.vgmticks,scale=scale))
         view[ch]=tuple(values)
-    return extract_notes(view,'scc')
+    from psg_scc_performance import analyze as analyze_performance
+    from psg_scc_volume_curves import project
+    return project(analyze_performance(view,'scc',tick_clock_hz=44100))
+
+
+def interpret(segments,*,end=None):
+    return analyze(segments,end=end).performance.to_notes(Note)
 
 
 def dump(notes,segments,path):
+    from psg_scc_performance import dump as dump_performance
+    from psg_scc_volume_curves import dump as dump_curves
+    end=max((n.start+n.length for items in notes.values() for n in items),default=None)
+    projection=analyze(segments,end=end)
+    prefix=str(Path(path).with_suffix(''))
+    dump_performance(projection.original,prefix)
+    dump_curves(projection,prefix+'.volume_curves',details=True)
     path=Path(path)
     fields=('source_ch','note_id','source_start','source_end','rest','tone_period',
             'waveform_id','waveform_hex','source_rows','volume_runs','key_origin')
@@ -36,7 +49,7 @@ def dump(notes,segments,path):
                     source_end=note.start+note.length,rest=note.rest,tone_period=note.segment.tone_period,
                     waveform_id=note.segment.waveform_id,waveform_hex=note.segment.waveform_hex,
                     source_rows=json.dumps(note.segment_indices),volume_runs=json.dumps(note.runs),
-                    key_origin='MSX extract_notes inferred; no native SCC Key-On'))
+                    key_origin='source_musical_interpretation_inferred; no native SCC Key-On'))
             keys=tuple((n.length,n.rest,() if n.rest else settings(n.segment,'scc'),tuple(n.runs)) for n in items)
             # Same exact source-note solver as MSX/MUC/MDX; no target envelope IDs.
             plan=source_plan(keys)

@@ -249,7 +249,8 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
             native.dump(out,source.stem)
             if native.source_end_vgmticks!=facts['end_vgmticks']:raise ValueError('PSG runtime and source analysis end differ')
             pcm_bridge=project_psg_pcm(native,source_raw=read_vgm_bytes(source),loop_start=loop_start,
-                loop_count=source_loop.get('loop_count',1),pcm_profile=pcm_profile,gain=psg_gain if psg_gain is not None else 1.)
+                loop_count=source_loop.get('loop_count',1),pcm_profile=pcm_profile,gain=psg_gain if psg_gain is not None else 1.,
+                source_music=plan.source_music)
             pcm_bridge.dump(out,source.stem)
             pcm_times=tuple(t for start,end,_ in pcm_bridge.chunks for t in (start,end))
             plan.settings.update(psg_pcm=dict(profile=pcm_profile,playbacks=len(pcm_bridge.playbacks),samples=len(pcm_bridge.samples)),

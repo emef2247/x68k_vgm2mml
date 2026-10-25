@@ -21,11 +21,13 @@ placement; neither MDX text nor PDX slot numbers become the common IR.
 ## Automatic PCM policy selection
 
 `--pcm-policy auto` is the default in the canonical converter and batch export.
-It selects from actual captured DAC Stream Control supplies, not clock/header
+It recognizes the explicitly selected PSG-to-PCM conversion; otherwise it
+selects from actual captured DAC Stream Control supplies, not clock/header
 flags or unused stream setup:
 
-| Source supply | Effective policy |
+| Source supply or selected conversion | Effective policy |
 | --- | --- |
+| Explicit PSG-to-PCM projection (`--psg-output pcm`) | best-effort |
 | DAC supplies, including mixed direct B7 and DAC supply | best-effort |
 | Direct writes without actual DAC supply | strict native/direct handling |
 | Other projections without DAC supply | existing strict projection |

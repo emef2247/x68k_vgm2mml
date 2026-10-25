@@ -34,8 +34,11 @@ bash scripts/setup_tools.sh --with-psg-pcm
 
 The default value of `--psg-output` is `opm`.
 
-Because PCM output requires recompression, `--pcm-policy best-effort` must be
-specified explicitly. `strict` stops processing and records diagnostics.
+PSG PCM output requires recompression. The default `--pcm-policy auto` selects
+`best-effort` for this explicitly requested route and records
+`explicit_psg_pcm_projection`. Explicit `strict` still stops processing and
+records known losses; explicit `best-effort` remains available. Native direct
+MSM6258 and other non-DAC routes keep their existing automatic policy.
 
 To listen to PSG alone, add `--psg-only`.
 

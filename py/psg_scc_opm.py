@@ -233,7 +233,7 @@ def project(psg, scc, *, psg_clock, scc_clock, end_vgmticks, psg_gain=None,
         psg_map[2],psg_map[noise_owner]=psg_map[noise_owner],7
     plan.settings.update(psg_channel_map=psg_map,noise_source_ch=noise_owner,
         noise_policy='one fixed noise-only owner on OPM7; N0..30 nearest nominal shift rate',
-        noise_phase_matching=False,source_note_policy='MSX PSG/SCC extract_notes in original samples; software volume runs retained',
+        noise_phase_matching=False,source_note_policy='PSG/SCC performance and complete fixed-tone volume curves in original samples before structure',
         source_interval_extensions=[dict(source_ch=ch,source_row=len(rows)-1,
             original_end=rows[-1].vgmticks_end,interpreted_end=end_vgmticks,
             reason='last observed state carried through remaining VGM wait')

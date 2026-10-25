@@ -7,7 +7,7 @@ from pcm_waveform_mdx import project as package_waveform
 from pcm_profiles import get_profile
 
 
-def project(native,*,source_raw,loop_start=None,loop_count=1,pcm_profile='standard',gain=1.):
+def project(native,*,source_raw,loop_start=None,loop_count=1,pcm_profile='standard',gain=1.,source_music=None):
     if not math.isfinite(gain) or not 0<gain<=1:
         raise ValueError('PSG PCM gain must be finite and in (0,1]')
     try:
@@ -43,6 +43,10 @@ def project(native,*,source_raw,loop_start=None,loop_count=1,pcm_profile='standa
             detail='Filtered decay/pre-ringing outside conservative source amplitude-active spans is omitted; no source gate expansion',
             projected_value=dict(fir_half_width_source_samples=31,highpass_hz=20),
             fallback='retain_original_source_span_boundaries')]
+    groups=tuple(dict(group_id=f'{ch}:{index}',source_ch=ch,note_id=index,
+        start=note.start,end=note.start+note.length,rest=note.rest,source_rows=tuple(note.segment_indices))
+        for ch,notes in (source_music or {}).items() for index,note in enumerate(notes))
     return package_waveform(view,source_raw=source_raw,loop_start=loop_start,loop_count=loop_count,
         source_origin='projected_msm6258_from_psg',evidence_prefix='psg',artifact_prefix='psg_pcm',
-        source_description='Continuous AY8910 three-channel mix',source_evidence=evidence,pcm_profile=pcm_profile)
+        source_description='Continuous AY8910 three-channel mix',source_evidence=evidence,pcm_profile=pcm_profile,
+        preferred_groups=groups)

@@ -8,7 +8,7 @@ from dataclasses import replace
 import json
 from pathlib import Path
 
-from mml_envelopes import extract_notes
+from mml_envelopes import Note
 
 
 def interval_end(rows,index,end=None):
@@ -16,13 +16,14 @@ def interval_end(rows,index,end=None):
     return max(stop,end) if end is not None and index==len(rows)-1 else stop
 
 
-def interpret(segments,*,end=None):
+def analyze(segments,*,end=None):
     def event_type(segment):
         register=getattr(segment,'register',None)
         if register is not None and register<6:
             return 'fCA' if register%2==0 else 'fCB'
         if register==13:return 'evS'
-        return segment.ev_type
+        return ({6:'wNC',7:'mode',8:'aVC',9:'aVC',10:'aVC',
+                 11:'ePL',12:'evM'}.get(register,segment.ev_type))
     view={}
     for ch,rows in segments.items():
         values=[]
@@ -35,7 +36,13 @@ def interpret(segments,*,end=None):
             values.append(replace(s,ticks=s.vgmticks,l=stop-s.vgmticks,
                                   scale=scale,ev_type=event_type(s)))
         view[ch]=tuple(values)
-    return extract_notes(view,'psg')
+    from psg_scc_performance import analyze as analyze_performance
+    from psg_scc_volume_curves import project
+    return project(analyze_performance(view,'psg',tick_clock_hz=44100))
+
+
+def interpret(segments,*,end=None):
+    return analyze(segments,end=end).performance.to_notes(Note)
 
 
 def membership(notes):
@@ -45,6 +52,13 @@ def membership(notes):
 
 
 def dump(notes,segments,path):
+    from psg_scc_performance import dump as dump_performance
+    from psg_scc_volume_curves import dump as dump_curves
+    end=max((n.start+n.length for items in notes.values() for n in items),default=None)
+    projection=analyze(segments,end=end)
+    prefix=str(Path(path).with_suffix(''))
+    dump_performance(projection.original,prefix)
+    dump_curves(projection,prefix+'.volume_curves',details=True)
     fields=('source_ch','note_id','source_start','source_end','rest','tone_period',
             'mode','envelope_enabled','source_rows','source_event_ids','volume_runs','key_origin')
     with Path(path).open('w',encoding='utf-8',newline='') as stream:

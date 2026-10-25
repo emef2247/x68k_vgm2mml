@@ -21,6 +21,39 @@ class FmShortStateTests(unittest.TestCase):
             self.assertEqual(native.segments,before)
             return music
 
+    def test_pcm_compiler_uses_the_same_short_state_plan_as_readable_mml(self):
+        from unittest.mock import patch
+        from msm6258 import analyze as analyze_pcm
+        from generate_pcm_fixtures import playback,vgm as pcm_vgm
+        pcm_body,_=playback(bytes(range(32)))
+        pcm=analyze_pcm(pcm_vgm(pcm_body))
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);source=root/'AUTH.vgm'
+            body=setup()+wait(1000)+write(8,120)+wait(1500)+write(0x30,8)+wait(400)+write(0x30,0)+wait(1500)+write(8,0)+wait(1000)
+            source.write_bytes(vgm(body))
+            from dataclasses import replace
+            from vgm_timing import command_times
+            pcm=replace(pcm,source_end_vgmticks=list(command_times(source.read_bytes()))[-1].vgmticks)
+            for name,ms,enabled in [('on',24,True),('eight',8,True),('off',24,False)]:
+                captured=[]
+                def write_binary(plan,music,*args,**kwargs):
+                    captured.append(music)
+                with patch('pcm_mdx.write_pdx'),patch('pcm_mdx.write_mdx',side_effect=write_binary):
+                    out=root/name
+                    mml,_,_=convert(source,out,pcm_analysis_override=pcm,pcm_bank_merge='off',
+                        normalize_lengths=enabled,fm_state_ms=ms,normalization_ms=8,
+                        dump_passes=True,song_loop=False)
+                self.assertEqual(len(captured),1)
+                report=json.loads((out/'AUTH.fm.short_states.json').read_text())
+                omissions=captured[0].summary()['fm_short_state_omissions']
+                self.assertEqual(omissions,report['omitted_states'])
+                self.assertEqual(omissions,1 if name=='on' else 0)
+                # PCM text is additional; every compiled FM track must match the
+                # independently published, already selected short-state view.
+                fm_lines=lambda text:[line for line in text.splitlines()
+                    if line and line[0] in 'ABCDEFGH' and line[1:2].isspace()]
+                self.assertEqual(fm_lines(captured[0].text),fm_lines(mml.read_text()))
+
     def test_shared_threshold_and_ms_conversion(self):
         self.assertEqual(fm_short_state_samples(),44)
         self.assertEqual(fm_short_state_samples(8),352)
