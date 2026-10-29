@@ -50,8 +50,10 @@ def select_pcm_policy(requested, analysis):
     origin = getattr(analysis, 'source_origin', 'native_msm6258')
     psg_projection = origin == 'projected_msm6258_from_psg'
     c140_projection = origin == 'projected_msm6258_from_c140_bank'
-    effective = ('best-effort' if supplies or psg_projection or c140_projection else 'strict') if requested == 'auto' else requested
-    reason = ('c140_bank_transcoding' if c140_projection else
+    msm6295_projection = origin == 'projected_msm6258_from_msm6295_bank'
+    effective = ('best-effort' if supplies or psg_projection or c140_projection or msm6295_projection else 'strict') if requested == 'auto' else requested
+    reason = ('msm6295_bank_transcoding' if msm6295_projection else
+              'c140_bank_transcoding' if c140_projection else
               'explicit_psg_pcm_projection' if psg_projection else
               'observed_dac_stream_supplies' if supplies else 'no_observed_dac_stream_supplies')
     return effective, dict(requested=requested, effective=effective,

@@ -1,3 +1,104 @@
+# Commit checkpoint (2026-10-30)
+
+MSM6295 source/bank support and shared buffer-derived PCM capacity are being saved together. Current final policy: --pcm-buffer-kib determines the PDX budget after loader overhead/margin; no independent --pdx-limit-kib and no1.2MB fixed ceiling. Omitted buffer defaults to315122B. Latest capacity/export checks:54passed. Earlier MSM6295/reference validation is recorded below. User owns local listening/regression. Private scan metadata and music stay outside the public commit; related field notes are committed separately. No push requested.
+
+# Supersedes independent PDX limit (2026-10-30): user requested buffer-derived limit only. --pdx-limit-kib removed. --pcm-buffer-kib minus overhead/margin is the PDX budget; no1.2MB cap. Default315122B retained. 54 checks pass; no commit/push.
+
+# Explicit PDX size override (2026-10-30): --pdx-limit-kib added to export/canonical/batch; keeps315122B default, permits explicit higher file limits, honors configured resident overhead/margin. 54 focused checks pass. No guest config or source changes.
+
+# Default PDX budget reduced for user playback trial (2026-10-30)
+
+- Default table-inclusive PDX cap is now315122B:312KiB initial MXDRV reference -270B MXCTRL -4096B headroom.
+- Explicit resident settings still permit larger budgets up to the separate1200000B operational ceiling.
+- Does not detect installed driver RAM or change guest configuration; runtime playback remains unmeasured.
+- Existing budget96/force selection and final packing guards consume the shared policy; source evidence untouched.
+- Multiple96-slot banks are deferred: loading all banks can still exceed resident total.
+- Preserve preceding uncommitted MSM6295/resident-budget changes; no commit/push requested in this turn.
+
+# Optional PCM resident-buffer budget implemented (2026-10-27)
+
+User approved the capacity-plan implementation. Added immutable target-only
+PcmCapacityPolicy; default remains1,200,000B. Canonical and export CLI accept
+--pcm-buffer-kib, --pcm-loader direct|mxctrl and --pcm-buffer-margin-bytes.
+MXCTRL overhead270B and default configured margin4096B give315122B PDX for
+an explicit312KiB resident buffer. This does not identify installed MADRV/MXDRV
+settings or establish safe total RAM. Nondefault margin requires buffer input.
+
+The same resolved policy reaches source-validation target views, reducer/repair,
+force, native/parallel binding, normalization preflight and actual final packer.
+PSG PCM keeps its continuous-mix semantics and final budget guard. Slots/sample
+lengths remain separate. Metadata/console/CSV distinguish configured capacity
+checks from unmeasured playback. No automatic rate-profile retries or changed
+default fidelity. Existing source protections/strict and force meanings retained.
+
+256 focused authored/public checks pass across native PCM, Delta-T, SegaPCM
+shared helpers, C140/MSM6295 conversion, PSG PCM, CLI/export, stats, packing and
+standard/EX-PDX. Two existing multitrack tests failed with HEAD pcm_mdx too;
+they now explicitly request standard PDX for their65535B-overflow premise.
+New tests cover actual packer padding, representative repair, parallel force,
+normalization, immutable per-run settings and no-input mutation.
+
+Ignored outputs/diagnostics/pcm_resident_budget_20261027/ contains test logs,
+the old-module failure reproduction, authored source/pass CSVs and summary:
+legacy PDX1280B/2assets/2events; configured1KiB PDX1024B/1asset/2events with
+explicit forced replacement. Input/source evidence unchanged. Runtime playback
+unmeasured. See docs/pcm_playback_budget.md for current usage and scope.
+
+Preserved all pre-existing uncommitted MSM6295 work; no stage/commit/push.
+No private regression or player/config changes. Next:user runtime regression;
+adaptive low-rate candidates and PSG gate-aware bank extraction are separate
+follow-ups. Do not claim generated-size fit proves playback success.
+
+---
+
+# MSM6295 initial bank route implemented (2026-10-25)
+
+Saved single-chip MSM6295/OPM+MSM6295 source + cached PCM8/EX-PDX projection.
+Source commands/ROM/State/Segments and inferred assets/playbacks/requests remain
+separate; source assets converted once, gain/stop reuse full samples. Exact
+origin auto policy selects best-effort. Independent pinned reference and hashes
+under ignored.tools; see docs/msm6295_design.md and external field_notes/
+2026-10-25_msm6295_initial_implementation.md.
+
+Final24MSM6295 checks +21C140 checks pass,public3/3batch passes. Existing CLI25,
+export31,stats4,policy6 pass; VGM I/O title-space expectation fails also with
+HEAD baseline (unrelated,unchanged). Final EOF/restart boundary regressions and
+native-IR-before-target-failure test pass; authored pass CSVs inspected.
+
+Authorized private finite batch(no-force):FFIGHT01/02/03 allsuccess;01 five
+samples/216playbacks,PDX14893B;03 six/73,PDX17533B;zeroomitted.02 FM-only.
+Outputs:outputs/diagnostics/msm6295_impl_20261025/FFIGHT/tracks.
+Default song-loop FFIGHT03 remains blocked by held-PCM continuation guard;
+recommend --no-song-loop for user listening/regression. Do not fake attacks.
+Dynamic rate/bank/NMK/liveROM changes are MVP limitations with explicit errors.
+
+README unchanged,no staging/commit/push. Private/generated assets ignored.
+Next:user full local_only regression/listening. Do not expand C140 analysis
+(user requested completed regression record only); retain C14048m budget.
+
+---
+
+# MSM6295 design; C140 regression recorded (2026-10-25)
+
+BURNFC.log recorded only:30 inputs,14 success/16 pcm_projection_blocked;
+user explicitly requests no further C140 analysis. Preserve48m capture cap.
+See external2026-10-25_c140_user_regression_complete.md.
+
+MSM6295 design only: docs/msm6295_design.md and external field_notes/
+2026-10-25_msm6295_design.md. Only FFIGHT01/02/03 inspected (no conversion).
+01/03 use5/6 short source samples, preliminary peak2;02 contains no B8 writes.
+03 has nonzero actual loop-entry and replay-seam state; no fake reattack.
+Plan uses native source evidence + source sample/playback separation, assets
+converted once per dependency/rate identity, shared PCM8/96slot/EX-PDX target.
+Pin core+decoder and compare authored native-frame timing before implementation.
+Inspector data/counts are preliminary, not independent oracle validation.
+
+No production code, README or test changes this design task. No staging/commit/
+push. Next: user design decision, then scoped implementation. Full listening/
+local_only regression remains user-owned; preserve all existing work.
+
+---
+
 # C140 capture budget retained at48m (2026-10-25)
 
 User requests keeping the relaxed conversion limit despite BURNFC03 playback
@@ -207,3 +308,18 @@ Final review: silent-channel rest groups are retained in PCM diagnostics but can
 Final validation: public psg_scc_001 exported MDX/PDX successfully with --psg-output pcm --scc-model additive --no-song-loop and no policy override; auto selected best-effort. Focused review found no critical issue. SALAMD01 itself has not been reconverted.
 
 User follow-up: SALAMD01 PSG-to-PCM conversion succeeded and listening was confirmed after the FM compiler-setting fix (12 samples/playbacks, 0 omitted; EX-PDX 694338 bytes). User rerun explicitly used best-effort; auto was covered separately by public/authored checks.
+
+## 2026-10-27 PDX library audit (read-only analysis)
+
+H:/_env/D/MDX: 853 files, 844 validated including 10 LZX files; no library
+changes or conversions. See ignored outputs/diagnostics/pdx_library_20261027/
+analysis_ja.md and external field_notes/2026-10-27_pdx_library_and_mkpdx68.md.
+Confirmed reference MXDRV Rel.X5-S default: 312 KiB, distinct from the user's
+NanoDrive8 1,200,000-byte policy. Installed resident driver/options unmeasured.
+MXCTRL adds a 270-byte transfer wrapper and keeps temporary data until after
+transfer. No converter budgets/defaults changed. mkpdx68 is a single-bank,
+96-slot/u32 packer; it does not detect resident memory, reencode or deduplicate.
+Do not replace the packer or set a universal library-derived byte cap.
+User is running MSX run_test.sh; leave that checkout/execution alone pending
+completion notice. Preserve unfinished native-layer integration and existing
+MSM6295 work. No commits/staging/push performed for this audit.

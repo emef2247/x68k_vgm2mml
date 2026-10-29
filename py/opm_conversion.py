@@ -30,8 +30,10 @@ def _record_pcm_assessment(assessment, outdir, stem, *, requires_pdx, retained=(
     assessment.dump(outdir, stem)
 
 
-def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='auto', normalization_validator=None, normalization_source_times=None, normalization_ms=8, fm_state_ms=24, pitch_policy='clamp', song_loop=True, replayed_song_loop=False, pcm_analysis_override=None, source_passes_outdir=None, segapcm_source=False, segapcm_pcm=False, force=False,pcm_profile='standard',segapcm_projection='auto',pcm_bank_merge='budget96',pdx_format='ex-pdx',c140_pcm=False):
+def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='auto', normalization_validator=None, normalization_source_times=None, normalization_ms=8, fm_state_ms=24, pitch_policy='clamp', song_loop=True, replayed_song_loop=False, pcm_analysis_override=None, source_passes_outdir=None, segapcm_source=False, segapcm_pcm=False, force=False,pcm_profile='standard',segapcm_projection='auto',pcm_bank_merge='budget96',pdx_format='ex-pdx',c140_pcm=False,msm6295_pcm=False,pcm_capacity=None):
     source, outdir = Path(source), Path(outdir)
+    from pcm_capacity import PcmCapacityPolicy
+    pcm_capacity = pcm_capacity or PcmCapacityPolicy()
     outdir.mkdir(parents=True, exist_ok=True)
     requested_normalization = normalize_lengths
     from conversion_config import normalization_samples
@@ -61,7 +63,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                    '.pcm_bank.source_validation.json',
                    '.pcm_bank_merge.samples.csv', '.pcm_bank_merge.playbacks.csv',
                    '.pcm.force_capacity.csv', '.pcm.force_capacity.json',
-                   '.pcm_profile.json', '.pcm_profile.mapping.csv', '.c140_projection.json',
+                   '.pcm_profile.json', '.pcm_profile.mapping.csv', '.c140_projection.json', '.msm6295_projection.json',
                    '.mdx.normalization.json', '.mdx.normalization.csv', '.mdx.before.normalize.mml',
                    '.mdx.pitch.csv'):
         artifacts.append(outdir / (source.stem + suffix))
@@ -80,7 +82,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
     source_loop = {}
     sega_traces = []
     with TemporaryDirectory(prefix='opm-mdx-') as temporary:
-        analysis_dir = Path(source_passes_outdir or outdir) if dump_passes or segapcm_source or c140_pcm else Path(temporary)
+        analysis_dir = Path(source_passes_outdir or outdir) if dump_passes or segapcm_source or c140_pcm or msm6295_pcm else Path(temporary)
         parse_vgm(str(source), str(analysis_dir), opm_metadata=metadata,
                   pcm_metadata=pcm_metadata,
                   segapcm_metadata={} if segapcm_source else None,
@@ -106,37 +108,45 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                                           loop_start=sega_loop,
                                           loop_count=source_loop.get('loop_count', 1),pcm_profile=pcm_profile,pdx_format=pdx_format)
             pcm_analysis.dump(outdir, source.stem)
-        if c140_pcm:
-            if pcm_analysis_override is not None or segapcm_pcm:
-                raise ValueError('C140 cannot replace another PCM source')
-            from c140 import analyze as analyze_c140
-            from c140_bank import project as project_c140
+        if c140_pcm or msm6295_pcm:
+            chip = 'C140' if c140_pcm else 'MSM6295'
+            prefix = 'c140' if c140_pcm else 'msm6295'
+            if pcm_analysis_override is not None or segapcm_pcm or c140_pcm and msm6295_pcm:
+                raise ValueError(f'{chip} cannot replace another PCM source')
+            if c140_pcm:
+                from c140 import analyze as analyze_source
+                from c140_bank import project as project_source
+            else:
+                from msm6295 import analyze as analyze_source
+                from msm6295_bank import project as project_source
             from segapcm_bank import BankUnsupported
             from vgm_io import read_vgm_bytes
             from pcm_assessment import PcmAssessment, ProjectionError
-            raw_c140 = read_vgm_bytes(source)
-            trace_c140 = analyze_c140(raw_c140, loop_count=2 if song_loop and not replayed_song_loop else 1)
-            trace_c140.dump(outdir, source.stem)
-            c140_loop = (source_loop['replay_start_samples']
-                         if song_loop and source_loop.get('status') == 'valid' else None)
-            selection_path = outdir / (source.stem + '.c140_projection.json')
+            native_raw = read_vgm_bytes(source)
+            native_trace = analyze_source(native_raw, loop_count=2 if song_loop and not replayed_song_loop else 1)
+            native_trace.dump(outdir, source.stem)
+            native_loop = (source_loop['replay_start_samples']
+                           if song_loop and source_loop.get('status') == 'valid' else None)
+            selection_path = outdir / (source.stem + f'.{prefix}_projection.json')
             try:
-                pcm_analysis = project_c140(trace_c140, source_raw=raw_c140, loop_start=c140_loop,
-                    loop_count=source_loop.get('loop_count', 1), pcm_profile=pcm_profile, pdx_format=pdx_format)
+                source_dump = dict(outdir=outdir, stem=source.stem) if msm6295_pcm else {}
+                pcm_analysis = project_source(native_trace, source_raw=native_raw, loop_start=native_loop,
+                    loop_count=source_loop.get('loop_count', 1), pcm_profile=pcm_profile, pdx_format=pdx_format,
+                    **source_dump)
             except BankUnsupported as error:
                 selection_path.write_text(json.dumps(dict(requested='bank', selected='blocked',
                     fallback=error.reason, stats={}), indent=2)+'\n', encoding='utf-8')
                 assessment=PcmAssessment('best-effort' if pcm_policy=='auto' else pcm_policy)
                 assessment.add('source','fail',error.reason['code'],error.reason['detail'],
-                    cause='c140_source_projection',evidence=str(selection_path))
-                assessment.block('C140 bank projection blocked: '+str(error))
+                    cause=prefix+'_source_projection',evidence=str(selection_path))
+                assessment.block(chip+' bank projection blocked: '+str(error))
                 record_pcm_assessment(assessment, requires_pdx=True)
-                raise ProjectionError('C140 bank projection blocked: '+str(error),assessment) from error
+                raise ProjectionError(chip+' bank projection blocked: '+str(error),assessment) from error
             pcm_analysis.dump(outdir, source.stem)
             selection_path.write_text(json.dumps(dict(requested='bank', selected='bank',
                 sample_count=len(pcm_analysis.samples), playback_count=len(pcm_analysis.playbacks),
                 stats=getattr(pcm_analysis,'bank_stats',{}) or {}),indent=2)+'\n',encoding='utf-8')
-        if pcm_profile!='standard' and pcm_analysis.playbacks and pcm_analysis_override is None and not (segapcm_pcm or c140_pcm):
+        if pcm_profile!='standard' and pcm_analysis.playbacks and pcm_analysis_override is None and not (segapcm_pcm or c140_pcm or msm6295_pcm):
             from pcm_msm_profile import project as profile_msm
             pcm_analysis.dump(outdir,source.stem)
             pcm_analysis=profile_msm(pcm_analysis,pcm_profile=pcm_profile)
@@ -159,7 +169,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             raise ValueError('Input declares no supported OPM stream')
         analysis = (build_segments(metadata['csv_path'], end_vgmticks=metadata['source_end_vgmticks'])
                     if metadata['csv_path'] else OpmAnalysis((), (), pcm_analysis.source_end_vgmticks, False))
-        if dump_passes or segapcm_source or c140_pcm:
+        if dump_passes or segapcm_source or c140_pcm or msm6295_pcm:
             dump_analysis(analysis, state_csv=analysis_dir/(source.stem+'_trace.opm.csv'),
                           segments_csv=analysis_dir/(source.stem+'.opm.segments.csv'))
     loop_start = None
@@ -174,7 +184,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         if notation == 'legacy':
             raise ValueError('Declared song loops require structured or registers notation; use --no-song-loop for legacy')
     song_options = dict(song_loop_start=loop_start, song_loop_event_id=loop_event_id)
-    if (pcm_analysis_override is not None or segapcm_pcm or c140_pcm) and pcm_analysis.source_loop_vgmticks != loop_start:
+    if (pcm_analysis_override is not None or segapcm_pcm or c140_pcm or msm6295_pcm) and pcm_analysis.source_loop_vgmticks != loop_start:
         raise ValueError('Projected FM and PCM must share the same replayed song-loop boundary')
     normalization_loop = dict(source_loop)
     if loop_start is not None:
@@ -233,7 +243,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                                sample_multiplier=selected.sample_multiplier, policy=pcm_policy, pdx_format=pdx_format,
                                force=force,
                                tick_mapper=selected.mdx_tick,
-                               omit_playback_ids=omitted, normalization_ms=normalization_ms, song_loop_start=loop_start)
+                               omit_playback_ids=omitted, normalization_ms=normalization_ms, song_loop_start=loop_start, capacity=pcm_capacity)
                 build_music(selected, analysis.segments, title=source.stem, loops=loops,
                             additional_tracks=_pcm_tracks(plan) if plan.bindings else {}, **song_options)
                 return plan
@@ -287,9 +297,9 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         baseline_playback_ids = None
         bank_input = pcm_original
         source_origin = getattr(pcm_original, 'source_origin', '')
-        common_bank = (segapcm_pcm or c140_pcm or pcm_analysis_override is None
+        common_bank = (segapcm_pcm or c140_pcm or msm6295_pcm or pcm_analysis_override is None
                        or source_origin.startswith('projected_msm6258_from_opna'))
-        if common_bank and not (segapcm_pcm or c140_pcm):
+        if common_bank and not (segapcm_pcm or c140_pcm or msm6295_pcm):
             if not dump_passes and not hasattr(pcm_original, 'align_to_clock'):
                 pcm_original.dump(outdir, source.stem)
             from pcm_bank_target import prepare as prepare_bank_target
@@ -297,7 +307,7 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                 bank_input = prepare_bank_target(pcm_original, outdir=outdir, stem=source.stem,
                     sample_multiplier=multiplier, tick_mapper=projection.mdx_tick, policy=pcm_policy, pdx_format=pdx_format,
                     omit_playback_ids=normalization.get('omitted_pcm_playback_ids', ()),
-                    normalization_ms=normalization_ms, song_loop_start=loop_start)
+                    normalization_ms=normalization_ms, song_loop_start=loop_start, capacity=pcm_capacity)
             except ProjectionError as error:
                 record_pcm_assessment(error.assessment, requires_pdx=bool(pcm_original.samples))
                 raise
@@ -308,13 +318,13 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             reduction = reduce_bank(bank_input, mode=pcm_bank_merge,
                 omit_playback_ids=normalization.get('omitted_pcm_playback_ids', ()),
                 normalization_ms=normalization_ms, tick_mapper=projection.mdx_tick,
-                sample_multiplier=multiplier, pdx_format=pdx_format)
+                sample_multiplier=multiplier, pdx_format=pdx_format, capacity=pcm_capacity)
             if reduction.summary['merged_playback_count']:
                 try:
                     baseline = project(pcm_original, stem=source.stem, sample_multiplier=multiplier,
                         tick_mapper=projection.mdx_tick, policy=pcm_policy, force=force, pdx_format=pdx_format,
                         omit_playback_ids=normalization.get('omitted_pcm_playback_ids', ()),
-                        normalization_ms=normalization_ms, song_loop_start=loop_start)
+                        normalization_ms=normalization_ms, song_loop_start=loop_start, capacity=pcm_capacity)
                     baseline_playback_ids = {r['playback_id'] for r in baseline.rows}
                 except ProjectionError as error:
                     reduction.summary['baseline_projection_status'] = 'unavailable'
@@ -332,14 +342,14 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             from pcm_force_capacity import select_capacity
             select_capacity(pcm_analysis, pdx_format=pdx_format,
                             omit_playback_ids=normalization.get('omitted_pcm_playback_ids', ()),
-                            normalization_ms=normalization_ms).dump(outdir, source.stem)
+                            normalization_ms=normalization_ms, capacity=pcm_capacity).dump(outdir, source.stem)
         try:
             candidate = project(pcm_analysis, stem=source.stem, sample_multiplier=multiplier,
                                 tick_mapper=projection.mdx_tick,
                                 policy=pcm_policy, pdx_format=pdx_format,
                                 force=force,
                                 omit_playback_ids=normalization.get('omitted_pcm_playback_ids', ()),
-                                normalization_ms=normalization_ms, song_loop_start=loop_start)
+                                normalization_ms=normalization_ms, song_loop_start=loop_start, capacity=pcm_capacity)
         except ProjectionError as error:
             if segapcm_pcm:
                 from pcm_block_wav import dump_pcm_block_wavs

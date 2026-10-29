@@ -79,6 +79,12 @@ limitation; PCM8 voice count, bank slots and packed bytes are target limits.
 Optional unplayed-tail completion must not invalidate valid observed playback.
 See docs/c140.md for the profile, artifacts and current projection limits.
 
+MSM6295 sample-selection commands are requests, not guaranteed new attacks.
+Keep accepted, busy-ignored and invalid-range-ignored requests separate, with
+source IDs and native-frame evidence. Cache source samples independently of
+onset gain and early-stop duration before target conversion; target bank
+allocation never changes native busy state. See docs/msm6295_design.md.
+
 OPNA FM/SSG projection reserves OPM channels for the whole song, with FM
 priority over SSG. Any FM key activity retains its channel through release
 tails and output gating. SSG uses the existing PSG FM model in remaining

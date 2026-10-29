@@ -201,7 +201,7 @@ def _mark_projected_evidence(folder, source, target, performance, projection, no
 
 def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model='fm', pitch_policy=None,
              notation='structured', loops=True, normalize_lengths=None, projection_mode='musical', normalization_ms=8, fm_state_ms=24, song_loop=True, force=False,
-             scc_model='additive',scc_voice_bank=None,source_selection='all',bank_outdir=None,psg_output='opm',pcm_policy='auto',pcm_profile='standard',pcm_generator=None,pdx_format='ex-pdx'):
+             scc_model='additive',scc_voice_bank=None,source_selection='all',bank_outdir=None,psg_output='opm',pcm_policy='auto',pcm_profile='standard',pcm_generator=None,pdx_format='ex-pdx',pcm_capacity=None):
     if psg_output=='pcm' and notation!='structured':raise ValueError('PSG PCM requires structured notation')
     if notation not in ('structured', 'registers'):
         raise ValueError('PSG/SCC OPM notation must be structured or registers')
@@ -264,7 +264,7 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
         _, source_map = _read_generated_csv(folder / (source.stem + '.source_map.csv'))
         native_out=out if psg_output=='pcm' else folder
         native_mml, analysis, projection = convert_opm(target, native_out, dump_passes=True, title=title, loops=loops,
-            source_passes_outdir=folder,pcm_analysis_override=pcm_bridge,pcm_policy=pcm_policy,pcm_profile=pcm_profile,pcm_generator=pcm_generator,pdx_format=pdx_format,force=force,
+            source_passes_outdir=folder,pcm_analysis_override=pcm_bridge,pcm_policy=pcm_policy,pcm_profile=pcm_profile,pcm_generator=pcm_generator,pdx_format=pdx_format,pcm_capacity=pcm_capacity,force=force,
             song_loop=song_loop, replayed_song_loop=True,
             normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, fm_state_ms=fm_state_ms,
             normalization_source_times={int(r['target_source_event_id']): int(r['vgmticks'])
@@ -294,7 +294,7 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
 
 def convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model='fm', pitch_policy=None,
             dump_passes=True, notation='structured', loops=True, normalize_lengths=None, projection_mode=None, normalization_ms=8, fm_state_ms=24, song_loop=True, force=False,
-            scc_model='additive',scc_voice_bank=None,source_selection='all',bank_outdir=None,psg_output='opm',pcm_policy='auto',pcm_profile='standard',pcm_generator=None,pdx_format='ex-pdx'):
+            scc_model='additive',scc_voice_bank=None,source_selection='all',bank_outdir=None,psg_output='opm',pcm_policy='auto',pcm_profile='standard',pcm_generator=None,pdx_format='ex-pdx',pcm_capacity=None):
     """Keep native evidence on request; default standalone audit keeps all passes."""
     from conversion_config import normalization_enabled
     normalization_enabled(normalize_lengths, notation=notation)
@@ -317,11 +317,11 @@ def convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model=
     if dump_passes or force or psg_output=='pcm':
         return _convert(source, out, psg_gain=psg_gain, scc_gain=scc_gain, title=title,
                         psg_model=psg_model, pitch_policy=pitch_policy, notation=notation, loops=loops,
-                        normalize_lengths=normalize_lengths, projection_mode=projection_mode, normalization_ms=normalization_ms, fm_state_ms=fm_state_ms,song_loop=song_loop,force=force,scc_model=scc_model,scc_voice_bank=scc_voice_bank,source_selection=source_selection,bank_outdir=bank_outdir or out,psg_output=psg_output,pcm_policy=pcm_policy,pcm_profile=pcm_profile,pcm_generator=pcm_generator,pdx_format=pdx_format)
+                        normalize_lengths=normalize_lengths, projection_mode=projection_mode, normalization_ms=normalization_ms, fm_state_ms=fm_state_ms,song_loop=song_loop,force=force,scc_model=scc_model,scc_voice_bank=scc_voice_bank,source_selection=source_selection,bank_outdir=bank_outdir or out,psg_output=psg_output,pcm_policy=pcm_policy,pcm_profile=pcm_profile,pcm_generator=pcm_generator,pdx_format=pdx_format,pcm_capacity=pcm_capacity)
     with tempfile.TemporaryDirectory(prefix='psg-scc-opm-') as temp:
         mml, plan = _convert(source, temp, psg_gain=psg_gain, scc_gain=scc_gain, title=title,
                         psg_model=psg_model, pitch_policy=pitch_policy, notation=notation, loops=loops,
-                        normalize_lengths=normalize_lengths, projection_mode=projection_mode, normalization_ms=normalization_ms, fm_state_ms=fm_state_ms,song_loop=song_loop,force=force,scc_model=scc_model,scc_voice_bank=scc_voice_bank,source_selection=source_selection,bank_outdir=bank_outdir or out,psg_output=psg_output,pcm_policy=pcm_policy,pcm_profile=pcm_profile,pcm_generator=pcm_generator,pdx_format=pdx_format)
+                        normalize_lengths=normalize_lengths, projection_mode=projection_mode, normalization_ms=normalization_ms, fm_state_ms=fm_state_ms,song_loop=song_loop,force=force,scc_model=scc_model,scc_voice_bank=scc_voice_bank,source_selection=source_selection,bank_outdir=bank_outdir or out,psg_output=psg_output,pcm_policy=pcm_policy,pcm_profile=pcm_profile,pcm_generator=pcm_generator,pdx_format=pdx_format,pcm_capacity=pcm_capacity)
         result = out / mml.name
         shutil.copyfile(mml, result)
         normalization = mml.with_name(Path(source).stem + '.mdx.normalization.json')

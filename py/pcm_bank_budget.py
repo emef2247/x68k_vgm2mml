@@ -9,7 +9,7 @@ from dataclasses import replace
 import math
 
 
-from pcm_capacity import (SLOT_LIMIT, MAX_SAMPLE_BYTES, PDX_BYTE_LIMIT,
+from pcm_capacity import (SLOT_LIMIT, MAX_SAMPLE_BYTES, PcmCapacityPolicy,
                           PDX_TABLE_BYTES, packed_pdx_bytes, sample_byte_limit)
 AC_NOISE_FLOOR = 128.0
 
@@ -57,19 +57,21 @@ def _select(distance, weights, count, np, costs=None, byte_budget=None):
     return selected
 
 
-def _reserve_representative(selected, representative, samples):
+def _reserve_representative(selected, representative, samples, *, capacity=None):
     """Repair onset coverage without exceeding either target capacity."""
+    capacity = capacity or PcmCapacityPolicy()
     selected = [sid for sid in selected if sid != representative]
     while (len(selected) >= SLOT_LIMIT or
            PDX_TABLE_BYTES + len(samples[representative].encoded_bytes) +
-           sum(len(samples[sid].encoded_bytes) for sid in selected) > PDX_BYTE_LIMIT):
+           sum(len(samples[sid].encoded_bytes) for sid in selected) > capacity.pdx_byte_limit):
         if not selected:
             raise ValueError('PCM budget96 has no representative within the PDX byte limit')
         selected.pop()
     return sorted([*selected, representative])
 
 
-def enforce_budget(original, strict, *, pdx_format='ex-pdx'):
+def enforce_budget(original, strict, *, pdx_format='ex-pdx', capacity=None):
+    capacity = capacity or PcmCapacityPolicy()
     maximum = sample_byte_limit(pdx_format)
     # Imported lazily to let reduce_bank dispatch without a circular module
     # initialization dependency, and to keep <=96/disabled paths lightweight.
@@ -84,19 +86,19 @@ def enforce_budget(original, strict, *, pdx_format='ex-pdx'):
     referenced = {p.sample_id for p in strict.analysis.playbacks if p.sample_id is not None}
     active = Counter(p.sample_id for p in strict.analysis.playbacks
                      if p.sample_id is not None and not playback_rows[p.playback_id]['explicit_omission'])
-    candidate_limit = min(maximum, PDX_BYTE_LIMIT - PDX_TABLE_BYTES)
+    candidate_limit = min(maximum, capacity.pdx_byte_limit - PDX_TABLE_BYTES)
     candidates = sorted(sid for sid in referenced
                         if len(strict_samples[sid].encoded_bytes) <= candidate_limit)
     summary = dict(strict.summary)
     summary.update(mode='budget96', budget_limit=SLOT_LIMIT,
         pdx_format=pdx_format, budget_max_sample_bytes=maximum,
-        budget_byte_limit=PDX_BYTE_LIMIT,
+        budget_byte_limit=capacity.pdx_byte_limit, capacity=capacity.summary(),
         budget_input_pdx_bytes=packed_pdx_bytes(strict_samples[sid] for sid in referenced),
         budget_input_sample_count=len(referenced), forced_sample_count=0,
         forced_playback_count=0, budget_selection_method='weighted_facility_coverage',
         slot_budget_satisfied=True, unused_sample_count=len(strict_samples) - len(referenced))
     if (len(referenced) <= SLOT_LIMIT and len(candidates) == len(referenced)
-            and summary['budget_input_pdx_bytes'] <= PDX_BYTE_LIMIT):
+            and summary['budget_input_pdx_bytes'] <= capacity.pdx_byte_limit):
         target = replace(strict.analysis, samples=tuple(s for s in strict.analysis.samples
                                                        if s.sample_id in referenced))
         summary.update(output_sample_count=len(target.samples),
@@ -126,7 +128,7 @@ def enforce_budget(original, strict, *, pdx_format='ex-pdx'):
     weights = np.asarray([max(1, active[sid]) for sid in demands], dtype=float)
     selected_indices = _select(distance, weights, SLOT_LIMIT, np,
         costs=[len(strict_samples[sid].encoded_bytes) for sid in candidates],
-        byte_budget=PDX_BYTE_LIMIT - PDX_TABLE_BYTES)
+        byte_budget=capacity.pdx_byte_limit - PDX_TABLE_BYTES)
     selected = sorted(candidates[index] for index in selected_indices)
     required_gates = {}
     for p in original.playbacks:
@@ -144,11 +146,11 @@ def enforce_budget(original, strict, *, pdx_format='ex-pdx'):
                 raise ValueError('PCM budget96 has no bounded representative audible within the earliest active gate')
             representative = max(onset_candidates,
                 key=lambda sid: (_ac_peak(decoded[sid][:earliest_gate], np), -sid))
-            selected = _reserve_representative(selected, representative, source)
+            selected = _reserve_representative(selected, representative, source, capacity=capacity)
     audible_candidates = [sid for sid in candidates if norms[sid] > 0]
     if audible_candidates and not any(sid in audible_candidates for sid in selected):
         representative = max(audible_candidates, key=lambda sid: (active[sid], -sid))
-        selected = _reserve_representative(selected, representative, source)
+        selected = _reserve_representative(selected, representative, source, capacity=capacity)
     selected_set = set(selected)
     accepted_mapping = {p.sample_id: old.sample_id
         for p, old in zip(original.playbacks, strict.analysis.playbacks)
@@ -275,6 +277,6 @@ def enforce_budget(original, strict, *, pdx_format='ex-pdx'):
         forced_worst_errors=errors, budget_similarity_bounds_enforced=False,
         budget_max_sample_bytes=maximum)
     assert len(target.samples) <= SLOT_LIMIT
-    assert packed_pdx_bytes(target.samples) <= PDX_BYTE_LIMIT
+    assert packed_pdx_bytes(target.samples) <= capacity.pdx_byte_limit
     assert {p.sample_id for p in target.playbacks if p.sample_id is not None} <= selected_set
     return ReductionResult(target, tuple(sample_rows.values()), tuple(result_rows), summary)

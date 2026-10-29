@@ -42,6 +42,17 @@ def successful_run(command, **kwargs):
 
 
 class ExportMdxTests(unittest.TestCase):
+    def test_resident_budget_options_reach_canonical_conversion(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source,out,generator=self.prepare(Path(temp),('a.vgm',))
+            with patch('export_mdx.subprocess.run',side_effect=successful_run) as run:
+                run_batch(source,out,generator=generator,pcm_buffer_kib=312,
+                          pcm_loader='mxctrl',pcm_buffer_margin_bytes=8192)
+            command=run.call_args_list[0].args[0]
+            self.assertEqual(command[command.index('--pcm-buffer-kib')+1],'312')
+            self.assertEqual(command[command.index('--pcm-loader')+1],'mxctrl')
+            self.assertEqual(command[command.index('--pcm-buffer-margin-bytes')+1],'8192')
+
     def test_fm_state_threshold_is_independent_from_clock_tolerance(self):
         for threshold in (1,8):
             with self.subTest(fm_state_ms=threshold), tempfile.TemporaryDirectory() as temp:
@@ -51,6 +62,14 @@ class ExportMdxTests(unittest.TestCase):
                 command=run.call_args_list[0].args[0]
                 self.assertEqual(command[command.index('--fm-state-ms')+1],str(threshold))
                 self.assertEqual(command[command.index('--normalization-ms')+1],'8')
+
+    def test_larger_pcm_buffer_reaches_conversion(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source, out, generator = self.prepare(Path(temp), ('a.vgm',))
+            with patch('export_mdx.subprocess.run', side_effect=successful_run) as run:
+                run_batch(source, out, generator=generator, pcm_buffer_kib=2048)
+            command = run.call_args_list[0].args[0]
+            self.assertEqual(command[command.index('--pcm-buffer-kib') + 1], '2048')
 
     def test_default_state_and_timeout_reach_canonical_converter(self):
         with tempfile.TemporaryDirectory() as temp:

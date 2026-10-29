@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 
-from pcm_capacity import SLOT_LIMIT, MAX_SAMPLE_BYTES, PDX_BYTE_LIMIT, PDX_TABLE_BYTES, packed_pdx_bytes, sample_byte_limit
+from pcm_capacity import SLOT_LIMIT, MAX_SAMPLE_BYTES, PcmCapacityPolicy, PDX_TABLE_BYTES, packed_pdx_bytes, sample_byte_limit
 
 VERIFIED_SAMPLE_BYTES = MAX_SAMPLE_BYTES
 
@@ -15,6 +15,7 @@ class CapacityView:
     analysis: object
     rows: tuple[dict, ...]
     pdx_format: str = 'ex-pdx'
+    capacity: PcmCapacityPolicy = PcmCapacityPolicy()
 
     @property
     def omitted_playback_ids(self):
@@ -28,9 +29,11 @@ class CapacityView:
                     pdx_format=self.pdx_format,
                     verified_sample_byte_scope=sample_byte_limit(self.pdx_format),
                     sample_byte_limit=sample_byte_limit(self.pdx_format),
-                    pdx_byte_limit=PDX_BYTE_LIMIT,
+                    pdx_byte_limit=self.capacity.pdx_byte_limit,
+                    capacity=self.capacity.summary(pdx_bytes=packed_pdx_bytes(self.analysis.samples)
+                                                   if self.analysis.samples else 0),
                     retained_pdx_bytes=packed_pdx_bytes(self.analysis.samples),
-                    pdx_byte_budget_satisfied=packed_pdx_bytes(self.analysis.samples) <= PDX_BYTE_LIMIT,
+                    pdx_byte_budget_satisfied=packed_pdx_bytes(self.analysis.samples) <= self.capacity.pdx_byte_limit,
                     retained_sample_ids=[s.sample_id for s in self.analysis.samples],
                     omitted_playback_count=len(omitted),
                     omitted_playback_ids=[row['playback_id'] for row in omitted],
@@ -55,7 +58,7 @@ class CapacityView:
             writer.writerows(self.rows)
 
 
-def select_capacity(analysis, *, omit_playback_ids=(), normalization_ms=8, pdx_format='ex-pdx'):
+def select_capacity(analysis, *, omit_playback_ids=(), normalization_ms=8, pdx_format='ex-pdx', capacity=None):
     """Select whole samples by first use; callers still validate original evidence.
 
     The byte limit follows the selected PDX format and PCM8 call scope.
@@ -65,6 +68,7 @@ def select_capacity(analysis, *, omit_playback_ids=(), normalization_ms=8, pdx_f
     identities stay omitted; later uses of already bound samples survive.
     The table-inclusive file byte budget is also enforced; bound reuse costs zero.
     """
+    capacity = capacity or PcmCapacityPolicy()
     maximum = sample_byte_limit(pdx_format)
     from conversion_config import normalization_samples
     omission_bound = normalization_samples(normalization_ms)
@@ -90,8 +94,8 @@ def select_capacity(analysis, *, omit_playback_ids=(), normalization_ms=8, pdx_f
             elif len(retained) >= SLOT_LIMIT:
                 kind, actual, limit = 'slot_capacity', len(retained) + 1, SLOT_LIMIT
                 reason = 'single PDX bank is full; later new sample omitted'
-            elif stored_bytes + len(sample.encoded_bytes) > PDX_BYTE_LIMIT:
-                kind, actual, limit = 'pdx_byte_capacity', stored_bytes + len(sample.encoded_bytes), PDX_BYTE_LIMIT
+            elif stored_bytes + len(sample.encoded_bytes) > capacity.pdx_byte_limit:
+                kind, actual, limit = 'pdx_byte_capacity', stored_bytes + len(sample.encoded_bytes), capacity.pdx_byte_limit
                 reason = 'PDX file byte budget is full; new whole sample omitted without truncation'
             else:
                 retained[p.sample_id] = sample
@@ -109,4 +113,4 @@ def select_capacity(analysis, *, omit_playback_ids=(), normalization_ms=8, pdx_f
     omitted = {row['playback_id'] for row in rows if row['action'] != 'retain'}
     target = replace(analysis, samples=tuple(retained.values()),
                      playbacks=tuple(p for p in analysis.playbacks if p.playback_id not in omitted))
-    return CapacityView(target, tuple(rows), pdx_format)
+    return CapacityView(target, tuple(rows), pdx_format, capacity)

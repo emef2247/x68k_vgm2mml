@@ -10,7 +10,7 @@ import re
 import subprocess
 import sys
 
-from pcm_capacity import PDX_BYTE_LIMIT, PDX_TABLE_BYTES, packed_pdx_bytes, sample_byte_limit
+from pcm_capacity import PcmCapacityPolicy, PDX_TABLE_BYTES, packed_pdx_bytes, sample_byte_limit
 from mdx_duration import duration_spelling
 from opm_mdx import mdx_tick, projected_samples
 from pcm_assessment import PcmAssessment, ProjectionError, PAN_EVIDENCE, select_pcm_policy
@@ -72,6 +72,7 @@ class PcmMdxProjection:
     pcm_profile: str = 'standard'
     pcm_payload_bytes: int = 0
     pdx_format: str = 'ex-pdx'
+    capacity_policy: PcmCapacityPolicy = PcmCapacityPolicy()
 
     @property
     def boundary_times(self):
@@ -82,9 +83,10 @@ class PcmMdxProjection:
         projected = self.source_origin != 'native_msm6258'
         return dict(pcm_profile=self.pcm_profile,pcm_payload_bytes=self.pcm_payload_bytes,
                     pcm_pdx_format=self.pdx_format, pcm_sample_byte_limit=sample_byte_limit(self.pdx_format),
-                    pcm_pdx_byte_limit=PDX_BYTE_LIMIT,
+                    pcm_pdx_byte_limit=self.capacity_policy.pdx_byte_limit,
+                    pcm_capacity=self.capacity_policy.summary(PDX_TABLE_BYTES + self.pcm_payload_bytes if self.bindings else 0),
                     pcm_pdx_estimated_bytes=(PDX_TABLE_BYTES + self.pcm_payload_bytes) if self.bindings else 0,
-                    pcm_pdx_estimate_within_budget=not self.bindings or PDX_TABLE_BYTES + self.pcm_payload_bytes <= PDX_BYTE_LIMIT,
+                    pcm_pdx_estimate_within_budget=not self.bindings or PDX_TABLE_BYTES + self.pcm_payload_bytes <= self.capacity_policy.pdx_byte_limit,
                     pcm_force_capacity=self.force_capacity.summary() if self.force_capacity else None,
                     pcm_sample_count=len(self.bindings),
                     pcm_source_origin=self.source_origin,
@@ -134,7 +136,7 @@ class PcmMdxProjection:
         folder.mkdir(parents=True, exist_ok=True)
         (folder / 'format.json').write_text(json.dumps(dict(
             pdx_format=self.pdx_format, sample_byte_limit=sample_byte_limit(self.pdx_format),
-            pdx_byte_limit=PDX_BYTE_LIMIT, slot_limit=96), indent=2) + '\n', encoding='utf-8')
+            pdx_byte_limit=self.capacity_policy.pdx_byte_limit, capacity=self.capacity_policy.summary(), slot_limit=96), indent=2) + '\n', encoding='utf-8')
         path = folder / 'target.tsv'
         with path.open('w', newline='', encoding='utf-8') as stream:
             stream.write('kind\tvalue\tticks\n')
@@ -171,16 +173,17 @@ def _continuous_delivery_eligible(playback, analysis, samples):
 
 
 def project(analysis, *, stem, sample_multiplier=1, policy='auto', omit_playback_ids=(), normalization_ms=8,
-            tick_mapper=None, song_loop_start=None, force=False, pdx_format='ex-pdx'):
+            tick_mapper=None, song_loop_start=None, force=False, pdx_format='ex-pdx', capacity=None):
     """Bind unchanged samples; omit nominated notes within the source-time policy."""
     maximum = sample_byte_limit(pdx_format)
+    capacity_policy = capacity or PcmCapacityPolicy()
     policy, selection = select_pcm_policy(policy, analysis)
     if getattr(analysis, 'parallel_playbacks', False):
         try:
             result = _project_parallel(analysis, stem=stem, sample_multiplier=sample_multiplier,
                                      policy=policy, omit_playback_ids=omit_playback_ids,
                                      normalization_ms=normalization_ms, tick_mapper=tick_mapper,
-                                     song_loop_start=song_loop_start, force=force, pdx_format=pdx_format)
+                                     song_loop_start=song_loop_start, force=force, pdx_format=pdx_format, capacity=capacity_policy)
         except ProjectionError as error:
             error.assessment.policy_selection = selection
             raise
@@ -237,12 +240,12 @@ def project(analysis, *, stem, sample_multiplier=1, policy='auto', omit_playback
     omit_ids = set(omit_playback_ids)
     if force:
         from pcm_force_capacity import select_capacity
-        capacity = select_capacity(analysis, omit_playback_ids=omit_ids, normalization_ms=normalization_ms, pdx_format=pdx_format)
+        capacity = select_capacity(analysis, omit_playback_ids=omit_ids, normalization_ms=normalization_ms, pdx_format=pdx_format, capacity=capacity_policy)
     capacity_omit_ids = capacity.omitted_playback_ids if capacity is not None else frozenset()
     binding_samples = capacity.analysis.samples if capacity is not None else analysis.samples
     estimated_pdx_bytes = packed_pdx_bytes(binding_samples)
-    if estimated_pdx_bytes > PDX_BYTE_LIMIT and not getattr(analysis, '_capacity_validation_only', False):
-        reject(f'PDX file byte capacity exceeded: {estimated_pdx_bytes}/{PDX_BYTE_LIMIT} bytes including table',
+    if estimated_pdx_bytes > capacity_policy.pdx_byte_limit and not getattr(analysis, '_capacity_validation_only', False):
+        reject(f'PDX file byte capacity exceeded: {estimated_pdx_bytes}/{capacity_policy.pdx_byte_limit} bytes including table',
                status='lossy', code='pdx_byte_capacity', criterion='capacity')
     if analysis.source_loop_vgmticks is not None and song_loop_start is None:
         assessment.add('loop', 'lossy', 'song_loop_not_emitted',
@@ -511,7 +514,7 @@ def project(analysis, *, stem, sample_multiplier=1, policy='auto', omit_playback
                             clock_rows, assessment, tuple(commands), tuple(omitted),
                             getattr(analysis, 'source_origin', 'native_msm6258'), capacity,
                             getattr(analysis,'pcm_profile','standard'),
-                            sum(len(s.encoded_bytes) for s in binding_samples), pdx_format)
+                            sum(len(s.encoded_bytes) for s in binding_samples), pdx_format, capacity_policy)
 
 
 def _project_parallel(analysis, **options):
@@ -619,7 +622,7 @@ def _project_parallel(analysis, **options):
             if (len(sample.encoded_bytes) > maximum or
                     playback.sample_id not in retained_sample_ids and
                     (len(retained_sample_ids) >= SLOT_LIMIT or
-                     retained_pdx_bytes + len(sample.encoded_bytes) > PDX_BYTE_LIMIT)):
+                     retained_pdx_bytes + len(sample.encoded_bytes) > options['capacity'].pdx_byte_limit)):
                 continue
             if playback.sample_id not in retained_sample_ids:
                 retained_pdx_bytes += len(sample.encoded_bytes)
@@ -632,7 +635,7 @@ def _project_parallel(analysis, **options):
         capacity_input = copy(analysis)
         object.__setattr__(capacity_input, 'playbacks', tuple(capacity_candidates))
         capacity = select_capacity(capacity_input, omit_playback_ids=omit_ids,
-                                   normalization_ms=options['normalization_ms'], pdx_format=options['pdx_format'])
+                                   normalization_ms=options['normalization_ms'], pdx_format=options['pdx_format'], capacity=options['capacity'])
         view = capacity.analysis
     # Slot binding belongs to surviving target events, not unused source assets.
     # Every lane receives this same pruned ordering, so rebinding is global.
@@ -718,9 +721,10 @@ def write_pdx(plan, analysis, outdir, stem, *, generator=None):
     if any(not 0 < len(samples[b.sample_id].encoded_bytes) <= maximum for b in plan.bindings):
         raise ValueError(f'{plan.pdx_format} sample_length_overflow: limit {maximum} bytes')
     estimated_bytes = packed_pdx_bytes(samples[b.sample_id] for b in plan.bindings)
-    if estimated_bytes > PDX_BYTE_LIMIT:
+    byte_limit = plan.capacity_policy.pdx_byte_limit
+    if estimated_bytes > byte_limit:
         (out / plan.pdx_name).unlink(missing_ok=True)
-        raise ValueError(f'PDX file byte capacity exceeded: {estimated_bytes}/{PDX_BYTE_LIMIT} bytes including table')
+        raise ValueError(f'PDX file byte capacity exceeded: {estimated_bytes}/{byte_limit} bytes including table')
     manifest = folder / 'manifest.tsv'
     with manifest.open('w', newline='', encoding='utf-8') as stream:
         stream.write('sample_id\tbank\tslot\tfile\n')
@@ -747,8 +751,8 @@ def write_pdx(plan, analysis, outdir, stem, *, generator=None):
     def reject(detail):
         pdx.unlink(missing_ok=True)
         raise ValueError(detail)
-    if len(payload) > PDX_BYTE_LIMIT:
-        reject(f'Packed PDX file byte capacity exceeded: {len(payload)}/{PDX_BYTE_LIMIT} bytes including table')
+    if len(payload) > byte_limit:
+        reject(f'Packed PDX file byte capacity exceeded: {len(payload)}/{byte_limit} bytes including table')
     if len(payload) < 768:
         reject('PDX builder returned a truncated table')
     expected = {b.slot: samples[b.sample_id].encoded_bytes for b in plan.bindings}

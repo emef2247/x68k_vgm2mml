@@ -274,3 +274,20 @@ No upstream core source or binary is incorporated into the tracked converter.
 The source identifies BSD-3-Clause and copyright-holder R. Belmont. Retain its
 upstream notices and applicable dependency terms when redistributing a local
 reference library. The project MIT license does not relicense that library.
+
+## libvgm MSM6295 source profile and optional reference core
+
+Project: [ValleyBell/libvgm](https://github.com/ValleyBell/libvgm).
+Pinned revision: bad50c571db45b872304bdcd0603dd2214f0663e.
+References: emu/cores/okim6295.c and okiadpcm.c at that revision.
+
+The independently implemented Python source profile is checked by
+scripts/msm6295_reference.py against optional unchanged upstream code under
+ignored .tools/msm6295-reference. No upstream core source or compiled reference
+library is included in the tracked converter or generated music artifacts.
+
+The core identifies BSD-3-Clause and copyright-holders Mirko Buffoni and Aaron
+Giles; the OKI ADPCM helper identifies Andrew Gardner and Aaron Giles. Preserve
+upstream/dependency notices when distributing a local reference build. Its
+license is separate from the project's MIT license. Setup metadata records the
+upstream files, wrapper and local library hashes.

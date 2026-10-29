@@ -152,6 +152,8 @@ def build_parser():
                         help='PCM policy: auto (default) selects best-effort for observed DAC supplies, otherwise native strict; explicit policies override')
     fidelity.add_argument('--pdx-format', choices=('ex-pdx', 'standard'), default='ex-pdx',
                         help='PDX length format: ex-pdx (default, 32-bit sample lengths) or standard (16-bit)')
+    from pcm_capacity import add_capacity_arguments
+    add_capacity_arguments(fidelity)
     fidelity.add_argument('--pcm-profile',choices=('standard','low','ultra_low'),default='standard',
                         help='PCM target size/quality profile; low/ultra_low cap derived playback rate near7.8/3.9kHz')
     fidelity.add_argument('--segapcm-projection', choices=('auto', 'bank', 'mix'), default='auto',
@@ -208,6 +210,9 @@ def main():
         normalization_samples(args.normalization_ms)
         from fm_state_runs import fm_short_state_samples
         fm_short_state_samples(args.fm_state_ms)
+        from pcm_capacity import resolve_pcm_capacity
+        pcm_capacity = resolve_pcm_capacity(buffer_kib=args.pcm_buffer_kib, loader=args.pcm_loader,
+                                            margin_bytes=args.pcm_buffer_margin_bytes)
         normalize = normalization_enabled(args.normalize_lengths, notation=args.notation, target=args.target)
     except ValueError as error:
         parser.error(str(error))
@@ -227,6 +232,9 @@ def main():
         parser.error('--pcm-profile low/ultra_low requires --target mdx')
     if args.pcm_policy is not None and args.target != 'mdx':
         parser.error('--pcm-policy requires --target mdx')
+    if args.target != 'mdx' and (args.pcm_buffer_kib is not None or args.pcm_loader != 'direct'
+                                 or args.pcm_buffer_margin_bytes != 4096):
+        parser.error('PCM buffer options require --target mdx')
     if args.target == 'mdx' and args.track_layout == 'conductor' and args.notation != 'registers':
         parser.error('Conductor tracks require --notation registers')
     mgs_options = (args.alloc is not None or args.raw_ticks or args.enhance_macros is not None
@@ -284,7 +292,7 @@ def main():
             '.pcm.force_capacity.csv', '.pcm.force_capacity.json',
             '.mdx.normalization.csv', '.mdx.before.normalize.mml',
             '.pcm.timing.json', '.pcm.assessment.json', '.pcm.assessment.csv',
-            '.pcm_bank_merge.json', '.pcm_bank_merge.samples.csv', '.pcm_bank_merge.playbacks.csv', '.pcm_bank.source_validation.json', '.c140_projection.json',
+            '.pcm_bank_merge.json', '.pcm_bank_merge.samples.csv', '.pcm_bank_merge.playbacks.csv', '.pcm_bank.source_validation.json', '.c140_projection.json', '.msm6295_projection.json',
             '.pcm_target_commands.csv', '.pcm_projection.csv', '.pcm_clock.csv', '.pcm_bindings.csv')
         owned = list(owned_binary) + [Path(song_dir) / (base_name + suffix) for suffix in suffixes]
         if args.target == 'mdx':
@@ -311,7 +319,7 @@ def main():
         report['chip_projection'] = route
         report['force_requested'] = args.force
         if args.force and (args.target != 'mdx' or route not in (
-                'opna-fm-to-opm', 'native-opm-pcm', 'opm-segapcm-source', 'opm-c140-source', 'psg-scc-to-opm', 'dcsg-to-opm')):
+                'opna-fm-to-opm', 'native-opm-pcm', 'opm-segapcm-source', 'opm-c140-source', 'opm-msm6295-source', 'psg-scc-to-opm', 'dcsg-to-opm')):
             raise ValueError('--force requires a supported MDX source route and --target mdx')
         if args.fm_only and (args.target != 'mdx' or route != 'opm-segapcm-source'
                              or 'opm' not in usage['used_chips']):
@@ -323,25 +331,28 @@ def main():
             report['chip_projection'] = 'opm-segapcm-pdx'
         elif route == 'opm-c140-source':
             report['chip_projection'] = 'opm-c140-pdx'
+        elif route == 'opm-msm6295-source':
+            report['chip_projection'] = 'opm-msm6295-pdx'
         source_selection='psg' if args.psg_only else 'scc' if args.scc_only else 'all'
         if source_selection!='all' and route!='psg-scc-to-opm':
             raise ValueError('--psg-only/--scc-only require a PSG/SCC input and --target mdx')
         report['source_selection']=source_selection
         if args.psg_output=='pcm' and (route!='psg-scc-to-opm' or args.scc_only or args.notation!='structured'):
             raise ValueError('--psg-output pcm requires structured PSG/SCC MDX input and cannot combine with --scc-only')
-        pcm_applicable = (route in ('opna-fm-to-opm', 'opm-c140-source')
+        pcm_applicable = (route in ('opna-fm-to-opm', 'opm-c140-source', 'opm-msm6295-source')
                           or route == 'opm-segapcm-source' and not args.fm_only
                           or route == 'native-opm-pcm' and 'pcm' in usage['used_chips']
                           or route=='psg-scc-to-opm' and args.psg_output=='pcm')
         report['pcm_options'] = dict(applicable=pcm_applicable, policy=args.pcm_policy or 'auto',
                                     profile=args.pcm_profile, bank_merge=args.pcm_bank_merge, pdx_format=args.pdx_format,
+                                    capacity=pcm_capacity.summary(),
                                     bank_merge_applicable=pcm_applicable,
                                     generator_configured=bool(args.pcm_generator))
         if compatibility_target == 'opm-additive' and args.psg_model not in (None, 'additive'):
             raise ValueError('--target opm-additive requires the additive PSG model')
         if route == 'psg-scc-to-opm' and (args.notation == 'legacy' or args.track_layout != 'channels'):
             raise ValueError('PSG/SCC OPM projection supports structured/registers notation and channel tracks')
-        if route in ('native-opm-pcm', 'opna-fm-to-opm', 'opm-segapcm-source', 'opm-c140-source') and any(v is not None for v in (args.psg_model,args.psg_gain,args.scc_gain,args.scc_model,args.scc_voice_bank)):
+        if route in ('native-opm-pcm', 'opna-fm-to-opm', 'opm-segapcm-source', 'opm-c140-source', 'opm-msm6295-source') and any(v is not None for v in (args.psg_model,args.psg_gain,args.scc_gain,args.scc_model,args.scc_voice_bank)):
             raise ValueError('PSG/SCC projection options do not apply to native MDX')
         report['status'] = 'resolved'
         record_report()
@@ -387,7 +398,7 @@ def main():
                 title=args.title if args.title is not None else title_from_gd3(vgm_path, base_name, args.gd3_language),
                 normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms,
                 pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'auto',pcm_profile=args.pcm_profile,
-                pcm_bank_merge=args.pcm_bank_merge, pdx_format=args.pdx_format,
+                pcm_bank_merge=args.pcm_bank_merge, pdx_format=args.pdx_format, pcm_capacity=pcm_capacity,
                 pitch_policy=args.opm_pitch_policy or 'clamp', force=args.force)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
@@ -444,7 +455,7 @@ def main():
                                 scc_gain=.125 if args.scc_gain is None else args.scc_gain,
                                 scc_model=args.scc_model or ('additive' if compatibility_target=='opm-additive' else 'fm-additive'),
                                 scc_voice_bank=args.scc_voice_bank,source_selection=source_selection,psg_output=args.psg_output,
-                                pcm_policy=args.pcm_policy or "auto",pcm_profile=args.pcm_profile,pcm_generator=args.pcm_generator,pdx_format=args.pdx_format,
+                                pcm_policy=args.pcm_policy or "auto",pcm_profile=args.pcm_profile,pcm_generator=args.pcm_generator,pdx_format=args.pdx_format,pcm_capacity=pcm_capacity,
                                 title=args.title if args.title is not None else title_from_gd3(vgm_path, base_name, args.gd3_language),
                                 psg_model=args.psg_model or ('additive' if compatibility_target == 'opm-additive' else 'fm'),
                                 pitch_policy=args.opm_pitch_policy,
@@ -482,9 +493,10 @@ def main():
                                 pitch_policy=args.opm_pitch_policy or 'clamp',
                                 normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms,
                                 c140_pcm=route == 'opm-c140-source',
+                                msm6295_pcm=route == 'opm-msm6295-source',
                                 segapcm_source=route == 'opm-segapcm-source',
                                 segapcm_pcm=route == 'opm-segapcm-source' and not args.fm_only,
-                                segapcm_projection=args.segapcm_projection, pcm_bank_merge=args.pcm_bank_merge, pdx_format=args.pdx_format,
+                                segapcm_projection=args.segapcm_projection, pcm_bank_merge=args.pcm_bank_merge, pdx_format=args.pdx_format,pcm_capacity=pcm_capacity,
                                 force=args.force)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
