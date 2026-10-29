@@ -394,18 +394,25 @@ def main():
     parser.add_argument('--scc-voice-bank',type=Path)
     parser.add_argument('--opm-pitch-policy', choices=('clamp', 'error'))
     parser.add_argument('--pcm-policy', choices=('auto', 'strict', 'best-effort'),
-                        help='PCM policy: auto (default), strict or best-effort; auto follows observed DAC supply')
+                        help='PCM policy for MDX: best-effort (default), auto or strict')
     parser.add_argument('--pdx-format',choices=('ex-pdx','standard'),default='ex-pdx',
                         help='PDX sample lengths: ex-pdx (default, 32-bit) or standard (16-bit)')
     from pcm_capacity import add_capacity_arguments
     add_capacity_arguments(parser)
+    # Export defaults differ from the canonical converter.
+    for action in parser._actions:
+        if action.dest == 'pcm_buffer_kib':
+            action.help = 'PCM buffer in KiB (MDX export default: 1200); PDX limit subtracts loader overhead and margin'
     parser.add_argument('--pcm-profile',choices=('standard','low','ultra_low'),default='standard',
                         help='PCM output rate/size profile (default: standard)')
     parser.add_argument('--segapcm-projection',choices=('auto','bank','mix'),default='auto',
                         help='SegaPCM reusable finite bank preference (auto), required bank, or legacy mix')
     parser.add_argument('--pcm-bank-merge',choices=('budget96','similar','off'),default='budget96',
-                        help='PCM sharing: budget96 (default) fits 96 samples and a 1,200,000-byte PDX; similar keeps quality bounds; off keeps exact sharing')
+                        help='PCM sharing: budget96 (default) fits 96 samples and the PCM buffer budget; similar keeps quality bounds; off keeps exact sharing')
     args = parser.parse_args()
+    if args.target == 'mdx':
+        if args.pcm_buffer_kib is None:args.pcm_buffer_kib = 1200
+        if args.pcm_policy is None:args.pcm_policy = 'best-effort'
     try:
         rows = run_batch(args.input, args.outdir, target=args.target, generator=args.generator,
                          compiler=args.compiler, mxc=args.mxc, run68=args.run68,

@@ -1,3 +1,7 @@
+# Export CLI defaults (2026-10-30)
+
+User requested MDX export defaults: pcm-buffer-kib1200, pcm-policy best-effort, no-vgm=True. Explicit values and --vgm still override. Defaults resolve only for MDX so inherited OPM diagnostic routes retain behavior. Canonical/direct Python API defaults unchanged. Export34tests pass; no music conversion. Direct loader +4096margin gives1224704B PDX budget.
+
 # Commit checkpoint (2026-10-30)
 
 MSM6295 source/bank support and shared buffer-derived PCM capacity are being saved together. Current final policy: --pcm-buffer-kib determines the PDX budget after loader overhead/margin; no independent --pdx-limit-kib and no1.2MB fixed ceiling. Omitted buffer defaults to315122B. Latest capacity/export checks:54passed. Earlier MSM6295/reference validation is recorded below. User owns local listening/regression. Private scan metadata and music stay outside the public commit; related field notes are committed separately. No push requested.

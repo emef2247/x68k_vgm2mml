@@ -143,6 +143,14 @@ class ExportMdxTests(unittest.TestCase):
                 self.assertEqual(main(),0)
             self.assertEqual(run.call_args.kwargs['no_vgm'],expected)
 
+    def test_cli_pcm_defaults_and_explicit_overrides(self):
+        for flags, expected in (([], (1200,'best-effort',True)),
+                (['--pcm-buffer-kib','512','--pcm-policy','strict','--vgm'], (512,'strict',False))):
+            with self.subTest(flags=flags), patch('sys.argv',['export_mdx.py','input.vgm','--outdir','out',*flags]), \
+                    patch('export_mdx.run_batch',return_value=[]) as run:
+                self.assertEqual(main(),0)
+                kwargs=run.call_args.kwargs
+                self.assertEqual((kwargs['pcm_buffer_kib'],kwargs['pcm_policy'],kwargs['no_vgm']),expected)
     def test_no_vgm_cli_forwards_export_choice(self):
         args = ['export_mdx.py', 'input.vgm', '--outdir', 'out', '--no-vgm']
         with patch('sys.argv', args), patch('export_mdx.run_batch', return_value=[dict(status='success')]) as call:

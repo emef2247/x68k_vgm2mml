@@ -1,3 +1,13 @@
+# Export default update (2026-10-30)
+
+For ordinary MDX CLI exports, `scripts/export_mdx.py` now defaults to
+`--pcm-buffer-kib 1200 --pcm-policy best-effort --no-vgm`.
+The existing direct-loader/default4096-byte margin gives a1224704-byte
+PDX budget (1200KiB=1228800bytes). Explicit options override these choices;
+`--vgm` enables verification replay. The canonical converter and direct Python
+batch API retain their own defaults. The315122-byte fallback described below
+still applies when those entry points have no configured resident buffer.
+
 # PCM resident-buffer budgets
 
 The default is a maximum **315,122-byte PDX file**, including its 96-entry
