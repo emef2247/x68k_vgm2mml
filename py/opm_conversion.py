@@ -30,7 +30,7 @@ def _record_pcm_assessment(assessment, outdir, stem, *, requires_pdx, retained=(
     assessment.dump(outdir, stem)
 
 
-def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='auto', normalization_validator=None, normalization_source_times=None, normalization_ms=8, fm_state_ms=24, pitch_policy='clamp', song_loop=True, replayed_song_loop=False, pcm_analysis_override=None, source_passes_outdir=None, segapcm_source=False, segapcm_pcm=False, force=False,pcm_profile='standard',segapcm_projection='auto',pcm_bank_merge='budget96',pdx_format='ex-pdx',c140_pcm=False,c140_projection='bank',msm6295_pcm=False,pcm_capacity=None):
+def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='auto', normalization_validator=None, normalization_source_times=None, normalization_ms=8, fm_state_ms=24, pitch_policy='clamp', song_loop=True, replayed_song_loop=False, pcm_analysis_override=None, source_passes_outdir=None, segapcm_source=False, segapcm_pcm=False, force=False,pcm_profile='standard',segapcm_projection='auto',pcm_bank_merge='budget96',pdx_format='ex-pdx',c140_pcm=False,c140_projection='bank',msm6295_pcm=False,pcm_capacity=None,c140_mix_gain_db=0.0):
     source, outdir = Path(source), Path(outdir)
     from pcm_capacity import PcmCapacityPolicy
     pcm_capacity = pcm_capacity or PcmCapacityPolicy()
@@ -136,7 +136,9 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
             requested = c140_projection if c140_pcm else 'bank'
             try:
                 source_dump = dict(outdir=outdir, stem=source.stem) if msm6295_pcm else {}
-                format_kwargs = {} if c140_pcm and c140_projection == 'mix' else dict(pdx_format=pdx_format)
+                format_kwargs = (dict(gain=10 ** (c140_mix_gain_db / 20.0))
+                                 if c140_pcm and c140_projection == 'mix'
+                                 else dict(pdx_format=pdx_format))
                 pcm_analysis = project_source(native_trace, source_raw=native_raw, loop_start=native_loop,
                     loop_count=source_loop.get('loop_count', 1), pcm_profile=pcm_profile,
                     **format_kwargs, **source_dump)

@@ -57,6 +57,19 @@ class C140BankTests(unittest.TestCase):
             self.assertAlmostEqual(mix_right[gate['start_frame'] + offset],
                                    value * 180 / 510, delta=0.75)
 
+    def test_render_mix_budget_charges_timeline_not_voice_frames(self):
+        import c140_bank
+        commands = b''.join(voice(channel, mode=0x90) for channel in range(10)) + wait(500)
+        commands += b''.join(write(channel * 16 + 5, 0) for channel in range(10)) + wait(100)
+        trace = analyze(make_vgm(commands))
+        with patch.object(c140_bank, 'MAX_TOTAL_FRAMES', 2000):
+            left, right, rate, gates = render_mix(trace)
+            self.assertEqual(len(gates), 10)
+            self.assertLess(len(left), 2000)
+            long_trace = analyze(make_vgm(voice(mode=0x90) + wait(3000)))
+            with self.assertRaises(BankUnsupported):
+                render_mix(long_trace)
+
     def test_project_mix_sounds_every_gate_beyond_eight_voices(self):
         commands = b''.join(voice(channel, mode=0x90) for channel in range(10)) + wait(500)
         commands += b''.join(write(channel * 16 + 5, 0) for channel in range(10)) + wait(100)

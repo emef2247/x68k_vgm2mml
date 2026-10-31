@@ -283,28 +283,28 @@ def render_mix(trace, *, channels=None):
             left.extend([0.0] * (target - len(left)))
             right.extend([0.0] * (target - len(right)))
 
-    def flush(state):
-        if not state['pending']:
-            return
-        initial = state['initial_registers']
-        left_level, right_level = initial[1], initial[0]
-        base = state['start_frame']
-        if left_level or right_level:
-            for offset, value in enumerate(state['pending']):
-                left[base + offset] += value * left_level / 510
-                right[base + offset] += value * right_level / 510
-        state['pending'] = array('h')
+    def flush(state, upto_frame):
+        if state['pending']:
+            initial = state['initial_registers']
+            left_level, right_level = initial[1], initial[0]
+            base = state['pending_start']
+            if left_level or right_level:
+                for offset, value in enumerate(state['pending']):
+                    left[base + offset] += value * left_level / 510
+                    right[base + offset] += value * right_level / 510
+            state['pending'] = array('h')
+        state['pending_start'] = upto_frame
 
     def make_dynamic(state):
         if not state['dynamic']:
-            flush(state)
+            flush(state, frame)
             state['dynamic'] = True
 
     mixed_gates = []
 
     def finish(channel, end_frame, tick, event, termination):
         state = active.pop(channel)
-        flush(state)
+        flush(state, end_frame)
         mixed_gates.append(dict(gate_id=state['gate_id'], source_channel=channel,
             start_vgmticks=state['start_vgmticks'], end_vgmticks=tick,
             start_frame=state['start_frame'], end_frame=end_frame,
@@ -315,20 +315,17 @@ def render_mix(trace, *, channels=None):
 
     def advance(target):
         nonlocal frame, total_frames
+        # The mix accumulates one stereo frame per timeline frame, so the
+        # aggregate budget charges timeline frames, not the per-voice
+        # frame sum the bank renderer needs for its separate captures.
+        if target > MAX_TOTAL_FRAMES:
+            state = next(iter(active.values()), None)
+            raise BankUnsupported('total_resource_limit', 'C140 mix exceeds the explicit aggregate frame budget',
+                                  state['gate_id'] if state else None)
         extend(target)
         for channel in tuple(active):
             state = active[channel]
             voice = state['voice']
-            needed = target - frame
-            frequency = (voice.registers[2] << 8) | voice.registers[3]
-            if frequency and not voice.registers[5] & 0x10:
-                delta = native_delta(trace.clock_hz, frequency)
-                remaining = (voice.end - voice.start - voice.position) * 65536 - voice.fraction
-                needed = min(needed, max(0, (remaining + delta - 1) // delta))
-            if state['frames'] + needed > MAX_GATE_FRAMES:
-                raise BankUnsupported('gate_resource_limit', 'C140 per-voice capture exceeds its explicit frame budget', state['gate_id'])
-            if total_frames + needed > MAX_TOTAL_FRAMES:
-                raise BankUnsupported('total_resource_limit', 'C140 captures exceed the explicit aggregate frame budget', state['gate_id'])
             for at in range(frame, target):
                 value = voice.step(rom, trace.chip_type, trace.clock_hz)
                 if value is None:
@@ -341,6 +338,8 @@ def render_mix(trace, *, channels=None):
                     state['pending'].append(value)
                 state['frames'] += 1
                 total_frames += 1
+            if channel in active and len(state['pending']) > 65536:
+                flush(state, target)
         frame = target
 
     gate_count = 0
@@ -371,7 +370,7 @@ def render_mix(trace, *, channels=None):
                     source_event_id=event.source_event_id, loop_iteration=event.loop_iteration,
                     initial_registers=tuple(reg), rom_generation=rom.generation,
                     voice=Voice(reg, start, end, loop), dynamic=False,
-                    pending=array('h'), frames=0)
+                    pending=array('h'), pending_start=frame, frames=0)
                 gate_count += 1
         elif channel in active and register <= 4 and previous != event.value:
             make_dynamic(active[channel])
@@ -398,19 +397,23 @@ class _MixNative:
     sample_rate: Fraction
 
 
-def project_mix(trace, *, source_raw, loop_start=None, loop_count=1, pcm_profile='standard'):
+def project_mix(trace, *, source_raw, loop_start=None, loop_count=1, pcm_profile='standard', gain=1.0):
     """Package the full stereo mix as one derived waveform.
 
     Every gate sounds; nothing is omitted for target polyphony. The
     waveform packager folds the stereo mix to one centered mono track
     and splits it into independently encoded chunks, as on the PSG
-    waveform route.
+    waveform route. `gain` is a linear calibration factor applied to
+    the mix only (target-platform balance against FM); the default
+    1.0 keeps the source chip sum untouched.
     """
     from pcm_waveform_mdx import project as package_waveform
     left, right, rate, gates = render_mix(trace)
     interleaved = array('d', [0.0]) * (2 * len(left))
     interleaved[0::2] = left
     interleaved[1::2] = right
+    if gain != 1.0:
+        interleaved = array('d', (value * gain for value in interleaved))
     native = _MixNative(source_end_vgmticks=trace.source_end_vgmticks,
         gates=tuple(_MixGate(gate['gate_id'], Fraction(gate['start_vgmticks']),
                              Fraction(gate['end_vgmticks']), gate['start_event_id'],

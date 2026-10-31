@@ -160,6 +160,8 @@ def build_parser():
                         help='SegaPCM: prefer reusable finite samples, require bank, or use legacy mixed chunks')
     fidelity.add_argument('--c140-projection', choices=('bank', 'mix'), default='bank',
                         help='C140: reusable per-voice bank (default), or a full mix that sounds every gate')
+    fidelity.add_argument('--c140-mix-gain-db', type=float, default=0.0,
+                        help='C140 mix only: calibration gain in dB applied to the mixed PCM (default: 0)')
     fidelity.add_argument('--pcm-bank-merge', choices=('budget96','similar','off'), default='budget96',
                         help='PCM sample sharing: budget96 (default) fits 96 slots and a 1,200,000-byte PDX; similar checks quality bounds; off keeps exact sharing (MSM6258, Delta-T, SegaPCM)')
     diagnostic = parser.add_argument_group('Diagnostic and development options')
@@ -496,6 +498,7 @@ def main():
                                 normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms,
                                 c140_pcm=route == 'opm-c140-source',
                                 c140_projection=args.c140_projection,
+                                c140_mix_gain_db=args.c140_mix_gain_db,
                                 msm6295_pcm=route == 'opm-msm6295-source',
                                 segapcm_source=route == 'opm-segapcm-source',
                                 segapcm_pcm=route == 'opm-segapcm-source' and not args.fm_only,
