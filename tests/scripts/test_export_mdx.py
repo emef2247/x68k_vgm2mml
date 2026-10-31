@@ -169,6 +169,45 @@ class ExportMdxTests(unittest.TestCase):
                 self.assertEqual(main(),0)
                 kwargs=run.call_args.kwargs
                 self.assertEqual((kwargs['pcm_buffer_kib'],kwargs['pcm_policy'],kwargs['no_vgm']),expected)
+    def test_cli_pcm_route_defaults_and_explicit_overrides(self):
+        keys = ('psg_output', 'psg_gain', 'c140_projection', 'c140_mix_gain_db')
+        for flags, expected in (([], (None, None, 'mix', -12.)),
+                (['--psg-output','opm'], ('opm', None, 'mix', -12.)),
+                (['--psg-output','pcm'], ('pcm', None, 'mix', -12.)),
+                (['--psg-gain','.5'], (None, .5, 'mix', -12.)),
+                (['--c140-projection','bank'], (None, None, 'bank', -12.)),
+                (['--c140-mix-gain-db','-6'], (None, None, 'mix', -6.))):
+            with self.subTest(flags=flags), patch('sys.argv',['export_mdx.py','input.vgm','--outdir','out',*flags]), \
+                    patch('export_mdx.run_batch',return_value=[]) as run:
+                self.assertEqual(main(),0)
+                kwargs=run.call_args.kwargs
+                self.assertEqual(tuple(kwargs[key] for key in keys),expected)
+    def test_psg_file_options_auto_route_resolution(self):
+        from export_mdx import _psg_file_options
+        def usage(*chips):
+            return dict(used_chips=list(chips), compatibility_initialization={})
+        with patch('conversion_config.select_mdx_route', return_value='psg-scc-to-opm'), \
+                patch('conversion_config.inspect_source', return_value=usage('psg', 'scc')):
+            self.assertEqual(_psg_file_options(Path('a.vgm'), None, None),
+                             ['--psg-output', 'pcm', '--psg-gain', '2.0'])
+            self.assertEqual(_psg_file_options(Path('a.vgm'), None, .5),
+                             ['--psg-output', 'pcm', '--psg-gain', '0.5'])
+        # PSG alone renders on OPM; PCM is only the PSG+SCC fallback.
+        with patch('conversion_config.select_mdx_route', return_value='psg-scc-to-opm'), \
+                patch('conversion_config.inspect_source', return_value=usage('psg')):
+            self.assertEqual(_psg_file_options(Path('a.vgm'), None, None),
+                             ['--psg-output', 'opm'])
+        with patch('conversion_config.select_mdx_route', return_value='opm-c140-source'), \
+                patch('conversion_config.inspect_source', return_value=usage('opm', 'c140')):
+            self.assertEqual(_psg_file_options(Path('a.vgm'), None, None),
+                             ['--psg-output', 'opm'])
+        with patch('conversion_config.inspect_source', side_effect=ValueError('bad')):
+            self.assertEqual(_psg_file_options(Path('a.vgm'), None, None),
+                             ['--psg-output', 'opm'])
+        with patch('conversion_config.inspect_source') as inspect:
+            self.assertEqual(_psg_file_options(Path('a.vgm'), 'opm', None),
+                             ['--psg-output', 'opm'])
+            inspect.assert_not_called()
     def test_no_vgm_cli_forwards_export_choice(self):
         args = ['export_mdx.py', 'input.vgm', '--outdir', 'out', '--no-vgm']
         with patch('sys.argv', args), patch('export_mdx.run_batch', return_value=[dict(status='success')]) as call:
