@@ -201,7 +201,11 @@ def project(psg, scc, *, psg_clock, scc_clock, end_vgmticks, psg_gain=None,
     if pitch_policy not in ('clamp', 'error'):
         raise ValueError('Pitch policy must be clamp or error')
     psg_gain = (1. if psg_model == 'fm' else .125) if psg_gain is None else psg_gain
-    if not math.isfinite(psg_gain) or not 0 < psg_gain <= (1. if psg_model == 'fm' or psg_output=='pcm' else .5):
+    # PCM output encodes the gain into ADPCM audio, where level buys SNR;
+    # its ceiling is MAX_PSG_PCM_GAIN in psg_pcm_mdx. OPM projection gains
+    # scale voice levels instead and keep their tighter model ranges.
+    gain_cap = 8. if psg_output=='pcm' else (1. if psg_model == 'fm' else .5)
+    if not math.isfinite(psg_gain) or not 0 < psg_gain <= gain_cap:
         raise ValueError('PSG gain exceeds the selected model range')
     if not math.isfinite(scc_gain) or not 0 < scc_gain <= .5:
         raise ValueError('SCC gain must be positive and at most 0.5')

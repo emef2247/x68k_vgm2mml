@@ -66,5 +66,17 @@ class PsgPcmMdxTests(unittest.TestCase):
         self.assertTrue(any(e['code']=='psg_target_filter' for e in aligned.target_evidence))
         self.assertEqual(full.source_origin,'projected_msm6258_from_psg')
 
+    def test_gain_above_one_is_accepted_and_recorded(self):
+        samples=array('h',[4000 if i%40<20 else 0 for i in range(4410) for _ in (0,1)])
+        native=PsgPlayback(Fraction(44100),4410,samples,
+            (PlaybackGate(0,Fraction(0),Fraction(4410),0,None,(0,),'source_end'),),(),{})
+        boosted=project(native,source_raw=b'authored',gain=2.)
+        evidence=[e for e in boosted.target_evidence if e['code']=='psg_target_filter']
+        self.assertEqual(evidence[0]['projected_value']['gain'],2.)
+        with self.assertRaises(ValueError):
+            project(native,source_raw=b'authored',gain=8.5)
+        with self.assertRaises(ValueError):
+            project(native,source_raw=b'authored',gain=0.)
+
 
 if __name__=='__main__':unittest.main()

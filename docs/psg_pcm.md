@@ -100,12 +100,25 @@ Before ADPCM recompression, the signal passes through:
 - a 63-tap symmetric Hamming-windowed sinc low-pass filter
 
 The filtered audio is then recompressed to MSM6258 ADPCM using the common PCM
-packager.
+packager, with a beam-search encoder (`encode_msm6258_beam`) instead of the
+greedy one. On this smooth continuous mix the greedy encoder's one-step
+choice makes the predictor hunt around the target, which decodes as a
+constant tone just under the profile Nyquist (about 7.75 kHz at the standard
+rate); the tone's level barely depends on the encode gain, so raising the
+gain only masks it under louder music. The beam encoder keeps several
+decoder states and penalizes decoded second differences where the desired
+signal itself is smooth, suppressing the tone at the source while tracking
+square-wave edges as before. Other waveform routes keep the greedy encoder.
 
 The low-pass cutoff is 0.45 × the selected output sample rate.
 
-`--psg-gain` is applied (default 1.0 in PCM mode, valid range:
-0 < gain ≤ 1).
+`--psg-gain` is applied after the target filter, before ADPCM encoding
+(default 1.0 in PCM mode, valid range: 0 < gain ≤ 8). MSM6258 ADPCM
+encoding is level-sensitive: a quiet mix loses SNR roughly dB-for-dB,
+so gains above 1 exist to encode near full scale. Balance against the
+OPM parts belongs to playback-side attenuation, not to pre-encode
+attenuation. Samples pushed past the int16 range are clipped, and the
+clipped count is reported in the `psg_target_filter` evidence.
 
 No waveform-level or segment-level peak normalization is performed.
 The original audio is not replaced by the filtered result.
