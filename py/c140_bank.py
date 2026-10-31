@@ -249,6 +249,179 @@ def render_gates(trace):
     return sorted(gates, key=lambda g: (g['start_event_id'], g['source_channel'])), rate
 
 
+def render_mix(trace, *, channels=None):
+    """Mix voices on the native frame clock into stereo accumulators.
+
+    Same interpretation as render_gates (live controls, pauses and
+    song-loop traversals preserved; no invented attack at a seam), but
+    instead of per-gate captures each voice contributes
+    value * left / 510 and value * right / 510 per native frame, the
+    per-side form of the level baking render_gates applies to dynamic
+    gates. Frames of a not-yet-dynamic voice are held raw and flushed
+    with its initial levels when it becomes dynamic or ends, mirroring
+    make_dynamic. Returns (left, right, rate, gates) with array('d')
+    samples and one metadata dict per mixed gate, in render_gates
+    field style. With `channels`, only those source channels are mixed.
+    """
+    if trace.issues:
+        raise BankUnsupported('source_unsupported', '; '.join(trace.issues))
+    if trace.clock_hz < 288:
+        raise BankUnsupported('clock', 'C140 clock cannot produce a native sample rate')
+    rate = trace.clock_hz // 288
+    rom = Rom()
+    registers = [[0] * 16 for _ in range(24)]
+    active = {}
+    left = array('d')
+    right = array('d')
+    frame = 0
+    total_frames = 0
+    ordered = sorted([(b.event_id, 'rom', b) for b in trace.rom_blocks] +
+                     [(w.event_id, 'write', w) for w in trace.writes])
+
+    def extend(target):
+        if len(left) < target:
+            left.extend([0.0] * (target - len(left)))
+            right.extend([0.0] * (target - len(right)))
+
+    def flush(state):
+        if not state['pending']:
+            return
+        initial = state['initial_registers']
+        left_level, right_level = initial[1], initial[0]
+        base = state['start_frame']
+        if left_level or right_level:
+            for offset, value in enumerate(state['pending']):
+                left[base + offset] += value * left_level / 510
+                right[base + offset] += value * right_level / 510
+        state['pending'] = array('h')
+
+    def make_dynamic(state):
+        if not state['dynamic']:
+            flush(state)
+            state['dynamic'] = True
+
+    mixed_gates = []
+
+    def finish(channel, end_frame, tick, event, termination):
+        state = active.pop(channel)
+        flush(state)
+        mixed_gates.append(dict(gate_id=state['gate_id'], source_channel=channel,
+            start_vgmticks=state['start_vgmticks'], end_vgmticks=tick,
+            start_frame=state['start_frame'], end_frame=end_frame,
+            start_event_id=state['start_event_id'],
+            end_event_id=event.event_id if event else None,
+            source_event_id=state['source_event_id'],
+            loop_iteration=state['loop_iteration'], termination=termination))
+
+    def advance(target):
+        nonlocal frame, total_frames
+        extend(target)
+        for channel in tuple(active):
+            state = active[channel]
+            voice = state['voice']
+            needed = target - frame
+            frequency = (voice.registers[2] << 8) | voice.registers[3]
+            if frequency and not voice.registers[5] & 0x10:
+                delta = native_delta(trace.clock_hz, frequency)
+                remaining = (voice.end - voice.start - voice.position) * 65536 - voice.fraction
+                needed = min(needed, max(0, (remaining + delta - 1) // delta))
+            if state['frames'] + needed > MAX_GATE_FRAMES:
+                raise BankUnsupported('gate_resource_limit', 'C140 per-voice capture exceeds its explicit frame budget', state['gate_id'])
+            if total_frames + needed > MAX_TOTAL_FRAMES:
+                raise BankUnsupported('total_resource_limit', 'C140 captures exceed the explicit aggregate frame budget', state['gate_id'])
+            for at in range(frame, target):
+                value = voice.step(rom, trace.chip_type, trace.clock_hz)
+                if value is None:
+                    finish(channel, at, Fraction(at * 44100, rate), None, 'natural_stop')
+                    break
+                if state['dynamic']:
+                    left[at] += value * voice.registers[1] / 510
+                    right[at] += value * voice.registers[0] / 510
+                else:
+                    state['pending'].append(value)
+                state['frames'] += 1
+                total_frames += 1
+        frame = target
+
+    gate_count = 0
+    for _, kind, event in ordered:
+        target = -(-event.vgmticks * rate // 44100)
+        advance(target)
+        if kind == 'rom':
+            for state in active.values():
+                make_dynamic(state)
+            rom.update(event)
+            continue
+        if event.register >= 0x180:
+            continue
+        channel, register = divmod(event.register, 16)
+        reg = registers[channel]
+        previous = reg[register]
+        reg[register] = event.value
+        if register == 5:
+            if channel in active:
+                finish(channel, frame, event.vgmticks, event,
+                       'retrigger' if event.value & 0x80 else 'key_off')
+            if event.value & 0x80 and (channels is None or channel in channels):
+                start, end, loop = ((reg[i] << 8) | reg[i + 1] for i in (6, 8, 10))
+                if end <= start:
+                    raise BankUnsupported('sample_range', 'C140 KEYON has a nonpositive latched sample interval')
+                active[channel] = dict(gate_id=gate_count, source_channel=channel,
+                    start_vgmticks=event.vgmticks, start_frame=frame, start_event_id=event.event_id,
+                    source_event_id=event.source_event_id, loop_iteration=event.loop_iteration,
+                    initial_registers=tuple(reg), rom_generation=rom.generation,
+                    voice=Voice(reg, start, end, loop), dynamic=False,
+                    pending=array('h'), frames=0)
+                gate_count += 1
+        elif channel in active and register <= 4 and previous != event.value:
+            make_dynamic(active[channel])
+    advance(-(-trace.source_end_vgmticks * rate // 44100))
+    for channel in tuple(active):
+        finish(channel, frame, trace.source_end_vgmticks, None, 'source_end')
+    return left, right, rate, sorted(mixed_gates, key=lambda g: (g['start_event_id'], g['source_channel']))
+
+
+@dataclass(frozen=True)
+class _MixGate:
+    gate_id: int
+    start_vgmticks: Fraction
+    end_vgmticks: Fraction
+    start_event_id: int
+    end_event_id: int | None
+
+
+@dataclass(frozen=True)
+class _MixNative:
+    source_end_vgmticks: int
+    gates: tuple
+    samples: array
+    sample_rate: Fraction
+
+
+def project_mix(trace, *, source_raw, loop_start=None, loop_count=1, pcm_profile='standard'):
+    """Package the full stereo mix as one derived waveform.
+
+    Every gate sounds; nothing is omitted for target polyphony. The
+    waveform packager folds the stereo mix to one centered mono track
+    and splits it into independently encoded chunks, as on the PSG
+    waveform route.
+    """
+    from pcm_waveform_mdx import project as package_waveform
+    left, right, rate, gates = render_mix(trace)
+    interleaved = array('d', [0.0]) * (2 * len(left))
+    interleaved[0::2] = left
+    interleaved[1::2] = right
+    native = _MixNative(source_end_vgmticks=trace.source_end_vgmticks,
+        gates=tuple(_MixGate(gate['gate_id'], Fraction(gate['start_vgmticks']),
+                             Fraction(gate['end_vgmticks']), gate['start_event_id'],
+                             gate['end_event_id']) for gate in gates),
+        samples=interleaved, sample_rate=Fraction(rate, 1))
+    return package_waveform(native, source_raw=source_raw, loop_start=loop_start,
+        loop_count=loop_count, source_origin='projected_msm6258_from_c140_mix',
+        evidence_prefix='c140_mix', artifact_prefix='c140_mix',
+        source_description='derived C140 stereo mix', pcm_profile=pcm_profile)
+
+
 def project(trace, *, source_raw, loop_start=None, loop_count=1, pcm_profile='standard', pdx_format='ex-pdx'):
     profile = get_profile(pcm_profile)
     maximum = sample_byte_limit(pdx_format)

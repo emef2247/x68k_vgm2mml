@@ -42,6 +42,15 @@ def successful_run(command, **kwargs):
 
 
 class ExportMdxTests(unittest.TestCase):
+    def test_c140_projection_reaches_listening_batch_options(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source,out,generator=self.prepare(Path(temp),('a.vgm',))
+            with patch('export_listening.run_listening_batch', return_value=[]) as batch:
+                run_batch(source,out,generator=generator,listening_layout=True,
+                          c140_projection='mix')
+            options=batch.call_args.kwargs['options']
+            self.assertEqual(options['c140_projection'],'mix')
+
     def test_resident_budget_options_reach_canonical_conversion(self):
         with tempfile.TemporaryDirectory() as temp:
             source,out,generator=self.prepare(Path(temp),('a.vgm',))

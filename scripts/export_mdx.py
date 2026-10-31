@@ -72,14 +72,14 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
               max_ticks=None,psg_model=None,psg_gain=None,scc_gain=None,scc_model=None,scc_voice_bank=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mmlx', mxc=None, run68=None,
               normalize_lengths=None, normalization_ms=8, fm_state_ms=24, no_vgm=True, song_loop=True, listening_layout=False, _title=None,
-              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output='opm',segapcm_projection='auto',pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096):
+              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output='opm',segapcm_projection='auto',c140_projection='bank',pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096):
     if listening_layout:
         from export_listening import run_listening_batch
         return run_listening_batch(source, output, core=run_batch, options=dict(
             target=target, generator=generator, timeout=timeout, max_ticks=max_ticks,
             psg_model=psg_model,psg_gain=psg_gain,scc_gain=scc_gain,scc_model=scc_model,scc_voice_bank=scc_voice_bank,
             opm_pitch_policy=opm_pitch_policy, pcm_policy=pcm_policy, compiler=compiler,
-            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, fm_state_ms=fm_state_ms, no_vgm=no_vgm, song_loop=song_loop, fm_only=fm_only, force=force,pcm_profile=pcm_profile,psg_only=psg_only,scc_only=scc_only,psg_output=psg_output,segapcm_projection=segapcm_projection,pcm_bank_merge=pcm_bank_merge,pdx_format=pdx_format,
+            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, fm_state_ms=fm_state_ms, no_vgm=no_vgm, song_loop=song_loop, fm_only=fm_only, force=force,pcm_profile=pcm_profile,psg_only=psg_only,scc_only=scc_only,psg_output=psg_output,segapcm_projection=segapcm_projection,c140_projection=c140_projection,pcm_bank_merge=pcm_bank_merge,pdx_format=pdx_format,
             pcm_buffer_kib=pcm_buffer_kib,pcm_loader=pcm_loader,pcm_buffer_margin_bytes=pcm_buffer_margin_bytes))
     source, output = Path(source).resolve(), Path(output).resolve()
     from pcm_capacity import resolve_pcm_capacity
@@ -124,12 +124,14 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
         raise ValueError('Build scripts/mdx_fixture_generator or specify --generator')
     if segapcm_projection not in ('auto', 'bank', 'mix'):
         raise ValueError('SegaPCM projection must be auto, bank or mix')
+    if c140_projection not in ('bank', 'mix'):
+        raise ValueError('C140 projection must be bank or mix')
     if pcm_bank_merge not in ('budget96', 'similar', 'off'):
         raise ValueError('PCM bank merge must be budget96, similar or off')
     if pdx_format not in ('ex-pdx', 'standard'):
         raise ValueError('PDX format must be ex-pdx or standard')
     options = ['--pdx-format',pdx_format,'--pcm-bank-merge',pcm_bank_merge,'--pcm-profile',pcm_profile,'--psg-output',psg_output,
-               '--segapcm-projection',segapcm_projection]
+               '--segapcm-projection',segapcm_projection,'--c140-projection',c140_projection]
     if pcm_buffer_kib is not None:
         options.extend(['--pcm-buffer-kib',str(pcm_buffer_kib),'--pcm-loader',pcm_loader,
                         '--pcm-buffer-margin-bytes',str(pcm_buffer_margin_bytes)])
@@ -407,6 +409,8 @@ def main():
                         help='PCM output rate/size profile (default: standard)')
     parser.add_argument('--segapcm-projection',choices=('auto','bank','mix'),default='auto',
                         help='SegaPCM reusable finite bank preference (auto), required bank, or legacy mix')
+    parser.add_argument('--c140-projection',choices=('bank','mix'),default='bank',
+                        help='C140 per-voice bank (default) or full mix that sounds every gate')
     parser.add_argument('--pcm-bank-merge',choices=('budget96','similar','off'),default='budget96',
                         help='PCM sharing: budget96 (default) fits 96 samples and the PCM buffer budget; similar keeps quality bounds; off keeps exact sharing')
     args = parser.parse_args()
@@ -420,7 +424,7 @@ def main():
                          psg_gain=args.psg_gain,scc_gain=args.scc_gain,scc_model=args.scc_model,scc_voice_bank=args.scc_voice_bank,
                           opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy,
                           normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms, no_vgm=args.no_vgm,
-                          listening_layout=True, song_loop=not args.no_song_loop, fm_only=args.fm_only, force=args.force,pcm_profile=args.pcm_profile,psg_only=args.psg_only,scc_only=args.scc_only,psg_output=args.psg_output,segapcm_projection=args.segapcm_projection,pcm_bank_merge=args.pcm_bank_merge,pdx_format=args.pdx_format,
+                          listening_layout=True, song_loop=not args.no_song_loop, fm_only=args.fm_only, force=args.force,pcm_profile=args.pcm_profile,psg_only=args.psg_only,scc_only=args.scc_only,psg_output=args.psg_output,segapcm_projection=args.segapcm_projection,c140_projection=args.c140_projection,pcm_bank_merge=args.pcm_bank_merge,pdx_format=args.pdx_format,
                           pcm_buffer_kib=args.pcm_buffer_kib,pcm_loader=args.pcm_loader,pcm_buffer_margin_bytes=args.pcm_buffer_margin_bytes)
     except (OSError, ValueError) as error:
         parser.error(str(error))

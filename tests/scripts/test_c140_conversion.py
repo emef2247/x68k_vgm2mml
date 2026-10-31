@@ -80,6 +80,22 @@ class C140ConversionTests(unittest.TestCase):
         self.assertEqual(len({u.track for u in limited.units if u.kind=='pcm_note'}),8)
         self.assertEqual(len(projection.playbacks),9)
 
+    def test_mix_projection_converts_ten_voices_without_force(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);source=root/'AUTH.vgm'
+            commands=b''.join(voice(ch,mode=0x90) for ch in range(10))+wait(500)
+            commands+=b''.join(write(ch*16+5,0) for ch in range(10))+wait(100)
+            source.write_bytes(make_vgm(commands))
+            out=root/'out'
+            convert(source,out,c140_pcm=True,c140_projection='mix',song_loop=False)
+            selection=json.loads((out/'AUTH.c140_projection.json').read_text())
+            self.assertEqual(selection['requested'],'mix')
+            self.assertEqual(selection['selected'],'mix')
+            self.assertTrue((out/'AUTH.c140_mix_mapping.csv').is_file())
+            omitted=out/'AUTH.pcm_omitted_playbacks.csv'
+            if omitted.is_file():
+                self.assertEqual(len(omitted.read_text().strip().splitlines()),1)
+
     def test_explicit_strict_retains_source_and_blocks_transcoding(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);source=root/'AUTH.vgm'

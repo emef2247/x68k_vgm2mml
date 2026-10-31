@@ -12,11 +12,64 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'py'), str(ROOT / 'tests/scripts')]
 from test_c140 import make_vgm, voice, write, wait
 from c140 import analyze
-from c140_bank import (project, render_gates, Voice, Rom, decode_mulaw,
+from c140_bank import (project, project_mix, render_gates, render_mix, Voice, Rom, decode_mulaw,
                        sample_address, native_delta, BankUnsupported)
 
 
 class C140BankTests(unittest.TestCase):
+    def test_render_mix_matches_gate_captures(self):
+        raw = make_vgm(voice(level=200, right=200) +
+                       voice(channel=1, level=255, right=0) +
+                       voice(channel=2, level=0, right=180) +
+                       wait(60) + write(16 + 1, 100) + wait(60) +
+                       write(5, 0) + write(16 + 5, 0) + write(32 + 5, 0) + wait(30))
+        trace = analyze(raw)
+        gate_list, _ = render_gates(trace)
+        gates = {gate['source_channel']: gate for gate in gate_list}
+        self.assertEqual(set(gates), {0, 1, 2})
+        self.assertFalse(gates[0]['dynamic'])
+        self.assertTrue(gates[1]['dynamic'])
+        left, right, rate, _mixed = render_mix(trace)
+        self.assertEqual(rate, 12288000 // 288)
+        self.assertEqual(len(left), len(right))
+        expected_left = [0.0] * len(left)
+        expected_right = [0.0] * len(right)
+        for channel, gate in gates.items():
+            wave = gate['wave']
+            start = gate['start_frame']
+            left0, right0 = gate['initial_registers'][1], gate['initial_registers'][0]
+            for offset, value in enumerate(wave):
+                if gate['dynamic']:
+                    # The fixture's dynamic gate keeps right at zero, so
+                    # the mono level baked into wave is its left level.
+                    expected_left[start + offset] += value
+                else:
+                    expected_left[start + offset] += value * left0 / 510
+                    expected_right[start + offset] += value * right0 / 510
+        for actual, expected in zip(left, expected_left):
+            self.assertAlmostEqual(actual, expected, delta=0.75)
+        for actual, expected in zip(right, expected_right):
+            self.assertAlmostEqual(actual, expected, delta=0.75)
+        mix_left, mix_right, _, _mixed2 = render_mix(trace, channels={2})
+        self.assertTrue(all(abs(value) < 0.75 for value in mix_left))
+        gate = gates[2]
+        for offset, value in enumerate(gate['wave']):
+            self.assertAlmostEqual(mix_right[gate['start_frame'] + offset],
+                                   value * 180 / 510, delta=0.75)
+
+    def test_project_mix_sounds_every_gate_beyond_eight_voices(self):
+        commands = b''.join(voice(channel, mode=0x90) for channel in range(10)) + wait(500)
+        commands += b''.join(write(channel * 16 + 5, 0) for channel in range(10)) + wait(100)
+        raw = make_vgm(commands)
+        result = project_mix(analyze(raw), source_raw=raw)
+        self.assertEqual(result.source_origin, 'projected_msm6258_from_c140_mix')
+        self.assertTrue(result.samples)
+        self.assertTrue(result.playbacks)
+        covered = set()
+        for row in result.target_mapping:
+            covered.update(row['native_gate_ids'])
+        self.assertEqual(covered, set(range(10)))
+
     def test_static_assets_share_across_volume_pan_and_gate_lengths(self):
         raw = make_vgm(voice(level=255, right=0) + wait(30) + write(5, 0) +
                        voice(channel=1, level=100, right=100) + wait(1000))
