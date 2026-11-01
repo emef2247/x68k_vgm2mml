@@ -201,7 +201,11 @@ def project(psg, scc, *, psg_clock, scc_clock, end_vgmticks, psg_gain=None,
     if pitch_policy not in ('clamp', 'error'):
         raise ValueError('Pitch policy must be clamp or error')
     psg_gain = (1. if psg_model == 'fm' else .125) if psg_gain is None else psg_gain
-    if not math.isfinite(psg_gain) or not 0 < psg_gain <= (1. if psg_model == 'fm' or psg_output=='pcm' else .5):
+    # PCM output encodes the gain into ADPCM audio, where level buys SNR;
+    # its ceiling is MAX_PSG_PCM_GAIN in psg_pcm_mdx. OPM projection gains
+    # scale voice levels instead and keep their tighter model ranges.
+    gain_cap = 8. if psg_output=='pcm' else (1. if psg_model == 'fm' else .5)
+    if not math.isfinite(psg_gain) or not 0 < psg_gain <= gain_cap:
         raise ValueError('PSG gain exceeds the selected model range')
     if not math.isfinite(scc_gain) or not 0 < scc_gain <= .5:
         raise ValueError('SCC gain must be positive and at most 0.5')
@@ -233,7 +237,7 @@ def project(psg, scc, *, psg_clock, scc_clock, end_vgmticks, psg_gain=None,
         psg_map[2],psg_map[noise_owner]=psg_map[noise_owner],7
     plan.settings.update(psg_channel_map=psg_map,noise_source_ch=noise_owner,
         noise_policy='one fixed noise-only owner on OPM7; N0..30 nearest nominal shift rate',
-        noise_phase_matching=False,source_note_policy='MSX PSG/SCC extract_notes in original samples; software volume runs retained',
+        noise_phase_matching=False,source_note_policy='PSG/SCC performance and complete fixed-tone volume curves in original samples before structure',
         source_interval_extensions=[dict(source_ch=ch,source_row=len(rows)-1,
             original_end=rows[-1].vgmticks_end,interpreted_end=end_vgmticks,
             reason='last observed state carried through remaining VGM wait')

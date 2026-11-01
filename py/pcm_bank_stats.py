@@ -5,7 +5,7 @@ from pathlib import Path
 import struct
 
 from pcm_assessment import generated_binary_artifacts
-from pcm_capacity import PDX_BYTE_LIMIT
+from pcm_capacity import PDX_BYTE_LIMIT, PcmCapacityPolicy
 
 
 RESULT_FIELDS = (
@@ -22,6 +22,9 @@ RESULT_FIELDS = (
     'pcm_bank_pdx_byte_limit', 'pcm_bank_pdx_byte_budget_satisfied',
     'pcm_bank_budget_input_pdx_bytes', 'pcm_bank_budget_output_pdx_bytes',
     'pcm_bank_pdx_format', 'pcm_bank_sample_byte_limit',
+    'pcm_bank_pdx_operational_byte_limit', 'pcm_bank_buffer_bytes', 'pcm_bank_loader',
+    'pcm_bank_loader_overhead_bytes', 'pcm_bank_buffer_margin_bytes',
+    'pcm_bank_transfer_bytes', 'pcm_bank_buffer_capacity_check',
 )
 
 
@@ -32,6 +35,25 @@ def _rows(path):
         return list(csv.DictReader(stream))
 
 
+def _object(path):
+    if not path.is_file():
+        return {}
+    result = json.loads(path.read_text(encoding='utf-8'))
+    if not isinstance(result, dict):
+        raise ValueError('PCM diagnostic report must be a JSON object')
+    return result
+
+
+def _capacity(timing, merge, validation, conversion):
+    """Resolve current requested settings without trusting an old size verdict."""
+    options = conversion.get('pcm_options', {})
+    candidates = (options.get('capacity'), timing.get('pcm_capacity'),
+                  merge.get('capacity'), validation.get('capacity'))
+    data = next((value for value in candidates if isinstance(value, dict)), {})
+    return PcmCapacityPolicy(buffer_bytes=data.get('pcm_buffer_bytes'),
+        loader=data.get('pcm_loader', 'direct'), margin_bytes=data.get('pcm_buffer_margin_bytes', 4096))
+
+
 def summarize(folder, stem, *, allow_binary=False):
     """Read this attempt's selection; trust binaries only with ownership/caller evidence.
 
@@ -40,8 +62,16 @@ def summarize(folder, stem, *, allow_binary=False):
     Candidate asset totals and retained packed totals deliberately remain separate.
     """
     folder = Path(folder)
+    conversion = _object(folder / f'{stem}.conversion.json')
+    validation_data = _object(folder / f'{stem}.pcm_bank.source_validation.json')
     selection = folder / f'{stem}.segapcm_projection.json'
     route_label = 'SegaPCM'
+    c140_selection = folder / f'{stem}.c140_projection.json'
+    if c140_selection.is_file():
+        selection, route_label = c140_selection, 'C140'
+    msm6295_selection = folder / f'{stem}.msm6295_projection.json'
+    if msm6295_selection.is_file():
+        selection, route_label = msm6295_selection, 'MSM6295'
     if selection.is_file():
         value = json.loads(selection.read_text(encoding='utf-8'))
     else:
@@ -49,9 +79,14 @@ def summarize(folder, stem, *, allow_binary=False):
         if not merge_path.is_file():
             timing_path = folder / f'{stem}.pcm.timing.json'
             if not timing_path.is_file():
-                return {}
-            timing = json.loads(timing_path.read_text(encoding='utf-8'))
-            shared = dict(mode=timing.get('pcm_source_origin', 'PCM'),
+                options = conversion.get('pcm_options', {})
+                if not (options.get('applicable') and isinstance(options.get('capacity'), dict)
+                        or isinstance(validation_data.get('capacity'), dict)):
+                    return {}
+                timing = {}
+            else:
+                timing = json.loads(timing_path.read_text(encoding='utf-8'))
+            shared = dict(mode=timing.get('pcm_source_origin', validation_data.get('source_origin', 'PCM')),
                           input_sample_count=None, input_payload_bytes=None)
         else:
             shared = json.loads(merge_path.read_text(encoding='utf-8'))['summary']
@@ -65,7 +100,7 @@ def summarize(folder, stem, *, allow_binary=False):
                                 asset_payload_bytes=shared['input_payload_bytes']))
         route_label = 'PCM'
     if not isinstance(value, dict) or not isinstance(value.get('stats', {}), dict):
-        raise ValueError('SegaPCM projection statistics must be JSON objects')
+        raise ValueError('PCM projection statistics must be JSON objects')
     source = value.get('stats', {})
     fallback = value.get('fallback')
     if isinstance(fallback, dict):
@@ -95,6 +130,7 @@ def summarize(folder, stem, *, allow_binary=False):
     timing = json.loads(timing_path.read_text(encoding='utf-8')) if timing_path.is_file() else {}
     result.update(pdx_format=timing.get('pcm_pdx_format'),
                   sample_byte_limit=timing.get('pcm_sample_byte_limit'))
+    merge = {}
     merge_path = folder / f'{stem}.pcm_bank_merge.json'
     if merge_path.is_file():
         merge = json.loads(merge_path.read_text(encoding='utf-8'))
@@ -118,6 +154,9 @@ def summarize(folder, stem, *, allow_binary=False):
                       budget_input_sample_count=merge.get('budget_input_sample_count'),
                       forced_sample_count=merge.get('forced_sample_count'),
                       forced_playback_count=merge.get('forced_playback_count'))
+    capacity_policy = _capacity(timing, merge, validation_data, conversion)
+    no_pdx_required = type(timing.get('pcm_sample_count')) is int and timing['pcm_sample_count'] == 0
+    result.update(capacity_policy.summary(pdx_bytes=0 if no_pdx_required else None))
     preview = folder / f'{stem}.pcm_block_previews.json'
     if preview.is_file():
         value = json.loads(preview.read_text(encoding='utf-8'))
@@ -130,7 +169,8 @@ def summarize(folder, stem, *, allow_binary=False):
     bindings = _rows(folder / f'{stem}.pcm_bindings.csv')
     projections = _rows(folder / f'{stem}.pcm_projection.csv')
     omissions = _rows(folder / f'{stem}.pcm_omitted_playbacks.csv')
-    result.update(pdx_byte_budget_satisfied=len(payload) <= PDX_BYTE_LIMIT)
+    result.update(capacity_policy.summary(pdx_bytes=len(payload)))
+    result.update(pdx_byte_budget_satisfied=len(payload) <= capacity_policy.pdx_byte_limit)
     result.update(pdx_bytes=len(payload), binary_evidence='assessment_sha256' if owned else 'current_export_attempt')
     if bindings is not None:
         stored = 0
@@ -171,7 +211,10 @@ def result_columns(summary):
             'newly_omitted_playback_count', 'retained_playback_delta',
             'budget_limit', 'forced_sample_count', 'forced_playback_count',
             'pdx_byte_limit', 'pdx_byte_budget_satisfied',
-            'budget_input_pdx_bytes', 'budget_output_pdx_bytes', 'pdx_format', 'sample_byte_limit')
+            'budget_input_pdx_bytes', 'budget_output_pdx_bytes', 'pdx_format', 'sample_byte_limit',
+            'pdx_operational_byte_limit', 'pcm_buffer_bytes', 'pcm_loader',
+            'pcm_loader_overhead_bytes', 'pcm_buffer_margin_bytes',
+            'pcm_transfer_bytes', 'pcm_buffer_capacity_check')
     return {field: (','.join(summary[key]) if key == 'tracks' and summary.get(key) is not None
                     else summary.get(key) if summary.get(key) is not None else '')
             for field, key in zip(RESULT_FIELDS, keys)}
@@ -195,7 +238,7 @@ def format_lines(summary):
     if summary.get('pdx_format') is not None:
         lines.append(f"  PDX format: {summary['pdx_format']}; sample byte limit {number('sample_byte_limit')}")
     if summary.get('fallback_reason'):
-        lines.append('  Mix fallback: ' + str(summary['fallback_reason']).replace('\n', ' '))
+        lines.append(('  Source limitation: ' if summary.get('route_label') == 'C140' else '  Mix fallback: ') + str(summary['fallback_reason']).replace('\n', ' '))
     if summary.get('merge_mode') is not None:
         lines.extend([f"  Bank reduction: {summary['merge_mode']}; samples {number('merge_samples_before')} -> "
                       f"{number('merge_samples_after')}; payload {number('merge_bytes_before')} -> {number('merge_bytes_after')} bytes",
@@ -209,6 +252,12 @@ def format_lines(summary):
                      f"{number('forced_playback_count')} playbacks")
     lines.append(f"  PDX byte budget: {number('pdx_bytes')}/{number('pdx_byte_limit')} bytes including table; "
                  f"within budget={number('pdx_byte_budget_satisfied')}")
+    if summary.get('pcm_buffer_bytes') is not None:
+        lines.extend([f"  PCM buffer capacity: {number('pcm_buffer_bytes')} bytes; "
+                      f"loader {summary.get('pcm_loader')}; overhead {number('pcm_loader_overhead_bytes')} bytes; "
+                      f"margin {number('pcm_buffer_margin_bytes')} bytes",
+                      f"  PCM transfer: {number('pcm_transfer_bytes')} bytes; "
+                      f"configured capacity check={number('pcm_buffer_capacity_check')} (encoded transfer only)"])
     if summary.get('budget_input_pdx_bytes') is not None:
         lines.append(f"  Planned PDX bytes: {number('budget_input_pdx_bytes')} -> {number('budget_output_pdx_bytes')}")
     if summary.get('preview_directory'):

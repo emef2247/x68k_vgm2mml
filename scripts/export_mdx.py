@@ -68,19 +68,52 @@ def inspect_export_commands(generator, mdx, census, timeout):
         return f'MDX command statistics unavailable: {str(error).strip()[:180]}'
 
 
+def _psg_file_options(path, psg_output, psg_gain):
+    # Export auto route (psg_output=None): a PSG+SCC source renders its
+    # PSG through PCM with the PCM route's listening gain; every other
+    # source keeps the OPM rendering (the converter rejects --psg-output
+    # pcm outside the PSG/SCC route). An explicit choice is forwarded
+    # unchanged. Inspection failure falls back to OPM; the conversion
+    # itself reports the authoritative error.
+    if psg_output is None:
+        psg_output = 'opm'
+        try:
+            from conversion_config import inspect_source, select_mdx_route
+            usage = inspect_source(path)
+            chips = (set(usage['used_chips'])
+                     - usage['compatibility_initialization'].keys())
+            # PCM is the fallback for PSG only when SCC sounds with it:
+            # SCC claims the OPM resources, while PSG alone renders well
+            # on OPM. The converter accepts pcm only on the PSG/SCC route.
+            if (select_mdx_route(usage) == 'psg-scc-to-opm'
+                    and {'psg', 'scc'} <= chips):
+                psg_output = 'pcm'
+        except Exception:
+            pass
+    options = ['--psg-output', psg_output]
+    if psg_gain is None and psg_output == 'pcm':
+        psg_gain = 2.
+    if psg_gain is not None:
+        options.extend(['--psg-gain', str(psg_gain)])
+    return options
+
+
 def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
               max_ticks=None,psg_model=None,psg_gain=None,scc_gain=None,scc_model=None,scc_voice_bank=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mmlx', mxc=None, run68=None,
               normalize_lengths=None, normalization_ms=8, fm_state_ms=24, no_vgm=True, song_loop=True, listening_layout=False, _title=None,
-              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output='opm',segapcm_projection='auto',pcm_bank_merge='budget96',pdx_format='ex-pdx'):
+              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output=None,segapcm_projection='auto',c140_projection='bank',c140_mix_gain_db=0.0,pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096):
     if listening_layout:
         from export_listening import run_listening_batch
         return run_listening_batch(source, output, core=run_batch, options=dict(
             target=target, generator=generator, timeout=timeout, max_ticks=max_ticks,
             psg_model=psg_model,psg_gain=psg_gain,scc_gain=scc_gain,scc_model=scc_model,scc_voice_bank=scc_voice_bank,
             opm_pitch_policy=opm_pitch_policy, pcm_policy=pcm_policy, compiler=compiler,
-            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, fm_state_ms=fm_state_ms, no_vgm=no_vgm, song_loop=song_loop, fm_only=fm_only, force=force,pcm_profile=pcm_profile,psg_only=psg_only,scc_only=scc_only,psg_output=psg_output,segapcm_projection=segapcm_projection,pcm_bank_merge=pcm_bank_merge,pdx_format=pdx_format))
+            mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, fm_state_ms=fm_state_ms, no_vgm=no_vgm, song_loop=song_loop, fm_only=fm_only, force=force,pcm_profile=pcm_profile,psg_only=psg_only,scc_only=scc_only,psg_output=psg_output,segapcm_projection=segapcm_projection,c140_projection=c140_projection,c140_mix_gain_db=c140_mix_gain_db,pcm_bank_merge=pcm_bank_merge,pdx_format=pdx_format,
+            pcm_buffer_kib=pcm_buffer_kib,pcm_loader=pcm_loader,pcm_buffer_margin_bytes=pcm_buffer_margin_bytes))
     source, output = Path(source).resolve(), Path(output).resolve()
+    from pcm_capacity import resolve_pcm_capacity
+    resolve_pcm_capacity(buffer_kib=pcm_buffer_kib,loader=pcm_loader,margin_bytes=pcm_buffer_margin_bytes)
     from conversion_config import normalization_samples
     normalization_samples(normalization_ms)
     from fm_state_runs import fm_short_state_samples
@@ -121,12 +154,18 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
         raise ValueError('Build scripts/mdx_fixture_generator or specify --generator')
     if segapcm_projection not in ('auto', 'bank', 'mix'):
         raise ValueError('SegaPCM projection must be auto, bank or mix')
+    if c140_projection not in ('bank', 'mix'):
+        raise ValueError('C140 projection must be bank or mix')
     if pcm_bank_merge not in ('budget96', 'similar', 'off'):
         raise ValueError('PCM bank merge must be budget96, similar or off')
     if pdx_format not in ('ex-pdx', 'standard'):
         raise ValueError('PDX format must be ex-pdx or standard')
-    options = ['--pdx-format',pdx_format,'--pcm-bank-merge',pcm_bank_merge,'--pcm-profile',pcm_profile,'--psg-output',psg_output,
-               '--segapcm-projection',segapcm_projection]
+    options = ['--pdx-format',pdx_format,'--pcm-bank-merge',pcm_bank_merge,'--pcm-profile',pcm_profile,
+               '--segapcm-projection',segapcm_projection,'--c140-projection',c140_projection,
+               '--c140-mix-gain-db',str(c140_mix_gain_db)]
+    if pcm_buffer_kib is not None:
+        options.extend(['--pcm-buffer-kib',str(pcm_buffer_kib),'--pcm-loader',pcm_loader,
+                        '--pcm-buffer-margin-bytes',str(pcm_buffer_margin_bytes)])
     if psg_only:options.append('--psg-only')
     if scc_only:options.append('--scc-only')
     if force:
@@ -136,7 +175,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
     options.extend(['--normalization-ms', str(normalization_ms), '--fm-state-ms', str(fm_state_ms)])
     if normalize_lengths is not None:
         options.append('--normalize-lengths' if normalize_lengths else '--no-normalize-lengths')
-    for flag, value in (('--psg-model', psg_model), ('--psg-gain', psg_gain),
+    for flag, value in (('--psg-model', psg_model),
                         ('--scc-gain',scc_gain),('--scc-model',scc_model),('--scc-voice-bank',Path(scc_voice_bank).resolve() if scc_voice_bank is not None else None),('--opm-pitch-policy',opm_pitch_policy)):
         if value is not None:
             options.extend([flag, str(value)])
@@ -173,6 +212,8 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
                              folder / (path.stem + '.report.txt'), census,
                              folder / (path.stem + '.conversion.json'),
                              folder / (path.stem + '.segapcm_projection.json'),
+                             folder / (path.stem + '.c140_projection.json'),
+                             folder / (path.stem + '.msm6295_projection.json'),
                              folder / (path.stem + '.pcm_bank.stats.json'),
                              *(folder / (path.stem + suffix) for suffix in
                                ('.pcm_bank_merge.json', '.pcm_bank_merge.samples.csv', '.pcm_bank_merge.playbacks.csv', '.pcm_bank.source_validation.json')),
@@ -192,7 +233,8 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
                              folder / (path.stem + '.mdx.normalization.json')]:
                 artifact.unlink(missing_ok=True)
             command = [sys.executable, str(ROOT / 'vgm2mml.py'), str(path),
-                       '--target', target, '--outdir', str(folder), *options]
+                       '--target', target, '--outdir', str(folder), *options,
+                       *_psg_file_options(path, psg_output, psg_gain)]
             if not song_loop:
                 command.append('--no-song-loop')
             if target == 'mdx':
@@ -378,7 +420,7 @@ def main():
     selection=parser.add_mutually_exclusive_group()
     selection.add_argument('--psg-only','--psg_only',action='store_true')
     selection.add_argument('--scc-only','--scc_only',action='store_true')
-    parser.add_argument('--psg-output',choices=('opm','pcm'),default='opm')
+    parser.add_argument('--psg-output',choices=('opm','pcm'),default=None)
     parser.add_argument('--psg-model', choices=('fm', 'additive'))
     parser.add_argument('--psg-gain', type=float)
     parser.add_argument('--scc-gain',type=float)
@@ -386,16 +428,38 @@ def main():
     parser.add_argument('--scc-voice-bank',type=Path)
     parser.add_argument('--opm-pitch-policy', choices=('clamp', 'error'))
     parser.add_argument('--pcm-policy', choices=('auto', 'strict', 'best-effort'),
-                        help='PCM policy: auto (default), strict or best-effort; auto follows observed DAC supply')
+                        help='PCM policy for MDX: best-effort (default), auto or strict')
     parser.add_argument('--pdx-format',choices=('ex-pdx','standard'),default='ex-pdx',
                         help='PDX sample lengths: ex-pdx (default, 32-bit) or standard (16-bit)')
+    from pcm_capacity import add_capacity_arguments
+    add_capacity_arguments(parser)
+    # Export defaults differ from the canonical converter.
+    for action in parser._actions:
+        if action.dest == 'pcm_buffer_kib':
+            action.help = 'PCM buffer in KiB (MDX export default: 1200); PDX limit subtracts loader overhead and margin'
     parser.add_argument('--pcm-profile',choices=('standard','low','ultra_low'),default='standard',
                         help='PCM output rate/size profile (default: standard)')
     parser.add_argument('--segapcm-projection',choices=('auto','bank','mix'),default='auto',
                         help='SegaPCM reusable finite bank preference (auto), required bank, or legacy mix')
+    parser.add_argument('--c140-projection',choices=('bank','mix'),default='mix',
+                        help='C140 full mix that sounds every gate (default) or per-voice bank')
+    parser.add_argument('--c140-mix-gain-db',type=float,default=None,
+                        help='C140 mix only: calibration gain in dB for the mixed PCM (export default: -12)')
     parser.add_argument('--pcm-bank-merge',choices=('budget96','similar','off'),default='budget96',
-                        help='PCM sharing: budget96 (default) fits 96 samples and a 1,200,000-byte PDX; similar keeps quality bounds; off keeps exact sharing')
+                        help='PCM sharing: budget96 (default) fits 96 samples and the PCM buffer budget; similar keeps quality bounds; off keeps exact sharing')
+    # The export surface is intentionally small: the defaults below carry
+    # the standard recipe, and the remaining options stay accepted but
+    # unlisted, so --help shows only the everyday controls.
+    for action in parser._actions:
+        if action.dest not in ('help', 'input', 'outdir', 'force', 'no_song_loop'):
+            action.help = argparse.SUPPRESS
     args = parser.parse_args()
+    # Export-layer recipe default (the canonical converter keeps its own):
+    # the C140 mix is attenuated to sit with the FM.
+    if args.c140_mix_gain_db is None:args.c140_mix_gain_db = -12.
+    if args.target == 'mdx':
+        if args.pcm_buffer_kib is None:args.pcm_buffer_kib = 1200
+        if args.pcm_policy is None:args.pcm_policy = 'best-effort'
     try:
         rows = run_batch(args.input, args.outdir, target=args.target, generator=args.generator,
                          compiler=args.compiler, mxc=args.mxc, run68=args.run68,
@@ -403,7 +467,8 @@ def main():
                          psg_gain=args.psg_gain,scc_gain=args.scc_gain,scc_model=args.scc_model,scc_voice_bank=args.scc_voice_bank,
                           opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy,
                           normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms, no_vgm=args.no_vgm,
-                          listening_layout=True, song_loop=not args.no_song_loop, fm_only=args.fm_only, force=args.force,pcm_profile=args.pcm_profile,psg_only=args.psg_only,scc_only=args.scc_only,psg_output=args.psg_output,segapcm_projection=args.segapcm_projection,pcm_bank_merge=args.pcm_bank_merge,pdx_format=args.pdx_format)
+                          listening_layout=True, song_loop=not args.no_song_loop, fm_only=args.fm_only, force=args.force,pcm_profile=args.pcm_profile,psg_only=args.psg_only,scc_only=args.scc_only,psg_output=args.psg_output,segapcm_projection=args.segapcm_projection,c140_projection=args.c140_projection,c140_mix_gain_db=args.c140_mix_gain_db,pcm_bank_merge=args.pcm_bank_merge,pdx_format=args.pdx_format,
+                          pcm_buffer_kib=args.pcm_buffer_kib,pcm_loader=args.pcm_loader,pcm_buffer_margin_bytes=args.pcm_buffer_margin_bytes)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     success = sum(row['status'] == 'success' for row in rows)

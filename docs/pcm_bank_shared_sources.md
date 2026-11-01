@@ -1,6 +1,6 @@
 # Shared PCM8 sample-bank projection
 
-MSM6258, OPNA Delta-T and SegaPCM share the target sample reducer, 96-slot
+MSM6258, OPNA Delta-T, SegaPCM, C140 and MSM6295 share the target sample reducer, 96-slot
 binding, typed MDX commands and external PDX packer. Source interpretation
 remains chip-specific. The default is `--pcm-bank-merge budget96`; explicit
 `similar` and `off` retain their documented meanings. Known approximation
@@ -72,3 +72,22 @@ bank layer. Private conversion/listening regression remains user validation.
 See [reduction policy](pcm_bank_reduction.md),
 [source and target evidence](pcm_source_and_target.md) and
 [PCM interoperability](pcm_interoperability.md).
+
+## C140 source adapter
+
+C140 System2/21 uses the same reducer, typed PCM8 allocation and EX-PDX output.
+Its native reset/ROM/banking/loop/control interpretation remains separate.
+See [C140 source and bank projection](c140.md).
+
+## MSM6295 source adapter
+
+Fixed-map single MSM6295 uses cached source sample assets and independent
+playbacks, followed by the same PCM8/EX-PDX target. Native ROM/latch/busy state
+and decoder interpretation remain separate from target limits. See
+[MSM6295 source and bank projection](msm6295_design.md).
+
+
+Default-budget update (2026-10-30): the no-option PDX budget is315122bytes,
+including the table. The1200000-byte value described above is historical. Explicit --pcm-buffer-kib
+now determines the limit after loader overhead/margin, without a1.2MB ceiling.
+See [resident-buffer budgets](pcm_playback_budget.md).

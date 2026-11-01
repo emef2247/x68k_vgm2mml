@@ -10,7 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'py'))
 
-from opna_adpcm import analyze, decode_adpcm_b, project_msm6258
+from opna_adpcm import analyze, decode_adpcm_b, encode_msm6258, encode_msm6258_beam, project_msm6258, _msm_next
 from pcm_mdx import RATES
 from test_opna_opm import vgm
 
@@ -24,7 +24,51 @@ def source(*, prefix=b'', tail=b'', memory_mode=0xc1):
     return vgm(block + prefix + writes + tail + b'\x61\x64\x00'), encoded
 
 
+def _decode_msm6258(payload, count):
+    signal, index = -2, 0
+    result = []
+    nibbles = []
+    for byte in payload:
+        nibbles.append(byte & 15)
+        nibbles.append(byte >> 4)
+    for tick in range(count):
+        signal, index = _msm_next(signal, index, nibbles[tick])
+        result.append(signal * 64)
+    return result
+
+
 class OpnaAdpcmTests(unittest.TestCase):
+    def test_beam_encoder_contract_and_tone_suppression(self):
+        import numpy as np
+        self.assertEqual(encode_msm6258_beam([]), (b'', 0))
+        ticks = np.arange(15625) / 15625
+        source = 800. * np.sin(2 * np.pi * 440 * ticks)
+        def band_share(decoded):
+            window = 4096
+            win = np.hanning(window)
+            freqs = np.fft.rfftfreq(window, 1 / 15625)
+            band = (freqs >= 7600) & (freqs <= 7812)
+            total = share = 0.
+            for start in range(0, len(decoded) - window, 2048):
+                power = np.abs(np.fft.rfft(decoded[start:start + window] * win)) ** 2
+                total += power.sum()
+                share += power[band].sum()
+            return 10 * np.log10(share / total)
+        results = {}
+        for name, encoder in (('greedy', encode_msm6258), ('beam', encode_msm6258_beam)):
+            encoded, error = encoder([float(value) for value in source])
+            self.assertEqual(len(encoded), (len(source) + 1) // 2)
+            decoded = _decode_msm6258(encoded, len(source))
+            replayed = sum((value - float(sample)) ** 2 for value, sample in zip(decoded, source))
+            self.assertAlmostEqual(error, replayed, delta=replayed * 1e-9)
+            snr = 10 * np.log10((source ** 2).mean() / ((np.asarray(decoded) - source) ** 2).mean())
+            results[name] = (snr, band_share(np.asarray(decoded, dtype=np.float64)))
+        # The beam encoder suppresses the near-Nyquist limit-cycle tone
+        # of the greedy encoder on smooth low-level material, at a small
+        # broadband SNR cost.
+        self.assertLessEqual(results['beam'][1], results['greedy'][1] - 6)
+        self.assertGreaterEqual(results['beam'][0], results['greedy'][0] - 3)
+
     def test_nominal_decoder_golden_high_nibble_first(self):
         # Manual decode: +15*127/8 ->238; next +303/8 ->275.
         self.assertEqual(decode_adpcm_b(b'\x70'), [238, 275])

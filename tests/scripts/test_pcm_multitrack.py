@@ -98,7 +98,7 @@ class PcmMultitrackTests(unittest.TestCase):
                     encoded_bytes=bytes([i])*(65536 if i==7 else 32))
             for i in range(9)),playbacks=tuple(
             replace(p,sample_id=i) for i,p in enumerate(source.playbacks)))
-        plan=project(source,stem='reclaim',force=True)
+        plan=project(source,stem='reclaim',force=True,pdx_format='standard')
         self.assertEqual([b.sample_id for b in plan.bindings],list(range(7))+[8])
         self.assertEqual(next(r['mdx_track'] for r in plan.rows if r['playback_id']==8),'W')
         self.assertEqual(plan.force_capacity.omitted_playback_ids,{7})
@@ -108,7 +108,7 @@ class PcmMultitrackTests(unittest.TestCase):
     def test_all_capacity_omitted_has_no_active_pcm_tracks(self):
         source=self.source([(0,3000)])
         source=replace(source,samples=(replace(source.samples[0],encoded_bytes=b'x'*65536),))
-        plan=project(source,stem='empty',force=True)
+        plan=project(source,stem='empty',force=True,pdx_format='standard')
         self.assertFalse(plan.bindings)
         self.assertFalse(plan.rows)
         self.assertEqual(plan.assessment.active_pcm_tracks,[])

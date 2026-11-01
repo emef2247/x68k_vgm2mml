@@ -42,6 +42,35 @@ def successful_run(command, **kwargs):
 
 
 class ExportMdxTests(unittest.TestCase):
+    def test_c140_projection_reaches_listening_batch_options(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source,out,generator=self.prepare(Path(temp),('a.vgm',))
+            with patch('export_listening.run_listening_batch', return_value=[]) as batch:
+                run_batch(source,out,generator=generator,listening_layout=True,
+                          c140_projection='mix')
+            options=batch.call_args.kwargs['options']
+            self.assertEqual(options['c140_projection'],'mix')
+
+    def test_c140_mix_gain_reaches_listening_batch_options(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source,out,generator=self.prepare(Path(temp),('a.vgm',))
+            with patch('export_listening.run_listening_batch', return_value=[]) as batch:
+                run_batch(source,out,generator=generator,listening_layout=True,
+                          c140_projection='mix',c140_mix_gain_db=-12.0)
+            options=batch.call_args.kwargs['options']
+            self.assertEqual(options['c140_mix_gain_db'],-12.0)
+
+    def test_resident_budget_options_reach_canonical_conversion(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source,out,generator=self.prepare(Path(temp),('a.vgm',))
+            with patch('export_mdx.subprocess.run',side_effect=successful_run) as run:
+                run_batch(source,out,generator=generator,pcm_buffer_kib=312,
+                          pcm_loader='mxctrl',pcm_buffer_margin_bytes=8192)
+            command=run.call_args_list[0].args[0]
+            self.assertEqual(command[command.index('--pcm-buffer-kib')+1],'312')
+            self.assertEqual(command[command.index('--pcm-loader')+1],'mxctrl')
+            self.assertEqual(command[command.index('--pcm-buffer-margin-bytes')+1],'8192')
+
     def test_fm_state_threshold_is_independent_from_clock_tolerance(self):
         for threshold in (1,8):
             with self.subTest(fm_state_ms=threshold), tempfile.TemporaryDirectory() as temp:
@@ -51,6 +80,14 @@ class ExportMdxTests(unittest.TestCase):
                 command=run.call_args_list[0].args[0]
                 self.assertEqual(command[command.index('--fm-state-ms')+1],str(threshold))
                 self.assertEqual(command[command.index('--normalization-ms')+1],'8')
+
+    def test_larger_pcm_buffer_reaches_conversion(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source, out, generator = self.prepare(Path(temp), ('a.vgm',))
+            with patch('export_mdx.subprocess.run', side_effect=successful_run) as run:
+                run_batch(source, out, generator=generator, pcm_buffer_kib=2048)
+            command = run.call_args_list[0].args[0]
+            self.assertEqual(command[command.index('--pcm-buffer-kib') + 1], '2048')
 
     def test_default_state_and_timeout_reach_canonical_converter(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -124,6 +161,53 @@ class ExportMdxTests(unittest.TestCase):
                 self.assertEqual(main(),0)
             self.assertEqual(run.call_args.kwargs['no_vgm'],expected)
 
+    def test_cli_pcm_defaults_and_explicit_overrides(self):
+        for flags, expected in (([], (1200,'best-effort',True)),
+                (['--pcm-buffer-kib','512','--pcm-policy','strict','--vgm'], (512,'strict',False))):
+            with self.subTest(flags=flags), patch('sys.argv',['export_mdx.py','input.vgm','--outdir','out',*flags]), \
+                    patch('export_mdx.run_batch',return_value=[]) as run:
+                self.assertEqual(main(),0)
+                kwargs=run.call_args.kwargs
+                self.assertEqual((kwargs['pcm_buffer_kib'],kwargs['pcm_policy'],kwargs['no_vgm']),expected)
+    def test_cli_pcm_route_defaults_and_explicit_overrides(self):
+        keys = ('psg_output', 'psg_gain', 'c140_projection', 'c140_mix_gain_db')
+        for flags, expected in (([], (None, None, 'mix', -12.)),
+                (['--psg-output','opm'], ('opm', None, 'mix', -12.)),
+                (['--psg-output','pcm'], ('pcm', None, 'mix', -12.)),
+                (['--psg-gain','.5'], (None, .5, 'mix', -12.)),
+                (['--c140-projection','bank'], (None, None, 'bank', -12.)),
+                (['--c140-mix-gain-db','-6'], (None, None, 'mix', -6.))):
+            with self.subTest(flags=flags), patch('sys.argv',['export_mdx.py','input.vgm','--outdir','out',*flags]), \
+                    patch('export_mdx.run_batch',return_value=[]) as run:
+                self.assertEqual(main(),0)
+                kwargs=run.call_args.kwargs
+                self.assertEqual(tuple(kwargs[key] for key in keys),expected)
+    def test_psg_file_options_auto_route_resolution(self):
+        from export_mdx import _psg_file_options
+        def usage(*chips):
+            return dict(used_chips=list(chips), compatibility_initialization={})
+        with patch('conversion_config.select_mdx_route', return_value='psg-scc-to-opm'), \
+                patch('conversion_config.inspect_source', return_value=usage('psg', 'scc')):
+            self.assertEqual(_psg_file_options(Path('a.vgm'), None, None),
+                             ['--psg-output', 'pcm', '--psg-gain', '2.0'])
+            self.assertEqual(_psg_file_options(Path('a.vgm'), None, .5),
+                             ['--psg-output', 'pcm', '--psg-gain', '0.5'])
+        # PSG alone renders on OPM; PCM is only the PSG+SCC fallback.
+        with patch('conversion_config.select_mdx_route', return_value='psg-scc-to-opm'), \
+                patch('conversion_config.inspect_source', return_value=usage('psg')):
+            self.assertEqual(_psg_file_options(Path('a.vgm'), None, None),
+                             ['--psg-output', 'opm'])
+        with patch('conversion_config.select_mdx_route', return_value='opm-c140-source'), \
+                patch('conversion_config.inspect_source', return_value=usage('opm', 'c140')):
+            self.assertEqual(_psg_file_options(Path('a.vgm'), None, None),
+                             ['--psg-output', 'opm'])
+        with patch('conversion_config.inspect_source', side_effect=ValueError('bad')):
+            self.assertEqual(_psg_file_options(Path('a.vgm'), None, None),
+                             ['--psg-output', 'opm'])
+        with patch('conversion_config.inspect_source') as inspect:
+            self.assertEqual(_psg_file_options(Path('a.vgm'), 'opm', None),
+                             ['--psg-output', 'opm'])
+            inspect.assert_not_called()
     def test_no_vgm_cli_forwards_export_choice(self):
         args = ['export_mdx.py', 'input.vgm', '--outdir', 'out', '--no-vgm']
         with patch('sys.argv', args), patch('export_mdx.run_batch', return_value=[dict(status='success')]) as call:

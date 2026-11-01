@@ -21,11 +21,15 @@ placement; neither MDX text nor PDX slot numbers become the common IR.
 ## Automatic PCM policy selection
 
 `--pcm-policy auto` is the default in the canonical converter and batch export.
-It selects from actual captured DAC Stream Control supplies, not clock/header
-flags or unused stream setup:
+It recognizes the selected PSG-to-PCM, C140-bank and MSM6295-bank conversions;
+otherwise it selects from actual captured DAC Stream Control supplies, not
+clock/header flags or unused stream setup:
 
-| Source supply | Effective policy |
+| Source supply or selected conversion | Effective policy |
 | --- | --- |
+| Explicit PSG-to-PCM projection (`--psg-output pcm`) | best-effort |
+| C140-to-MSM6258 sample-bank transcoding | best-effort |
+| MSM6295-to-MSM6258 sample-bank transcoding | best-effort |
 | DAC supplies, including mixed direct B7 and DAC supply | best-effort |
 | Direct writes without actual DAC supply | strict native/direct handling |
 | Other projections without DAC supply | existing strict projection |
@@ -230,3 +234,9 @@ that normalization leaves PDX payload bytes unchanged applies to retained
 native encoded PCM, not this derived waveform packaging route.
 
 
+
+
+Default-budget update (2026-10-30): the no-option PDX budget is315122bytes,
+including the table. The1200000-byte value described above is historical. Explicit --pcm-buffer-kib
+now determines the limit after loader overhead/margin, without a1.2MB ceiling.
+See [resident-buffer budgets](pcm_playback_budget.md).

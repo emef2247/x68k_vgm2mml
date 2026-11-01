@@ -43,16 +43,24 @@ def aggregate(items):
 
 
 def select_pcm_policy(requested, analysis):
-    """Resolve auto from observed supply, never from unused header declarations."""
+    """Resolve auto from the selected PSG conversion or observed native supply."""
     if requested not in ('auto', 'strict', 'best-effort'):
         raise ValueError('PCM policy must be auto, strict or best-effort')
     supplies = len(getattr(analysis, 'stream_supplies', ()))
-    effective = ('best-effort' if supplies else 'strict') if requested == 'auto' else requested
+    origin = getattr(analysis, 'source_origin', 'native_msm6258')
+    psg_projection = origin == 'projected_msm6258_from_psg'
+    c140_projection = origin in ('projected_msm6258_from_c140_bank',
+                                 'projected_msm6258_from_c140_mix')
+    msm6295_projection = origin == 'projected_msm6258_from_msm6295_bank'
+    effective = ('best-effort' if supplies or psg_projection or c140_projection or msm6295_projection else 'strict') if requested == 'auto' else requested
+    reason = ('msm6295_bank_transcoding' if msm6295_projection else
+              'c140_mix_transcoding' if origin == 'projected_msm6258_from_c140_mix' else
+              'c140_bank_transcoding' if c140_projection else
+              'explicit_psg_pcm_projection' if psg_projection else
+              'observed_dac_stream_supplies' if supplies else 'no_observed_dac_stream_supplies')
     return effective, dict(requested=requested, effective=effective,
-        reason=('observed_dac_stream_supplies' if supplies else 'no_observed_dac_stream_supplies')
-               if requested == 'auto' else 'explicit_policy',
-        stream_supply_count=supplies,
-        source_origin=getattr(analysis, 'source_origin', 'native_msm6258'))
+        reason=reason if requested == 'auto' else 'explicit_policy',
+        stream_supply_count=supplies, source_origin=origin)
 
 
 class PcmAssessment:

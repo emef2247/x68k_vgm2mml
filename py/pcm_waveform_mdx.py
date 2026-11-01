@@ -49,6 +49,8 @@ class ProjectedWaveformAnalysis(PcmAnalysis):
     chunks: tuple[tuple[int, int, tuple[int, ...]], ...] = ()
     aligned_sample_multiplier: int | None = None
     pcm_profile: str = 'standard'
+    preferred_groups: tuple[dict, ...] = ()
+    packaging_boundaries: tuple[dict, ...] = ()
 
     def align_to_clock(self, tick_mapper, sample_multiplier):
         """Encode the original waveform to each final shared MDX gate duration.
@@ -85,7 +87,8 @@ class ProjectedWaveformAnalysis(PcmAnalysis):
             decoder_reset='independent PDX note assumption; physical runtime reset unverified',
             normalization_omission_safe=False,
             aligned_sample_multiplier=self.aligned_sample_multiplier,
-            target_mapping=self.target_mapping, target_evidence=self.target_evidence),
+            target_mapping=self.target_mapping, target_evidence=self.target_evidence,
+            preferred_groups=self.preferred_groups, packaging_boundaries=self.packaging_boundaries),
             indent=2) + '\n', encoding='utf-8')
         return path
 
@@ -93,7 +96,7 @@ class ProjectedWaveformAnalysis(PcmAnalysis):
 def project(native, *, source_raw, loop_start=None, loop_count=1,
             source_origin='projected_msm6258_from_waveform', evidence_prefix='pcm_waveform',
             artifact_prefix='pcm_waveform', source_description='derived stereo waveform',
-            source_evidence=(), encoder=encode_msm6258,pcm_profile='standard'):
+            source_evidence=(), encoder=encode_msm6258,pcm_profile='standard',preferred_groups=None):
     """Package the union of native active gates, with exact loop/EOF boundaries."""
     profile=get_profile(pcm_profile)
     end = native.source_end_vgmticks
@@ -111,12 +114,33 @@ def project(native, *, source_raw, loop_start=None, loop_count=1,
         else:
             spans.append([start, stop, [gate.gate_id]])
     chunks = []
+    groups=tuple(preferred_groups or ())
+    preferred=[]
+    sounding_groups=tuple(g for g in groups if not g.get('rest',False))
+    ordered=sorted(sounding_groups,key=lambda g:g['start'])
+    index=furthest=0
+    for boundary in sorted({g['end'] for g in sounding_groups}):
+        while index<len(ordered) and ordered[index]['start']<boundary:
+            furthest=max(furthest,ordered[index]['end'])
+            index+=1
+        if furthest<=boundary:preferred.append(boundary)
+    packaging=[]
     gates_by_id = {gate.gate_id: gate for gate in native.gates}
     for start, stop, gate_ids in spans:
         while start < stop:
             boundary = min(stop, start + profile.chunk_seconds*44100)
             if loop_start is not None and start < loop_start < boundary:
                 boundary = loop_start
+            limit=boundary
+            reason='span_or_loop_end' if boundary==stop or boundary==loop_start else 'chunk_limit'
+            if reason=='chunk_limit':
+                candidate=next((t for t in reversed(preferred) if start<t<=boundary),None)
+                if candidate is not None:
+                    boundary=candidate
+                    reason='complete_interpreted_group'
+            if groups:
+                packaging.append(dict(start=start,end=boundary,limit=limit,reason=reason,
+                    source_groups=tuple(g['group_id'] for g in groups if g['start']<boundary and g['end']>start)))
             overlap = tuple(gate_id for gate_id in gate_ids
                             if gates_by_id[gate_id].start_vgmticks < boundary
                             and gates_by_id[gate_id].end_vgmticks > start)
@@ -130,7 +154,7 @@ def project(native, *, source_raw, loop_start=None, loop_count=1,
         native=native, chunks=tuple(chunks), source_origin=source_origin,
         evidence_prefix=evidence_prefix, artifact_prefix=artifact_prefix,
         source_description=source_description, source_evidence=tuple(source_evidence), encoder=encoder,
-        pcm_profile=profile.name)
+        pcm_profile=profile.name,preferred_groups=groups,packaging_boundaries=tuple(packaging))
     return _encode(base)
 
 

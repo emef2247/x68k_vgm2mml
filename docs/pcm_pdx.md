@@ -39,6 +39,9 @@ including reference tables, padding and payload. This is a user-selected
 conservative playback target, not a universal PDX format limit. A player's
 internal decoded-PCM workspace is not part of this encoded-file budget.
 MDX file capacity, compiler/offset limits and PDX capacity are separate checks.
+An optional resident-buffer budget can further restrict target selection and
+packing without changing this default. See [playback budgets](pcm_playback_budget.md)
+for loader overhead, reserved margin and capacity-versus-runtime diagnostics.
 
 Projection and packing enforce the aggregate byte budget, as well as one
 bank's 96 slots and the selected format's per-sample byte limit. The default
@@ -361,3 +364,9 @@ The older `--no-vgm` remains accepted and is equivalent to the default.
 The Python batch API defaults to `no_vgm=True`; callers needing replay pass
 `no_vgm=False`. This choice does not suppress intermediate projected-source
 VGM evidence required by the conversion pipeline.
+
+
+Default-budget update (2026-10-30): the no-option PDX budget is315122bytes,
+including the table. The1200000-byte value described above is historical. Explicit --pcm-buffer-kib
+now determines the limit after loader overhead/margin, without a1.2MB ceiling.
+See [resident-buffer budgets](pcm_playback_budget.md).

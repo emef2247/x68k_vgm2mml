@@ -72,6 +72,19 @@ retaining all native evidence and reporting SegaPCM exclusion. This does not
 establish SegaPCM-to-PDX support, and best-effort PCM policy must not silently
 enable such exclusion. SegaPCM controls do not constrain FM normalization.
 
+C140 source controls and audible runtime are separate stages. Preserve native
+registers, sparse ROM coverage and write-observed Segments before the pinned
+System 2/21 runtime creates voice gates. Missing observed ROM is a source
+limitation; PCM8 voice count, bank slots and packed bytes are target limits.
+Optional unplayed-tail completion must not invalidate valid observed playback.
+See docs/c140.md for the profile, artifacts and current projection limits.
+
+MSM6295 sample-selection commands are requests, not guaranteed new attacks.
+Keep accepted, busy-ignored and invalid-range-ignored requests separate, with
+source IDs and native-frame evidence. Cache source samples independently of
+onset gain and early-stop duration before target conversion; target bank
+allocation never changes native busy state. See docs/msm6295_design.md.
+
 OPNA FM/SSG projection reserves OPM channels for the whole song, with FM
 priority over SSG. Any FM key activity retains its channel through release
 tails and output gating. SSG uses the existing PSG FM model in remaining

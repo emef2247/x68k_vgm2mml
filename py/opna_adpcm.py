@@ -423,6 +423,96 @@ def _msm_next(signal, index, nibble):
             max(0, min(48, index + _MSM_INDEX[nibble & 7])))
 
 
+def encode_msm6258_beam(pcm, *, width=16, weight=1., gate_scale=1.5):
+    """Beam-search MSM6258 encoder with a slope-gated smoothness cost.
+
+    The greedy encoder's one-step choice leaves a near-Nyquist limit
+    cycle (an audible constant tone) on smooth material, because the
+    predictor hunts around the target with alternating nibbles. This
+    encoder keeps `width` candidate decoder states and adds a cost on
+    the decoded second difference, gated by the desired signal's own
+    second difference: the penalty is active only where the source is
+    smooth, so square-wave edges are tracked as before. The returned
+    error is the plain squared decoding error of the chosen path, in
+    the same units as encode_msm6258.
+    """
+    try:
+        import numpy as np
+    except ImportError as exc:
+        raise ValueError('Beam MSM6258 encoding requires NumPy') from exc
+    values = [float(value) for value in pcm]
+    count = len(values)
+    if not count:
+        return b'', 0
+    desired = np.clip(np.round(np.asarray(values) / 64), -512, 511)
+    gate_input = np.zeros(count)
+    if count > 2:
+        gate_input[2:] = desired[2:] - 2 * desired[1:-1] + desired[:-2]
+    gate = 1. / (1. + (gate_input / gate_scale) ** 2)
+    steps = np.asarray(_MSM_STEPS, dtype=np.float64)
+    delta = np.zeros((49, 16))
+    next_index = np.zeros((49, 16), dtype=int)
+    for index in range(49):
+        step = steps[index]
+        for nibble in range(16):
+            difference = step // 8
+            if nibble & 1:
+                difference += step // 4
+            if nibble & 2:
+                difference += step // 2
+            if nibble & 4:
+                difference += step
+            delta[index, nibble] = -difference if nibble & 8 else difference
+            next_index[index, nibble] = min(48, max(0, index + _MSM_INDEX[nibble & 7]))
+    signal = np.full(width, -2.)
+    index = np.zeros(width, dtype=int)
+    previous1 = np.full(width, -2.)
+    previous2 = np.full(width, -2.)
+    cost = np.zeros(width)
+    cost[1:] = np.inf
+    parents = []
+    nibbles = []
+    for tick in range(count):
+        candidate = np.clip(signal[:, None] + delta[index], -512, 511)
+        second = candidate - 2 * previous1[:, None] + previous2[:, None]
+        total = cost[:, None] + (candidate - desired[tick]) ** 2 \
+            + weight * gate[tick] * second * second
+        flat = total.ravel()
+        part = np.argpartition(flat, width - 1)[:width]
+        order = part[np.argsort(flat[part], kind='stable')]
+        chosen, nibble = order // 16, order % 16
+        parents.append(chosen)
+        nibbles.append(nibble)
+        signal = candidate[chosen, nibble]
+        index = next_index[index[chosen], nibble]
+        previous2 = previous1[chosen]
+        previous1 = signal.copy()
+        cost = flat[order]
+    sequence = np.empty(count, dtype=int)
+    beam = int(np.argmin(cost))
+    for tick in range(count - 1, -1, -1):
+        sequence[tick] = nibbles[tick][beam]
+        beam = int(parents[tick][beam])
+    packed = bytearray()
+    signal, index = -2, 0
+    error_squared = 0
+    low = None
+    for tick, nibble in enumerate(sequence):
+        signal, index = _msm_next(signal, index, int(nibble))
+        error_squared += (signal * 64 - values[tick]) ** 2
+        if low is None:
+            low = int(nibble)
+        else:
+            packed.append(low | int(nibble) << 4)
+            low = None
+    if low is not None:
+        # Same padding contract as the greedy encoder: this nibble is
+        # not part of sample_count; consumers must honor it.
+        padding = min(range(16), key=lambda n: abs(_msm_next(signal, index, n)[0] - signal))
+        packed.append(low | padding << 4)
+    return bytes(packed), error_squared
+
+
 def encode_msm6258(pcm):
     """Greedy independent 4-bit MSM6258 encoder, 10-bit output, reset predictor -2."""
     signal, index = -2, 0
