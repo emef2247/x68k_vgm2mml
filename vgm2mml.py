@@ -145,6 +145,10 @@ def build_parser():
                                '(nesapu-to-opm route only)')
     advanced.add_argument('--nes-gain', action='append', default=[], metavar='KIND=FACTOR',
                           help='Override one NES mapping gain (pulse, triangle, noise, dpcm, fds)')
+    advanced.add_argument('--nes-dpcm', action=argparse.BooleanOptionalAction, default=True,
+                          help='Carry NES DPCM on the MSM6258 ADPCM/PDX target instead of SCC '
+                               'waveform slices (nesapu-to-opm route only; --no-nes-dpcm '
+                               'restores the slice rendering)')
     selection=advanced.add_mutually_exclusive_group()
     selection.add_argument('--psg-only','--psg_only',action='store_true',help='Project only PSG; retain native source evidence')
     selection.add_argument('--scc-only','--scc_only',action='store_true',help='Project only SCC; retain native source evidence')
@@ -326,6 +330,7 @@ def main():
                                     else ', '.join(usage['used_chips'])))
             route = 'mgs-compatibility'
         report['chip_projection'] = route
+        nes_dpcm_spec = None
         if route == 'nesapu-to-opm':
             # NES APU front end: rewrite the source into the SCC + PSG-noise
             # intermediate, then let the ordinary PSG/SCC route consume it.
@@ -348,7 +353,28 @@ def main():
                         nes_gains[kind] = float(factor)
                     except ValueError:
                         parser.error(f'--nes-gain factor must be a number: {item!r}')
-            projected = project_nesapu(read_vgm_bytes(vgm_path), gains=nes_gains)
+            # The X68000 has a real PCM target: when the DPCM samples are
+            # covered by data blocks, divert them to MSM6258 ADPCM/PDX
+            # (built downstream in the PSG/SCC conversion) and keep the
+            # SCC waveform lane free of slices. Uncovered triggers render
+            # as slices exactly as before.
+            if args.nes_dpcm:
+                from nesapu import analyze as analyze_nesapu
+                from nesapu_pcm import covered_event_indexes
+                nes_raw = read_vgm_bytes(vgm_path)
+                nes_trace = analyze_nesapu(nes_raw)
+                if covered_event_indexes(nes_trace, nes_raw):
+                    nes_dpcm_spec = (nes_trace, nes_raw,
+                                     (nes_gains or {}).get('dpcm', 1.0))
+                    projected = project_nesapu(nes_raw, nes_trace,
+                                               gains=nes_gains,
+                                               dpcm_external=True)
+                else:
+                    projected = project_nesapu(nes_raw, nes_trace,
+                                               gains=nes_gains)
+            else:
+                projected = project_nesapu(read_vgm_bytes(vgm_path),
+                                           gains=nes_gains)
             intermediate = bytearray(projected.vgm)
             intermediate[0x78] = 0
             target_dir = Path(song_dir) / '_nesapu_target'
@@ -499,6 +525,7 @@ def main():
         from psg_scc_conversion import convert
         try:
             mml, plan = convert(vgm_path, song_dir, psg_gain=args.psg_gain,
+                                nes_dpcm=nes_dpcm_spec,
                                 scc_gain=.125 if args.scc_gain is None else args.scc_gain,
                                 scc_model=args.scc_model or ('additive' if compatibility_target=='opm-additive' else 'fm-additive'),
                                 scc_voice_bank=args.scc_voice_bank,source_selection=source_selection,psg_output=args.psg_output,

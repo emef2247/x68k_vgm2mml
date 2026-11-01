@@ -47,6 +47,7 @@ MDXの生成にはMXCまたはmmlxなどのMDXコンパイラが必要です。P
 | `--no-song-loop` | VGMの曲全体ループを使わず、1周で終了するMDXを生成 |
 | `--psg-output {opm,pcm}` | PSGの演奏情報をOPMまたはPCMのどちらに変換するかを選択 |
 | `--nes-balance`／`--no-nes-balance` | NES APU音源にNESミキサーのバランスを補正するマッピングゲインを適用（export_mdxでは既定で有効） |
+| `--nes-dpcm`／`--no-nes-dpcm` | NES APU音源のDPCMをSCC波形スライスではなくMSM6258 ADPCM（PDX）で鳴らす（既定で有効。サンプルデータのあるトリガーのみ対象） |
 | `--timeout SECONDS` | 各入力・各処理段階のタイムアウト（既定1200秒） |
 
 `--force` を指定しても、すべての入力が変換できるわけではありません。省略・近似が発生した場合はレポートを確認してください。
@@ -59,7 +60,7 @@ MDXの生成にはMXCまたはmmlxなどのMDXコンパイラが必要です。P
 | OPNA（YM2608） | FMをOPMへ投影。SSGとADPCM-Bも対応範囲内で変換 |
 | PSG／SSG（AY系） | OPMへ投影。PCMへの投影も選択可能 |
 | SCC | 波形をOPMのFM／加算合成音色へ近似 |
-| NES APU（N2A03） | パルス／三角波／ノイズ／DPCM／FDSをSCCとPSGノイズへ投影し、OPMへ変換。AY系音源との併用にも対応 |
+| NES APU（N2A03） | パルス／三角波／ノイズ／FDSをSCCとPSGノイズへ投影し、OPMへ変換。DPCMはMSM6258 ADPCM（PDX）で再生（`--no-nes-dpcm`でSCCスライスに戻せる）。AY系音源との併用にも対応 |
 | DCSG（SN76489系、単体・2チップ） | トーンと対応するノイズをOPMへ近似 |
 | MSM6258系PCM | PCM IRを生成し、対応するデータをPDXへ配置 |
 | SegaPCM | 再利用可能なサンプルバンクを優先し、必要に応じてミックス方式へ切り替え |
@@ -158,6 +159,7 @@ To install the external tools automatically, use [scripts/setup_tools.sh](script
 | `--no-song-loop` | Generate an MDX that ends after one pass instead of using the VGM's whole-song loop |
 | `--psg-output {opm,pcm}` | Choose whether PSG performance information is converted to OPM or to PCM |
 | `--nes-balance` / `--no-nes-balance` | For NES APU sources, apply mapping gains that compensate the NES mixer balance (enabled by default in export_mdx) |
+| `--nes-dpcm` / `--no-nes-dpcm` | Play NES APU DPCM as MSM6258 ADPCM (PDX) instead of SCC waveform slices (enabled by default; only triggers with sample data) |
 | `--timeout SECONDS` | Timeout for each input and each processing stage (default: 1200 seconds) |
 
 Even with `--force`, not every input can be converted. If omissions or approximations occur, check the report.
@@ -170,7 +172,7 @@ Even with `--force`, not every input can be converted. If omissions or approxima
 | OPNA (YM2608) | Projects FM onto OPM. SSG and ADPCM-B are also converted within their supported ranges |
 | PSG / SSG (AY family) | Projects onto OPM. Projection onto PCM can also be selected |
 | SCC | Approximates waveforms as OPM FM / additive-synthesis voices |
-| NES APU (N2A03) | Projects pulse / triangle / noise / DPCM / FDS onto SCC and PSG noise, then converts to OPM. Can also be combined with an AY-family chip |
+| NES APU (N2A03) | Projects pulse / triangle / noise / FDS onto SCC and PSG noise, then converts to OPM. DPCM plays back as MSM6258 ADPCM (PDX); `--no-nes-dpcm` restores the SCC slice rendering. Can also be combined with an AY-family chip |
 | DCSG (SN76489 family, single and dual chip) | Approximates tones and the corresponding noise on OPM |
 | MSM6258-family PCM | Generates a PCM IR and places the corresponding data into PDX |
 | SegaPCM | Prefers a reusable sample bank, switching to the mix method when necessary |

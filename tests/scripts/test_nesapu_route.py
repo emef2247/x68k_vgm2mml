@@ -108,6 +108,76 @@ class NesapuRouteTests(unittest.TestCase):
             self.assertEqual(overridden['pulse'], 1.0)
             self.assertEqual(overridden['triangle'], 0.75)
 
+    def test_cli_dpcm_rides_adpcm_by_default(self):
+        # A covered DPCM sample (RAM block + trigger) is diverted to
+        # the MSM6258 ADPCM/PDX target: the projection keeps the SCC
+        # lane free of slices and the MDX gains a PCM track. The PDX
+        # helper is stubbed with a minimal valid builder.
+        block = (b'\x67\x66\xc2' + struct.pack('<I', 2 + 129)
+                 + struct.pack('<H', 0xc000) + b'\xff' * 129)
+        trigger = bytes.fromhex(
+            'b4 12 00 b4 13 08 b4 10 0f b4 15 10') + b'\x62' * 6
+        stub = (
+            '#!/usr/bin/env python3\n'
+            'import struct, sys\n'
+            'from pathlib import Path\n'
+            'args = sys.argv[1:]\n'
+            'if args[0] == "--build-pdx":\n'
+            '    manifest, pdx = Path(args[1]), Path(args[2])\n'
+            '    rows = []\n'
+            '    for line in manifest.read_text().splitlines()[1:]:\n'
+            '        if line.strip():\n'
+            '            sid, bank, slot, file = line.split("\\t")\n'
+            '            rows.append((int(slot), (manifest.parent / file).read_bytes()))\n'
+            '    table, payload, offset = bytearray(768), bytearray(), 768\n'
+            '    for slot, data in sorted(rows):\n'
+            '        struct.pack_into(">II", table, slot * 8, offset, len(data))\n'
+            '        payload += data; offset += len(data)\n'
+            '    pdx.write_bytes(bytes(table) + bytes(payload))\n'
+            'else:\n'
+            '    offsets = [0] + [34 + 2 * i for i in range(16)]\n'
+            '    body = b"".join(b"\\xe8\\x00" if i == 0 else b"\\xf1\\x00" for i in range(16))\n'
+            '    Path(args[3]).write_bytes(b"STUB\\r\\n\\x1a\\x00" + struct.pack(">17H", *offsets) + body)\n')
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / 'nes.vgm'
+            source.write_bytes(nes_vgm(block + PULSE_NOTE + trigger))
+            helper = root / 'helper.py'
+            helper.write_text(stub)
+            helper.chmod(0o755)
+
+            def run_cli(outdir, *extra):
+                run = subprocess.run(
+                    [sys.executable, str(ROOT / 'vgm2mml.py'), str(source),
+                     '--outdir', str(outdir), '--force',
+                     '--pcm-generator', str(helper), *extra],
+                    capture_output=True, text=True, timeout=300)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                return json.loads((outdir / 'nes.conversion.json').read_text())
+
+            report = run_cli(root / 'adpcm')
+            self.assertEqual(report['status'], 'generated')
+            settings = report['projection_settings']
+            self.assertEqual(settings['nes_dpcm']['events'], 1)
+            self.assertEqual(settings['nes_dpcm']['samples'], 1)
+            summary = json.loads(
+                (root / 'adpcm' / 'nes.nesapu_projection.json').read_text())
+            self.assertEqual(summary['dpcm_slices'], 0)
+            self.assertEqual(summary['dpcm_external_pcm']['events'], 1)
+            mml = (root / 'adpcm' / 'nes.mdx.mml').read_text()
+            self.assertIn('#pcmfile "nes.pdx"', mml)
+            self.assertIn('/* Track P */', mml)
+
+            report = run_cli(root / 'slices', '--no-nes-dpcm')
+            self.assertNotIn('nes_dpcm',
+                             report['projection_settings'] or {})
+            summary = json.loads(
+                (root / 'slices' / 'nes.nesapu_projection.json').read_text())
+            self.assertGreater(summary['dpcm_slices'], 0)
+            self.assertNotIn('dpcm_external_pcm', summary)
+            mml = (root / 'slices' / 'nes.mdx.mml').read_text()
+            self.assertNotIn('#pcmfile', mml)
+
 
 if __name__ == '__main__':
     unittest.main()
