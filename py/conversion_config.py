@@ -41,7 +41,8 @@ def inspect_source(source):
         item = dict(command=f'{cmd:#04x}', address=pos, source_samples=event.vgmticks)
         chip = {0x54: 'opm', 0xa4: 'opm', 0x56: 'opna', 0x57: 'opna',
                 0xa6: 'opna', 0xa7: 'opna', 0xa0: 'psg', 0xd2: 'scc',
-                0x51: 'opll', 0x50: 'dcsg', 0x30: 'dcsg', 0x4f: 'dcsg', 0x3f: 'dcsg', 0xb7: 'pcm', 0xc0: 'segapcm', 0xd4: 'c140', 0xb8: 'msm6295'}.get(cmd)
+                0x51: 'opll', 0x50: 'dcsg', 0x30: 'dcsg', 0x4f: 'dcsg', 0x3f: 'dcsg', 0xb7: 'pcm', 0xc0: 'segapcm', 0xd4: 'c140', 0xb8: 'msm6295',
+                0xb4: 'nesapu'}.get(cmd)
         if chip:
             chips.add(chip)
             first.setdefault(chip, item)
@@ -123,6 +124,8 @@ def inspect_source(source):
                         opll=opll_clock, psg=header['ay_clock_raw'],
                         scc=header['scc_clock_raw'], pcm=header['msm6258_clock_raw'],
                         segapcm=header['segapcm_clock_raw'], c140=header['c140_clock_raw'],
+                        nesapu=int.from_bytes(raw[0x84:0x88], 'little') & 0x3fffffff
+                               if header['version'] >= 0x161 else 0,
                         msm6295=header['msm6295_clock_raw'])
     has_song_loop = bool(int.from_bytes(raw[0x1c:0x20], 'little'))
     initialization = {}
@@ -157,6 +160,17 @@ def select_mdx_route(usage, *, compatibility_target=None):
         raise ValueError(f"{issue.get('code', 'unsupported_source')}: {issue['reason']} "
                          f"({issue['command']} at {issue['address']:#x})")
     chips = set(usage['used_chips']) - usage['compatibility_initialization'].keys()
+    if 'nesapu' in chips:
+        # The NES APU front end (nesapu_projection) rewrites the source into
+        # the SCC + PSG-noise intermediate the PSG/SCC route consumes, so the
+        # route is available whenever the APU is the only melodic source.
+        # A simultaneously active AY is passed through by the projection
+        # (the NES noise lane is then omitted and recorded); any other
+        # active chip stays unsupported in this revision.
+        if not chips <= {'nesapu', 'psg'}:
+            raise ValueError('Unsupported MDX source combination: '
+                             + ', '.join(sorted(chips)))
+        return 'nesapu-to-opm'
     if compatibility_target in ('opm', 'opm-additive'):
         if not chips or not chips <= {'psg', 'scc'}:
             raise ValueError('Compatibility --target opm/opm-additive requires PSG/SCC source commands')

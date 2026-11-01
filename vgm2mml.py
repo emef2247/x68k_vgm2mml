@@ -321,6 +321,31 @@ def main():
                                     else ', '.join(usage['used_chips'])))
             route = 'mgs-compatibility'
         report['chip_projection'] = route
+        if route == 'nesapu-to-opm':
+            # NES APU front end: rewrite the source into the SCC + PSG-noise
+            # intermediate, then let the ordinary PSG/SCC route consume it.
+            # The projection declares AY type 0x10 (YM2149, the MSX target
+            # profile) in its header; the intermediate's AY part only drives
+            # the noise generator, and the downstream PSG/SCC profile models
+            # the AY8910 legacy type, so the intermediate copy declares 0.
+            from nesapu_projection import project as project_nesapu
+            from vgm_io import read_vgm_bytes
+            projected = project_nesapu(read_vgm_bytes(vgm_path))
+            intermediate = bytearray(projected.vgm)
+            intermediate[0x78] = 0
+            target_dir = Path(song_dir) / '_nesapu_target'
+            target_dir.mkdir(exist_ok=True)
+            projected_path = target_dir / (base_name + '.vgm')
+            projected_path.write_bytes(bytes(intermediate))
+            with open(Path(song_dir) / (base_name + '.nesapu_projection.json'),
+                      'w', encoding='utf-8') as stream:
+                json.dump(projected.summary, stream, indent=2)
+                stream.write('\n')
+            report['nesapu_projection'] = projected.summary
+            vgm_path = str(projected_path)
+            usage = inspect_source(vgm_path)
+            report['projected_source'] = usage
+            route = 'psg-scc-to-opm'
         report['force_requested'] = args.force
         if args.force and (args.target != 'mdx' or route not in (
                 'opna-fm-to-opm', 'native-opm-pcm', 'opm-segapcm-source', 'opm-c140-source', 'opm-msm6295-source', 'psg-scc-to-opm', 'dcsg-to-opm')):
