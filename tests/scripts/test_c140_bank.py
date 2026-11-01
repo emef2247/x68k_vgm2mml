@@ -152,6 +152,26 @@ class C140BankTests(unittest.TestCase):
         self.assertEqual(gates[0]['end_vgmticks'], 200)
         self.assertEqual(gates[0]['start_vgmticks'], 0)
 
+    def test_loop_below_start_reads_shared_rom_prefix(self):
+        # The BURNFC05 ch8/ch9 shape: two channels share one sample's
+        # end and loop with different entry points, so the later
+        # entry's loop lies before its own start.
+        rom = bytes(range(256))
+        raw = make_vgm(voice(channel=0, mode=0x90, start=64, end=128, loop=80) +
+                       voice(channel=1, mode=0x90, start=96, end=128, loop=80) +
+                       wait(400), rom=rom)
+        trace = analyze(raw)
+        gates, _ = render_gates(trace)
+        self.assertEqual({gate['source_channel'] for gate in gates}, {0, 1})
+        left, right, rate, _mixed = render_mix(trace)
+        self.assertTrue(any(left) or any(right))
+
+    def test_loop_at_sample_end_is_still_rejected(self):
+        raw = make_vgm(voice(mode=0x90, start=0, end=64, loop=64) + wait(400),
+                       rom=bytes(range(256)))
+        with self.assertRaisesRegex(BankUnsupported, 'at or beyond the sample end'):
+            render_gates(analyze(raw))
+
     def test_unknown_rom_and_resource_limits_are_explicit(self):
         raw = bytearray(make_vgm(voice(end=128) + wait(1000)))
         struct.pack_into('<I', raw, 0x107, 128)

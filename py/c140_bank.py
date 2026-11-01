@@ -108,8 +108,13 @@ class Voice:
         if self.position >= self.end - self.start:
             if self.registers[5] & 0x10:
                 self.position = self.loop - self.start
-                if not 0 <= self.position < self.end - self.start:
-                    raise BankUnsupported('invalid_loop', 'C140 latched loop lies outside the sample interval')
+                if self.position >= self.end - self.start:
+                    raise BankUnsupported('invalid_loop', 'C140 latched loop lies at or beyond the sample end')
+                # A loop below start is real source behaviour: channels
+                # can share one sample with different entry points, so
+                # the loop region reaches into the ROM bytes before this
+                # voice's start, which libvgm reads the same way. The
+                # read below still refuses any byte no block supplied.
             else:
                 self.key = False
                 return None
