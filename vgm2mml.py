@@ -140,6 +140,11 @@ def build_parser():
     advanced.add_argument('--scc-model',choices=('additive','additive8','fm-additive','fm-fm'),default=None,
                           help='SCC OPM voice approximation; default fm-additive; automatically fit a bank when omitted')
     advanced.add_argument('--scc-voice-bank',type=Path,help='Offline fitted YM2151 SCC voice bank JSON')
+    advanced.add_argument('--nes-balance', action='store_true',
+                          help='Apply the NES mapping balance gains in the NES APU projection '
+                               '(nesapu-to-opm route only)')
+    advanced.add_argument('--nes-gain', action='append', default=[], metavar='KIND=FACTOR',
+                          help='Override one NES mapping gain (pulse, triangle, noise, dpcm, fds)')
     selection=advanced.add_mutually_exclusive_group()
     selection.add_argument('--psg-only','--psg_only',action='store_true',help='Project only PSG; retain native source evidence')
     selection.add_argument('--scc-only','--scc_only',action='store_true',help='Project only SCC; retain native source evidence')
@@ -330,7 +335,20 @@ def main():
             # the AY8910 legacy type, so the intermediate copy declares 0.
             from nesapu_projection import project as project_nesapu
             from vgm_io import read_vgm_bytes
-            projected = project_nesapu(read_vgm_bytes(vgm_path))
+            nes_gains = None
+            if args.nes_balance or args.nes_gain:
+                from nesapu_projection import BALANCE_GAINS
+                nes_gains = dict(BALANCE_GAINS)
+                for item in args.nes_gain:
+                    kind, _, factor = item.partition('=')
+                    kind = kind.strip().lower()
+                    if kind not in nes_gains:
+                        parser.error(f'--nes-gain kind must be one of {sorted(nes_gains)}: {item!r}')
+                    try:
+                        nes_gains[kind] = float(factor)
+                    except ValueError:
+                        parser.error(f'--nes-gain factor must be a number: {item!r}')
+            projected = project_nesapu(read_vgm_bytes(vgm_path), gains=nes_gains)
             intermediate = bytearray(projected.vgm)
             intermediate[0x78] = 0
             target_dir = Path(song_dir) / '_nesapu_target'

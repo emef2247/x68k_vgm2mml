@@ -102,7 +102,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
               max_ticks=None,psg_model=None,psg_gain=None,scc_gain=None,scc_model=None,scc_voice_bank=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mmlx', mxc=None, run68=None,
               normalize_lengths=None, normalization_ms=8, fm_state_ms=24, no_vgm=True, song_loop=True, listening_layout=False, _title=None,
-              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output=None,segapcm_projection='auto',c140_projection='bank',c140_mix_gain_db=0.0,pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096):
+              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output=None,segapcm_projection='auto',c140_projection='bank',c140_mix_gain_db=0.0,pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096,nes_balance=True,nes_gain=()):
     if listening_layout:
         from export_listening import run_listening_batch
         return run_listening_batch(source, output, core=run_batch, options=dict(
@@ -168,6 +168,8 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
                         '--pcm-buffer-margin-bytes',str(pcm_buffer_margin_bytes)])
     if psg_only:options.append('--psg-only')
     if scc_only:options.append('--scc-only')
+    if nes_balance:options.append('--nes-balance')
+    for gain in nes_gain:options.extend(['--nes-gain',gain])
     if force:
         options.append('--force')
     if fm_only:
@@ -445,6 +447,10 @@ def main():
                         help='C140 full mix that sounds every gate (default) or per-voice bank')
     parser.add_argument('--c140-mix-gain-db',type=float,default=None,
                         help='C140 mix only: calibration gain in dB for the mixed PCM (export default: -12)')
+    parser.add_argument('--nes-balance',action=argparse.BooleanOptionalAction,default=True,
+                        help='NES APU route only: apply the NES mapping balance gains (export default: on)')
+    parser.add_argument('--nes-gain',action='append',default=[],metavar='KIND=FACTOR',
+                        help='NES APU route only: override one NES mapping gain (pulse, triangle, noise, dpcm, fds)')
     parser.add_argument('--pcm-bank-merge',choices=('budget96','similar','off'),default='budget96',
                         help='PCM sharing: budget96 (default) fits 96 samples and the PCM buffer budget; similar keeps quality bounds; off keeps exact sharing')
     # The export surface is intentionally small: the defaults below carry
@@ -468,7 +474,8 @@ def main():
                           opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy,
                           normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms, no_vgm=args.no_vgm,
                           listening_layout=True, song_loop=not args.no_song_loop, fm_only=args.fm_only, force=args.force,pcm_profile=args.pcm_profile,psg_only=args.psg_only,scc_only=args.scc_only,psg_output=args.psg_output,segapcm_projection=args.segapcm_projection,c140_projection=args.c140_projection,c140_mix_gain_db=args.c140_mix_gain_db,pcm_bank_merge=args.pcm_bank_merge,pdx_format=args.pdx_format,
-                          pcm_buffer_kib=args.pcm_buffer_kib,pcm_loader=args.pcm_loader,pcm_buffer_margin_bytes=args.pcm_buffer_margin_bytes)
+                          pcm_buffer_kib=args.pcm_buffer_kib,pcm_loader=args.pcm_loader,pcm_buffer_margin_bytes=args.pcm_buffer_margin_bytes,
+                          nes_balance=args.nes_balance,nes_gain=args.nes_gain)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     success = sum(row['status'] == 'success' for row in rows)

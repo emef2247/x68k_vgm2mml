@@ -84,6 +84,30 @@ class NesapuRouteTests(unittest.TestCase):
             self.assertTrue((outdir / 'nes.nesapu_projection.json').is_file())
             self.assertTrue((outdir / 'nes.mdx.mml').is_file())
 
+    def test_cli_nes_balance_gains_reach_projection(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            source = root / 'nes.vgm'
+            source.write_bytes(nes_vgm(PULSE_NOTE))
+
+            def projection_summary(outdir, *extra):
+                run = subprocess.run(
+                    [sys.executable, str(ROOT / 'vgm2mml.py'), str(source),
+                     '--outdir', str(outdir), *extra],
+                    capture_output=True, text=True, timeout=120)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                summary = json.loads((outdir / 'nes.nesapu_projection.json').read_text())
+                return summary['mapping_gains']
+
+            self.assertEqual(projection_summary(root / 'plain'), {})
+            self.assertEqual(
+                projection_summary(root / 'balanced', '--nes-balance'),
+                {'pulse': 1.3, 'triangle': 0.75, 'noise': 0.8,
+                 'dpcm': 1.25, 'fds': 1.0})
+            overridden = projection_summary(root / 'override', '--nes-gain', 'pulse=1.0')
+            self.assertEqual(overridden['pulse'], 1.0)
+            self.assertEqual(overridden['triangle'], 0.75)
+
 
 if __name__ == '__main__':
     unittest.main()
