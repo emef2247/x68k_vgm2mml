@@ -77,6 +77,38 @@ class Opn2ProjectionTests(unittest.TestCase):
         _rows, losses = project(analysis, clock_raw=clock_raw, force=True)
         self.assertGreater(losses['ch3_special_frequencies_not_projected'], 0)
 
+    def test_lfo_depths_bridged_while_lfo_active(self):
+        body = bytearray()
+        def w(reg, val):
+            body.extend((0x52, reg, val))
+        w(0x22, 0x0d)          # LFO enable, rate 5
+        w(0xb4, 0xe3)          # ch0: L/R on, AMS 2, PMS 3
+        w(0xb0, 0x32)
+        w(0xa4, 0x22)
+        w(0xa0, 0x00)
+        w(0x28, 0xf0)
+        body.append(0x62)
+        w(0x28, 0x00)
+        w(0x22, 0x05)          # LFO disable: bridge span ends
+        body.append(0x66)
+        analysis, clock_raw = analyze(bytes(body))
+        rows, losses = project(analysis, clock_raw=clock_raw)
+        controls = [(r['target_register'], r['target_data']) for r in rows]
+        self.assertIn((0x1b, 0x02), controls)      # triangle waveform
+        self.assertIn((0x19, 0x80 | 86), controls)  # PMD 86
+        self.assertIn((0x19, 16), controls)         # AMD 16
+        self.assertEqual(losses['lfo_depths_bridged'], 1)
+        start = controls.index((0x19, 0x80 | 86))
+        self.assertIn((0x19, 0x80), controls[start:])
+        self.assertIn((0x19, 0), controls[start:])
+
+    def test_no_lfo_sensitivities_no_bridge(self):
+        analysis, clock_raw = analyze(fm_body())
+        rows, losses = project(analysis, clock_raw=clock_raw)
+        controls = [(r['target_register'], r['target_data']) for r in rows]
+        self.assertNotIn((0x1b, 0x02), controls)
+        self.assertFalse(losses.get('lfo_depths_bridged'))
+
 
 def dac_body():
     body = bytearray()

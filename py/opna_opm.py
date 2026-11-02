@@ -1,6 +1,8 @@
 """Native OPNA FM/SSG Segments -> exact-sample projected OPM -> existing MDX path.
 
-Register/channel mapping references vgm-conv's OPNToOPMConverter (ISC).
+The register/channel mapping is derived from the two chips' register
+layouts and this project's own ymfm-based audit (field semantics,
+EG-rate law, LFO depth/rate laws are stated where they are used).
 Native committed 11-bit pitch uses the existing 4 MHz OPM pitch helper.
 Source evidence is never rewritten as target convenience.
 """
@@ -21,8 +23,19 @@ from vgm_timing import command_times
 
 
 TARGET_CLOCK = 4000000
-REFERENCE = '780a20ed505e23eb21aa9c6ce3f349029718b5a0'
 NON_FM = {'ssg', 'rhythm', 'adpcm_b', 'irq_flag_control'}
+
+# LFO rate mapping, derived from the chip models in ymfm (and
+# corroborated by Nuked-OPN2's die-derived divider counts): the OPN
+# LFO advances its 7-bit value when the counter's low byte reaches
+# {109, 78, 72, 68, 63, 45, 9, 6}[rate] at the FM sample clock
+# (OPNA 7,987,200/144 = 55.5 kHz), while the OPM rate byte is a 4.4
+# float step giving Hz = 62,500 * ((0x10 | (b & 0xf)) << (b >> 4))
+# / 2**30. Each entry is the OPM byte nearest in Hz to the source
+# rate (4.01/5.63/6.10/6.47/6.99/9.85/54.1/86.4 Hz). Source rate 7
+# exceeds the OPM maximum of 59.1 Hz and saturates at 0xff.
+# Derivation script: opna_opm_voice study, lfo_rate_map.py.
+_LFO_RATE_TO_OPM = (0xc1, 0xc8, 0xca, 0xcb, 0xcd, 0xd5, 0xfc, 0xff)
 
 # EG rate conversion. The OPN and OPM envelope cores share one
 # design (EG clock = sample rate / 3, effective rate = 2R + the
@@ -128,10 +141,36 @@ def project(analysis, *, clock_hz, pitch_policy='clamp', channel_map=None, force
             target_ch=channel_map.get(s.ch) if s and register != 0x18 else None,
             source_row=None, inferred_key=False, synthetic_phase=None))
 
-    emit(None, 0x18, 0xc2, 'vgm-conv initial LFO frequency')
+    emit(None, 0x18, _LFO_RATE_TO_OPM[0], 'initial LFO frequency')
+
+    # Hardware LFO bridge: the source LFO waveform is a fixed triangle
+    # and its depths live in the per-channel PMS/AMS steps, while OPM
+    # scales those steps by the global PMD/AMD latches. PMD 86 makes
+    # the OPM PMS steps 3.4 * 2^k cents (the OPN series) for PMS 1..3
+    # and keeps 4..7 within +25%/-38%; AMD 16 makes the OPM AMS steps
+    # 0/3.0/6.0/12.0 dB against the source 0/1.4/5.9/11.8 dB. The
+    # depths are emitted once per span in which the source LFO is
+    # enabled and some channel has nonzero sensitivity, and zeroed
+    # when that span ends; rate and sensitivities already flow as
+    # 0x18/0x38 writes.
+    lfo = {'enabled': False, 'on': False, 'sensitivities': {}}
+
+    def lfo_bridge(s):
+        active = lfo['enabled'] and any(
+            pms or ams for pms, ams in lfo['sensitivities'].values())
+        if active and not lfo['on']:
+            emit(s, 0x1b, 0x02, 'OPN fixed triangle as OPM LFO waveform')
+            emit(s, 0x19, 0x80 | 86, 'OPM PMD scaled to OPN PMS depth steps')
+            emit(s, 0x19, 16, 'OPM AMD scaled to OPN AMS depth steps')
+            losses['lfo_depths_bridged'] += 1
+            lfo['on'] = True
+        elif not active and lfo['on']:
+            emit(s, 0x19, 0x80, 'LFO bridge span ended: PM depth zero')
+            emit(s, 0x19, 0, 'LFO bridge span ended: AM depth zero')
+            lfo['on'] = False
 
     def target_channel(s):
-        return channel_map.get(s.ch)  # Default vgm-conv uses OPM 0..2/4..6.
+        return channel_map.get(s.ch)  # Default map: OPM 0..2/4..6 (OPM ch3 reserved).
 
     def channel_control(s):
         state = s.state
@@ -194,7 +233,7 @@ def project(analysis, *, clock_hz, pitch_policy='clamp', channel_map=None, force
                 if data != plain:
                     losses['eg_rate_prescaler_adjustments'] += 1
             emit(s, 0x40 + ((reg & 0xf0) - 0x30) * 2 + bank * 8 + ch,
-                 data, 'vgm-conv operator bank mapping; DT2 reset zero')
+                 data, 'operator bank mapping; DT2 reset zero')
         elif 0x90 <= reg <= 0x9f:
             if state.operators[(reg >> 2) & 3].ssg_eg_enabled:
                 losses['ssg_eg_not_available_on_opm'] += 1
@@ -203,15 +242,17 @@ def project(analysis, *, clock_hz, pitch_policy='clamp', channel_map=None, force
         elif 0xb0 <= reg <= 0xb2 or 0xb4 <= reg <= 0xb6:
             # Target-only reset assumptions for unwritten counterpart controls.
             emit(s, 0x20 + ch, channel_control(s),
-                 'vgm-conv RL swap and FB/algorithm')
+                 'RL swap and FB/algorithm')
             if reg >= 0xb4:
-                emit(s, 0x38 + ch, state.pms << 4 | state.ams, 'vgm-conv PMS/AMS mapping')
+                emit(s, 0x38 + ch, state.pms << 4 | state.ams, 'PMS/AMS mapping')
+                lfo['sensitivities'][s.ch] = (state.pms or 0, state.ams or 0)
+                lfo_bridge(s)
         elif 0xa0 <= reg <= 0xa2:
             pitch(s)
         elif s.port == 0 and reg == 0x28:
             if s.ch >= 3 and state.six_channel_enabled is None:
                 losses['unknown_output_enable_target_enabled_assumption'] += 1
-            emit(s, 8, state.key_mask << 3 | ch, 'vgm-conv operator key mask')
+            emit(s, 8, state.key_mask << 3 | ch, 'operator key mask')
         elif s.port == 0 and reg == 0x29:
             for item in segments:
                 if item.ch >= 3 and target_channel(item) is not None:
@@ -222,10 +263,10 @@ def project(analysis, *, clock_hz, pitch_policy='clamp', channel_map=None, force
                 if item.state.fnum is not None:
                     pitch(item)
         elif s.port == 0 and reg == 0x22:
-            emit(s, 0x18, (0xc2, 0xc9, 0xcb, 0xcd, 0xcf, 0xd6, 0xfb, 0xff)[state.lfo_rate],
-                 'vgm-conv approximate LFO frequency')
-            if state.lfo_enabled:
-                losses['lfo_depth_waveform_and_speed_not_equivalent'] += 1
+            emit(s, 0x18, _LFO_RATE_TO_OPM[state.lfo_rate],
+                 'approximate LFO frequency (derived rate table)')
+            lfo['enabled'] = bool(state.lfo_enabled)
+            lfo_bridge(s)
         elif s.port == 0 and reg in (0x24, 0x25, 0x26, 0x27):
             losses['source_timer_controls_not_projected'] += 1
             if force and reg == 0x27:
@@ -390,7 +431,7 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False, *
             writer.writerows(rows)
         settings = dict(state_origin='projected_opm', source_chip='YM2608', target_chip='YM2151',
             source_clock_hz=metadata['clock_hz'], target_clock_hz=TARGET_CLOCK,
-            mapping='vgm-conv OPNToOPMConverter', reference_revision=REFERENCE,
+            mapping='register-layout mapping derived from ymfm-based audit',
             channel_allocation=allocation_summary, force_projection=force_summary,
             ssg_projection=dict(model='existing PSG FM AL4/FB7', channels=len(ssg_map),
                 inferred_attacks=sum(w.inferred_key and bool(w.data & 0x78) for w in ssg_performance.writes),
@@ -401,7 +442,7 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False, *
             source_end_vgmticks=analysis.source_end_vgmticks, excluded_or_approximated=losses,
             pitch='committed 11-bit FNUM; existing nominal OPM KC/KF projection',
             target_only_assumptions='unwritten counterpart controls/pitch use reset zero',
-            limitations='FM EG rates follow the prescaler-aware nearest-rate law (identity at prescaler 6); DT identity per the shared detune table; ADPCM-B transcoding is approximate; no acoustic equivalence',
+            limitations='FM EG rates follow the prescaler-aware nearest-rate law (identity at prescaler 6); DT identity per the shared detune table; HW LFO bridged with fixed OPM PMD/AMD depth scaling (PMS/AMS identity, triangle waveform); ADPCM-B transcoding is approximate; no acoustic equivalence',
             pcm_ir=dict(pcm_profile=options.get('pcm_profile','standard'),source_codec='ym2608-adpcm-b', target_codec='msm6258-adpcm4',
                         native_segments=len(native_pcm.segments), target_samples=len(pcm_bridge.samples),
                         eligible_playbacks=sum(p.independently_playable for p in pcm_bridge.playbacks),

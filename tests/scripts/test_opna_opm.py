@@ -52,6 +52,20 @@ class OpnaOpmTests(unittest.TestCase):
         self.assertAlmostEqual(pitch[0]['source_frequency_hz'], expected)
         self.assertEqual(analysis.segments, before)
 
+    def test_lfo_depths_bridged_while_lfo_active(self):
+        analysis = self.analyze(bytes.fromhex(
+            '56 22 0d 56 b4 e3 56 a4 22 56 a0 69 56 28 f0 '
+            '61 01 00 56 28 00 56 22 05'))
+        rows, losses = project(analysis, clock_hz=7987200)
+        controls = [(r['target_register'], r['target_data']) for r in rows]
+        self.assertIn((0x1b, 0x02), controls)      # triangle waveform
+        self.assertIn((0x19, 0x80 | 86), controls)  # PMD 86
+        self.assertIn((0x19, 16), controls)         # AMD 16
+        self.assertEqual(losses['lfo_depths_bridged'], 1)
+        start = controls.index((0x19, 0x80 | 86))
+        self.assertIn((0x19, 0x80), controls[start:])
+        self.assertIn((0x19, 0), controls[start:])
+
     def test_prescaler_shifts_eg_rates_but_not_zero(self):
         # Prescaler 3: AR/D1R/D2R +2 in the 5-bit space; RR +1 (its
         # effective rate is 4*RR+2 on both chips); rate 0 stays frozen.

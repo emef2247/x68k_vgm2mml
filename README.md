@@ -102,11 +102,12 @@ Licensed under the [MIT License](LICENSE).
 | [run68x](https://github.com/kg68k/run68x) | MXCなどHuman68kプログラムの実行 |
 | [mmlx](https://github.com/h1romas4/chipstream/tree/main/crates/mmlx) | 既定のMML→MDXコンパイル、およびPCM経路のFM部分 |
 | [soundlog](https://github.com/h1romas4/chipstream/tree/main/crates/soundlog) | FMのMDX→VGM、PDX構築・PCM参照検査 |
-| [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv) | PSG→OPMの音色・音量対応、およびOPNA FM→OPMのレジスタ対応方式 |
+| [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv) | PSG→OPMの音色・音量対応 |
+| [FITOM](https://github.com/madscient/FITOM_staging/blob/main/docs/voice-parameter-reference.md) | FM音源ボイスパラメータの意味論リファレンス（OPNA→OPM変換の監査資料） |
 | [mdxtools](https://github.com/vampirefrog/mdxtools) | MDX／PDXの独立検査と逆コンパイル |
 | [MUCOMVGM](https://github.com/wingghost/MUCOMVGM) | テスト用MUC→VGM生成、およびOPNA FM制御状態の往復検証 |
 
-OPNA FM→OPMおよびPSG／SSG→OPMは、[vgm-conv](https://github.com/digital-sound-antiques/vgm-conv) の対応方式を参考にPython側へ実装しています。通常変換で外部のvgm-convコマンドやライブラリを必要とするわけではありません。
+PSG／SSG→OPMは、[vgm-conv](https://github.com/digital-sound-antiques/vgm-conv) の対応方式を参考にPython側へ実装しています。通常変換で外部のvgm-convコマンドやライブラリを必要とするわけではありません。OPNA／OPN2 FM→OPMの対応は、チップのレジスタ配置とymfm等のチップモデルに基づく本プロジェクト独自の監査・導出によります。
 
 使用した第三者コンポーネントのバージョン、参照元、著作権表示、ライセンス条件、および再配布時の注意事項は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) に記録しています。
 
@@ -215,11 +216,12 @@ The following tools and projects were used or referenced in the development, ver
 | [run68x](https://github.com/kg68k/run68x) | Running Human68k programs such as MXC |
 | [mmlx](https://github.com/h1romas4/chipstream/tree/main/crates/mmlx) | Default MML to MDX compilation, and the FM part of the PCM route |
 | [soundlog](https://github.com/h1romas4/chipstream/tree/main/crates/soundlog) | FM MDX to VGM, PDX construction and PCM reference checking |
-| [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv) | PSG to OPM timbre/volume correspondence, and the OPNA FM to OPM register correspondence method |
+| [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv) | PSG to OPM timbre/volume correspondence |
+| [FITOM](https://github.com/madscient/FITOM_staging/blob/main/docs/voice-parameter-reference.md) | FM voice-parameter semantics reference (audit source for the OPNA to OPM conversion) |
 | [mdxtools](https://github.com/vampirefrog/mdxtools) | Independent inspection and decompilation of MDX / PDX |
 | [MUCOMVGM](https://github.com/wingghost/MUCOMVGM) | Generating MUC to VGM for tests, and round-trip verification of OPNA FM control state |
 
-The OPNA FM to OPM and PSG / SSG to OPM conversions implement correspondence methods in Python with reference to [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv). Normal conversion does not require the external vgm-conv command or library.
+The PSG / SSG to OPM conversion implements a correspondence method in Python with reference to [vgm-conv](https://github.com/digital-sound-antiques/vgm-conv). Normal conversion does not require the external vgm-conv command or library. The OPNA / OPN2 FM to OPM correspondence is this project's own audit and derivation from the chips' register layouts and chip models such as ymfm.
 
 The versions, sources, copyright notices, license terms and redistribution notes of the third-party components used are recorded in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
