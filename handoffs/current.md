@@ -1,3 +1,29 @@
+# OPN2 S3: DAC bridge to MSM6258 (2026-11-02, branch claude/opn2, f7c5840)
+
+py/opn2_pcm.py bridges the YM2612 DAC to the PCM/PDX target, on by
+default (--opn2-dac / --no-opn2-dac). Both real-world encodings
+decode into one byte timeline: 0x2A write runs (gated by the
+analysis's DAC-enabled spans) and DAC streams (type-0 blocks,
+0x90-0x95 setup, 0x93 autonomous starts on the libvgm phase model,
+0x95 fast starts arming 0xE0 seeks / 0x8n plays). Lessons baked in:
+seeks/plays often come with NO setup commands (Bloodlines, Shinobi)
+and bind to one implicit bank context; stream supplies are NOT
+gated by the DAC enable bit (Time Trax never sets it yet streams
+its whole soundtrack); Bloodlines' entire DAC activity is a tick-0
+artifact (240 wait-0 plays + silence writes) that correctly yields
+no playbacks. Runs split at >10 ms gaps and at the song-loop
+boundary, dedupe by waveform hash; decode notes ride in the PCM
+analysis observations (any entry in issues blocks the planner as
+"not representable"). Verified: Burning Force 03 MML/MDX
+byte-identical to S2; Shinobi 06 (with --force for DCSG) gives 518
+playbacks / 63 samples, PDX 148,389 B, MDX 33,802 B compiled. Time
+Trax 01 decodes fully (1.58M plays, expanded) but its continuous
+stream is one waveform per traversal and exceeds PDX capacity
+(2,080,280 B needed) — phrase-level slicing of continuous streams
+is the remaining DAC gap, alongside the known FM MML capacity wall.
+Next stage is S4 (DCSG destination, decision at the gate with the
+duty measurements already in opn2_source summaries).
+
 # OPN2: DAC stream recognition + Time Trax survey (2026-11-02, branch claude/opn2)
 
 Time Trax (Prototype, MD; the user's next target after Burning
