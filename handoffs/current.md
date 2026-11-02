@@ -1,3 +1,26 @@
+# OPN2 (YM2612) S1: frontend + native analysis (2026-11-02, branch claude/opn2)
+
+User-approved port of mucom88_vgm2mml's OPN2 support (design study:
+~/workspace/x68k_opn2_study/DESIGN.md in the agent workspace). S1 only:
+py/opn2.py is a port of mucom88's musical_hal opn2.py with one
+adaptation (DAC enable 0x2B bit 7 is channel-6 state, not an
+unmodeled write; DAC data 0x2A stays unmodeled-retained).
+py/opn2_source.py builds the register-evidence CSV, dumps
+states/segments/unmodeled CSVs, and measures DAC encoding (0x2A runs
+vs stream controls) and DCSG duty for the later stages.
+conversion_config inventories 0x52/0x53 (second instance 0xA2/0xA3
+unsupported), reads the clock at 0x2C, retains YM2612 DAC stream
+controls as evidence, and routes {'opn2'} / {'opn2','dcsg'} to
+'opn2-to-opm', which currently stops after analysis with an explicit
+S1 message. 6 synthetic tests pass; the full-suite failure set is
+unchanged (27 names, same VM).
+
+Burning Force (MD, 16 tracks, user's target pack; track 03 Bay Yard
+is the pinpoint goal) measured FM-only on every track: no DAC
+writes, no audible DCSG, no CSM. S2 (FM->OPM) alone makes the pack
+play. Next: S2 projection in the opna_opm shape, OPNA channel map,
+ch3-special/CSM reject without --force.
+
 # Export CLI defaults (2026-10-30)
 
 User requested MDX export defaults: pcm-buffer-kib1200, pcm-policy best-effort, no-vgm=True. Explicit values and --vgm still override. Defaults resolve only for MDX so inherited OPM diagnostic routes retain behavior. Canonical/direct Python API defaults unchanged. Export34tests pass; no music conversion. Direct loader +4096margin gives1224704B PDX budget.

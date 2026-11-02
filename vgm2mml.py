@@ -392,7 +392,7 @@ def main():
             route = 'psg-scc-to-opm'
         report['force_requested'] = args.force
         if args.force and (args.target != 'mdx' or route not in (
-                'opna-fm-to-opm', 'native-opm-pcm', 'opm-segapcm-source', 'opm-c140-source', 'opm-msm6295-source', 'psg-scc-to-opm', 'dcsg-to-opm')):
+                'opna-fm-to-opm', 'native-opm-pcm', 'opm-segapcm-source', 'opm-c140-source', 'opm-msm6295-source', 'psg-scc-to-opm', 'dcsg-to-opm', 'opn2-to-opm')):
             raise ValueError('--force requires a supported MDX source route and --target mdx')
         if args.fm_only and (args.target != 'mdx' or route != 'opm-segapcm-source'
                              or 'opm' not in usage['used_chips']):
@@ -425,7 +425,7 @@ def main():
             raise ValueError('--target opm-additive requires the additive PSG model')
         if route == 'psg-scc-to-opm' and (args.notation == 'legacy' or args.track_layout != 'channels'):
             raise ValueError('PSG/SCC OPM projection supports structured/registers notation and channel tracks')
-        if route in ('native-opm-pcm', 'opna-fm-to-opm', 'opm-segapcm-source', 'opm-c140-source', 'opm-msm6295-source') and any(v is not None for v in (args.psg_model,args.psg_gain,args.scc_gain,args.scc_model,args.scc_voice_bank)):
+        if route in ('native-opm-pcm', 'opna-fm-to-opm', 'opm-segapcm-source', 'opm-c140-source', 'opm-msm6295-source', 'opn2-to-opm') and any(v is not None for v in (args.psg_model,args.psg_gain,args.scc_gain,args.scc_model,args.scc_voice_bank)):
             raise ValueError('PSG/SCC projection options do not apply to native MDX')
         report['status'] = 'resolved'
         record_report()
@@ -520,6 +520,23 @@ def main():
                 print(f"PCM policy: auto -> {selection['effective']} ({selection['reason']})")
             print(f'PCM known losses: {len(assessment["known_losses"])}; assessment: {assessment_path}')
         return
+
+    if route == 'opn2-to-opm':
+        from opn2_source import analyze_opn2_source
+        try:
+            summary = analyze_opn2_source(vgm_path, song_dir, base_name, usage)
+        except (OSError, ValueError) as error:
+            report.update(status='blocked', reason=str(error))
+            record_report()
+            parser.error(str(error))
+        report.update(status='source_analyzed', opn2=summary,
+                      reason='OPN2 target projection is not implemented yet; native analysis retained (S1)')
+        record_report()
+        print(f"OPN2 analysis: {summary['segments']} segments, "
+              f"{summary['key_counts']['channel_attack_events']} channel attacks, "
+              f"DAC data writes {summary['dac']['data_writes']} in {summary['dac']['runs']} runs, "
+              f"DAC stream controls {summary['dac']['stream_controls']}")
+        parser.error('OPN2 target projection is not implemented yet; native analysis retained (S1)')
 
     if route == 'psg-scc-to-opm':
         from psg_scc_conversion import convert
