@@ -357,7 +357,21 @@ Verification: test_export_mdx (38) and test_opm_song_loop (6)
 pass; full-suite failure set is the established 27 (a pristine
 worktree shows 30 only because a fresh checkout lacks the .tools
 setup -- SCC voice fitting core -- which is environmental).
-Known VM limitation, pre-existing on pristine HEAD: the final
-package assembly step fails here with "Missing PDX beside input"
-even though conversion and MDX compilation succeed; the user's
-environment packages normally.
+Correction (2026-11-02): the "Missing PDX beside input" failure
+once recorded here as a VM-only limitation was a misattribution.
+It is a real bug, reproduced in the user's environment with
+Gradius II (nearly every track): psg_scc_conversion._convert ran
+the inner OPM conversion in projected_opm/ and lifted only the
+MML and normalization JSON to the track folder, leaving the typed
+MDX/PDX pair and the PCM assessment behind, so package assembly
+could not find the PDX named by the MML. Any NES (or PSG/SCC)
+conversion whose PCM bridge generates a typed pair was affected;
+tracks without PCM references passed. Fixed on claude/nes-apu:
+_convert now also lifts the pair (via the assessment's generated
+artifact record) and the assessment JSON/CSV, and the tempdir
+wrapper in convert() copies the same set. Verified: Gradius II
+"Tabidachi (Air Battle)" went from compilation_failed to success
+(typed_pcm_mmlx). Note a separate follow-on: tracks whose DPCM
+playbacks contain stops/holds/resets still end as
+pcm_replay_unavailable because soundlog 0.15.0 cannot preserve
+them in replay verification; the MDX/PDX themselves are produced.

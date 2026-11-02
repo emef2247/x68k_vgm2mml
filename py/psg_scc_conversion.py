@@ -295,6 +295,20 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
         normalization_path = native_out / (source.stem + '.mdx.normalization.json')
         normalization = json.loads(normalization_path.read_text(encoding='utf-8'))
         if normalization_path.parent!=out:shutil.copyfile(normalization_path, out / normalization_path.name)
+        if native_out!=out:
+            # The typed PCM pair and its assessment belong beside the MML:
+            # consumers resolve the PDX named by the MDX/MML in the output
+            # folder, not in the projected_opm work folder. Lift only the
+            # artifacts the inner conversion records as generated this run.
+            from pcm_assessment import generated_binary_artifacts
+            for artifact in generated_binary_artifacts(native_out, source.stem):
+                shutil.copyfile(artifact, out / artifact.name)
+            assessment_path = native_out / (source.stem + '.pcm.assessment.json')
+            if assessment_path.is_file():
+                shutil.copyfile(assessment_path, out / assessment_path.name)
+                assessment_csv = assessment_path.with_suffix('.csv')
+                if assessment_csv.is_file():
+                    shutil.copyfile(assessment_csv, out / assessment_csv.name)
         plan.structured_context = StructuredContext(performance, analysis, projection, normalization)
         _mark_projected_evidence(folder, source, target, performance, projection, normalization,exact_source_times=exact_times,pcm_boundaries=pcm_times)
         text = native_mml.read_text(encoding='utf-8')
@@ -349,6 +363,9 @@ def convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model=
         shutil.copyfile(normalization,out/normalization.name)
         voice_report=mml.with_name(Path(source).stem+'.scc.voice_projection.json')
         if voice_report.is_file():shutil.copyfile(voice_report,out/voice_report.name)
+        for suffix in ('.mdx', '.pdx', '.pcm.assessment.json', '.pcm.assessment.csv'):
+            artifact = mml.with_name(Path(source).stem + suffix)
+            if artifact.is_file():shutil.copyfile(artifact, out / artifact.name)
     return result, plan
 
 
