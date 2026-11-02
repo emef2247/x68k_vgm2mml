@@ -193,7 +193,12 @@ def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, forc
             block = 0
         else:
             fnum, block = state.fnum, state.block
-        frequency = fnum * clock_hz * (6 / state.fm_prescale_divisor) / (144 * 2 ** (20 - block))
+        # Hardware pitch: the OPN phase counter is 20 bits and the block
+        # scales FNUM by 2**(block-1), so Hz = fnum * clock / (144 *
+        # 2**(21-block)) at prescale 6 (YM3438 manual formula; ymfm's
+        # Nuked-verified phase generator agrees). The 2**(20-block)
+        # form used here before played every note one octave high.
+        frequency = fnum * clock_hz * (6 / state.fm_prescale_divisor) / (144 * 2 ** (21 - block))
         if frequency:
             try:
                 kc, kf, actual = opm_pitch(frequency, TARGET_CLOCK)

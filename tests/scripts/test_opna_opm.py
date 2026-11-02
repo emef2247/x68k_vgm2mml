@@ -48,7 +48,10 @@ class OpnaOpmTests(unittest.TestCase):
         self.assertIn((8, 4), controls)
         pitch = [r for r in rows if r['source_frequency_hz'] is not None]
         self.assertTrue(pitch)
-        expected = 0x269 * 7987200 / (144 * 2**16)
+        # FNUM 0x269 at block 4 is C4 in the YM2608 note table; at the
+        # 7.9872 MHz clock the hardware formula (phase counter 20 bits,
+        # block scales by 2**(block-1)) gives ~261.1 Hz, not ~522.2.
+        expected = 0x269 * 7987200 / (144 * 2**17)
         self.assertAlmostEqual(pitch[0]['source_frequency_hz'], expected)
         self.assertEqual(analysis.segments, before)
 
