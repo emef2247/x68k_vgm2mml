@@ -180,6 +180,8 @@ def build_parser():
                             help='OPM + SegaPCM diagnostic export: retain native SegaPCM evidence, omit it from MDX MML')
     diagnostic.add_argument('--dump-passes', action='store_true',
                             help='Keep source/state/Segment CSVs and target analysis passes')
+    parser.add_argument('--emit-vgm', action='store_true',
+                        help='Also write <stem>.target.vgm beside the MML: the projected OPM stream the MML was built from, with bound PCM playbacks merged as MSM6258 streams (PSG/SCC, NES, DCSG and OPNA routes)')
     diagnostic.add_argument('--debug', action='store_true',
                             help='Keep diagnostics (MGSDRV also keeps all chip MML variants)')
     diagnostic.add_argument('--pcm-generator', help='External typed PCM MDX/PDX helper path')
@@ -457,7 +459,8 @@ def main():
                 title=args.title if args.title is not None else title_from_gd3(vgm_path, base_name, args.gd3_language),
                 loops=not args.no_loops, song_loop=not args.no_song_loop,
                 normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms,
-                fm_state_ms=args.fm_state_ms, pitch_policy=args.opm_pitch_policy or 'clamp', force=args.force)
+                fm_state_ms=args.fm_state_ms, pitch_policy=args.opm_pitch_policy or 'clamp', force=args.force,
+                emit_vgm=args.emit_vgm)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()
@@ -467,12 +470,18 @@ def main():
         for line in console_lines(plan):
             print(line)
         print(f'MDX MML: {mml}')
+        if args.emit_vgm:
+            if plan.settings.get('target_vgm'):
+                print(f"Target VGM: {Path(song_dir) / (base_name + '.target.vgm')}")
+            else:
+                print('Target VGM: not produced for this conversion')
         return
 
     if route == 'opna-fm-to-opm':
         from opna_opm import convert
         try:
             mml, settings = convert(vgm_path, song_dir, dump_passes=args.dump_passes or args.debug,
+                emit_vgm=args.emit_vgm,
                 track_layout=args.track_layout, notation=args.notation,
                 loops=not args.no_loops, song_loop=not args.no_song_loop,
                 title=args.title if args.title is not None else title_from_gd3(vgm_path, base_name, args.gd3_language),
@@ -487,6 +496,11 @@ def main():
         report.update(status='generated', projection_settings=settings)
         record_report()
         print(f'MDX MML: {mml}')
+        if args.emit_vgm:
+            if settings.get('target_vgm'):
+                print(f"Target VGM: {Path(song_dir) / (base_name + '.target.vgm')}")
+            else:
+                print('Target VGM: not produced for this conversion')
         forced = settings['force_projection']
         if forced['omitted_intervals']:
             print(f"WARNING: --force muted {forced['omitted_intervals']} unsupported SSG intervals; "
@@ -543,7 +557,7 @@ def main():
                                 dump_passes=args.dump_passes or args.debug,
                                 notation=args.notation, loops=not args.no_loops, song_loop=not args.no_song_loop,
                                 normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms,
-                                force=args.force)
+                                force=args.force, emit_vgm=args.emit_vgm)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()
@@ -557,6 +571,11 @@ def main():
         if source_selection!='all':
             print('Output source selection: '+source_selection.upper()+' only; native source evidence retained')
         print(f'MDX MML: {mml}')
+        if args.emit_vgm:
+            if plan.settings.get('target_vgm'):
+                print(f"Target VGM: {Path(song_dir) / (base_name + '.target.vgm')}")
+            else:
+                print('Target VGM: not available for the held-register compatibility projection')
         if normalize:
             with open(os.path.join(song_dir, base_name + '.mdx.normalization.json'), encoding='utf-8') as stream:
                 normalization = json.load(stream)
@@ -565,6 +584,9 @@ def main():
 
     if args.target == 'mdx':
         from opm_conversion import convert
+        if args.emit_vgm:
+            print('Target VGM: not available for native OPM routes yet; '
+                  'the projected routes (PSG/SCC, NES, DCSG, OPNA) support --emit-vgm')
         try:
             mml, _, _ = convert(vgm_path, song_dir, dump_passes=args.dump_passes or args.debug,
                                 track_layout=args.track_layout, notation=args.notation,

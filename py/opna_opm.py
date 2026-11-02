@@ -239,7 +239,7 @@ def write_vgm(rows, path, *, end, loop_start=None, loop_event_id=None):
     Path(path).write_bytes(raw)
 
 
-def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False, **options):
+def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False, emit_vgm=False, **options):
     """Reconstruct native Segments, project FM, reuse canonical OPM conversion."""
     from opm_conversion import convert as convert_opm
     source, outdir = Path(source), Path(outdir)
@@ -385,6 +385,13 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False, *
         timing_path = outdir / (source.stem + '.pcm.timing.json')
         final_pcm = json.loads(timing_path.read_text(encoding='utf-8')) if timing_path.is_file() else {}
         settings['pcm_ir']['pdx_distinct_samples'] = final_pcm.get('pcm_sample_count', 0)
+        if emit_vgm:
+            from target_vgm_emit import emit_target_vgm, read_omitted_playback_ids
+            omitted = read_omitted_playback_ids(
+                outdir / (source.stem + '.pcm_omitted_playbacks.csv'))
+            settings['target_vgm'] = emit_target_vgm(
+                target, outdir / (source.stem + '.target.vgm'),
+                pcm_analysis=pcm_bridge, omitted_playback_ids=omitted)
         (folder / 'provenance.json').write_text(json.dumps(settings, indent=2)+'\n', encoding='utf-8')
         (outdir / (source.stem + '.opna-opm.json')).write_text(
             json.dumps(settings, indent=2)+'\n', encoding='utf-8')
