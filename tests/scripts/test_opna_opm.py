@@ -52,6 +52,35 @@ class OpnaOpmTests(unittest.TestCase):
         self.assertAlmostEqual(pitch[0]['source_frequency_hz'], expected)
         self.assertEqual(analysis.segments, before)
 
+    def test_prescaler_shifts_eg_rates_but_not_zero(self):
+        # Prescaler 3: AR/D1R/D2R +2 in the 5-bit space; RR +1 (its
+        # effective rate is 4*RR+2 on both chips); rate 0 stays frozen.
+        analysis = self.analyze(bytes.fromhex(
+            '56 2e 00 '
+            '56 50 0a 56 60 14 56 70 08 56 80 25 '
+            '56 54 00 56 28 f0'))
+        rows, losses = project(analysis, clock_hz=7987200)
+        controls = [(r['target_register'], r['target_data']) for r in rows]
+        self.assertIn((0x80, 0x0c), controls)   # AR 10 -> 12
+        self.assertIn((0xa0, 0x16), controls)   # D1R 20 -> 22
+        self.assertIn((0xc0, 0x0a), controls)   # D2R 8 -> 10
+        self.assertIn((0xe0, 0x26), controls)   # SL 2, RR 5 -> 6
+        self.assertIn((0x88, 0x00), controls)   # AR 0 stays 0
+        self.assertGreater(losses['eg_rate_prescaler_adjustments'], 0)
+        # Prescaler 2: +3 steps on the 5-bit rates, RR +1.
+        analysis = self.analyze(bytes.fromhex(
+            '56 2f 00 56 50 0a 56 80 25 56 28 f0'))
+        rows, _ = project(analysis, clock_hz=7987200)
+        controls = [(r['target_register'], r['target_data']) for r in rows]
+        self.assertIn((0x80, 0x0d), controls)
+        self.assertIn((0xe0, 0x26), controls)
+        analysis = self.analyze(bytes.fromhex('56 50 0a 56 80 25 56 28 f0'))
+        rows, losses = project(analysis, clock_hz=7987200)
+        controls = [(r['target_register'], r['target_data']) for r in rows]
+        self.assertIn((0x80, 0x0a), controls)
+        self.assertIn((0xe0, 0x25), controls)
+        self.assertNotIn('eg_rate_prescaler_adjustments', losses)
+
     def test_output_enable_changes_pan_without_invented_key_edges(self):
         analysis = self.analyze(bytes.fromhex(
             '56 29 80 57 b4 c0 56 28 f4 62 56 29 00 62 56 29 80 62'))

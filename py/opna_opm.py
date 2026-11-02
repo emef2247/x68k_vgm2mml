@@ -24,6 +24,34 @@ TARGET_CLOCK = 4000000
 REFERENCE = '780a20ed505e23eb21aa9c6ce3f349029718b5a0'
 NON_FM = {'ssg', 'rhythm', 'adpcm_b', 'irq_flag_control'}
 
+# EG rate conversion. The OPN and OPM envelope cores share one
+# design (EG clock = sample rate / 3, effective rate = 2R + the
+# key-scale term, R = 0 frozen); only the sample rate differs
+# (OPNA 7,987,200/144 = 55.5 kHz at prescaler 6, OPM 4,000,000/64
+# = 62.5 kHz). At prescaler 6 the nearest OPM rate is the source
+# rate itself (residual -11% time), but prescaler 3/2 sources run
+# their envelopes 1.78x/2.67x faster and need +2/+3 rate steps to
+# hold envelope times on OPM. Derived in the opna_opm_voice study
+# (eg_rate_map.csv); the shift is additive in the 5-bit rate space
+# and therefore independent of the key-scale term.
+_EG_PRESCALE_SHIFT = {6: 0, 3: 2, 2: 3}
+
+
+def _eg_rate(rate, divisor):
+    if not rate:
+        return rate
+    return min(31, rate + _EG_PRESCALE_SHIFT.get(divisor, 0))
+
+
+def _eg_release(rr, divisor):
+    # In effective-rate units the release rate is 4*RR+2 on both
+    # chips (ymfm's OPN and OPM cores agree), so the prescaler
+    # correction of +3.3/+5.7 effective-rate units is under one
+    # RR step in both cases and rounds to +1.
+    if not rr or divisor == 6:
+        return rr
+    return min(15, rr + 1)
+
 
 def _unmapped_operator_slot(write):
     return (write.domain == 'uninterpreted' and write.chip_type == 'YM2608'
@@ -149,11 +177,22 @@ def project(analysis, *, clock_hz, pitch_policy='clamp', channel_map=None, force
         if 0x30 <= reg <= 0x8f:
             bank = (reg >> 2) & 3
             op = state.operators[bank]
-            data = {0x30: lambda: op.dt << 4 | op.mul,
-                    0x40: lambda: op.tl,
-                    0x50: lambda: op.ks << 6 | op.ar,
-                    0x60: lambda: op.am_enabled << 7 | op.d1r,
-                    0x70: lambda: op.d2r, 0x80: lambda: op.sl << 4 | op.rr}[reg & 0xf0]()
+            divisor = state.fm_prescale_divisor
+            plain = {0x30: lambda: op.dt << 4 | op.mul,
+                     0x40: lambda: op.tl,
+                     0x50: lambda: op.ks << 6 | op.ar,
+                     0x60: lambda: op.am_enabled << 7 | op.d1r,
+                     0x70: lambda: op.d2r,
+                     0x80: lambda: op.sl << 4 | op.rr}[reg & 0xf0]()
+            data = plain
+            if divisor != 6:
+                data = {0x50: lambda: op.ks << 6 | _eg_rate(op.ar, divisor),
+                        0x60: lambda: op.am_enabled << 7 | _eg_rate(op.d1r, divisor),
+                        0x70: lambda: _eg_rate(op.d2r, divisor),
+                        0x80: lambda: op.sl << 4 | _eg_release(op.rr, divisor)
+                        }.get(reg & 0xf0, lambda: plain)()
+                if data != plain:
+                    losses['eg_rate_prescaler_adjustments'] += 1
             emit(s, 0x40 + ((reg & 0xf0) - 0x30) * 2 + bank * 8 + ch,
                  data, 'vgm-conv operator bank mapping; DT2 reset zero')
         elif 0x90 <= reg <= 0x9f:
@@ -362,7 +401,7 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False, *
             source_end_vgmticks=analysis.source_end_vgmticks, excluded_or_approximated=losses,
             pitch='committed 11-bit FNUM; existing nominal OPM KC/KF projection',
             target_only_assumptions='unwritten counterpart controls/pitch use reset zero',
-            limitations='FM EG/DT rates unretimed; ADPCM-B transcoding is approximate; no acoustic equivalence',
+            limitations='FM EG rates follow the prescaler-aware nearest-rate law (identity at prescaler 6); DT identity per the shared detune table; ADPCM-B transcoding is approximate; no acoustic equivalence',
             pcm_ir=dict(pcm_profile=options.get('pcm_profile','standard'),source_codec='ym2608-adpcm-b', target_codec='msm6258-adpcm4',
                         native_segments=len(native_pcm.segments), target_samples=len(pcm_bridge.samples),
                         eligible_playbacks=sum(p.independently_playable for p in pcm_bridge.playbacks),

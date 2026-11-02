@@ -363,9 +363,9 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
             source_end_vgmticks=analysis.source_end_vgmticks, excluded_or_approximated=losses,
             pitch='committed 11-bit FNUM; existing nominal OPM KC/KF projection',
             target_only_assumptions='unwritten counterpart controls/pitch use reset zero',
-            limitations=('FM EG/DT rates unretimed; DAC projected to MSM6258 ADPCM (S3); '
+            limitations=('FM EG/DT rates: identity is the derived nearest-rate law at the fixed prescaler; DAC projected to MSM6258 ADPCM (S3); '
                          'DCSG (S4) not projected; no acoustic equivalence' if bridge is not None else
-                         'FM EG/DT rates unretimed; DAC and DCSG (S4) not projected; no acoustic equivalence'),
+                         'FM EG/DT rates: identity is the derived nearest-rate law at the fixed prescaler; DAC and DCSG (S4) not projected; no acoustic equivalence'),
             source_loop=loop_meta, passes_retained=dump_passes,
             source_map=str(Path('projected_opm') / mapping.name) if dump_passes else None)
         (folder / 'provenance.json').write_text(json.dumps(settings, indent=2) + '\n', encoding='utf-8')
