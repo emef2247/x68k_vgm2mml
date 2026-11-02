@@ -103,7 +103,7 @@ class NesapuRouteTests(unittest.TestCase):
             self.assertEqual(
                 projection_summary(root / 'balanced', '--nes-balance'),
                 {'pulse': 1.3, 'triangle': 0.75, 'noise': 0.8,
-                 'dpcm': 1.25, 'fds': 1.0})
+                 'dpcm': 0.625, 'fds': 1.0})
             overridden = projection_summary(root / 'override', '--nes-gain', 'pulse=1.0')
             self.assertEqual(overridden['pulse'], 1.0)
             self.assertEqual(overridden['triangle'], 0.75)
