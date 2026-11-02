@@ -1,3 +1,22 @@
+# OPNA->OPM voice laws V1: prescaler-aware EG (2026-11-02, claude/opna-voice a155c34)
+
+Study in ~/workspace/opna_opm_voice/ (AUDIT.md, DESIGN.md,
+eg_rate_map.py/.csv), prompted by the user's BF03 listening
+(playing fine, timbre not quite right; direction: convert the
+principled way first, judge by listening). Established laws:
+TL identity (FITOM common 0.75 dB/step space), DT identity (ymfm
+shares one detune table/sign across OPN and OPM), EG identity at
+prescaler 6 / OPN2 (nearest-rate derivation; residuals -11% /
+-15%). Implemented: prescaler 3/2 EG correction in opna_opm
+(AR/D1R/D2R +2/+3, RR +1, 0 frozen, counted in the summary).
+BF03 output byte-identical. Suite failure set unchanged (the 3
+NES CLI tests that fail in any worktree pass in the main
+checkout; worktree artifact, not a regression).
+Open: the MDX route does not render hardware LFO at all (state
+captured, never consumed), so PMS/AMS depth laws (OPN vs OPM
+models differ structurally; PMD/AMD is the lever) wait on an LFO
+rendering design decision.
+
 # OPN2 S3: DAC bridge to MSM6258 (2026-11-02, branch claude/opn2, f7c5840)
 
 py/opn2_pcm.py bridges the YM2612 DAC to the PCM/PDX target, on by
