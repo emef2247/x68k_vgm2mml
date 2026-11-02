@@ -2,6 +2,7 @@
 import argparse
 import csv
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -40,6 +41,30 @@ def _bounded(path, output):
     if not path.resolve().is_relative_to(output):
         raise ValueError(f'Output path leaves the selected output directory: {path}')
     return path
+
+
+_MDX_CAPACITY_DETAIL = re.compile(
+    r'MDX track \d+ offset exceeds the maximum 0xfffe'
+    r'|loop start value .* cannot be represented in MDX'
+    r'|Combined native MDX exceeds 65535 bytes')
+
+
+def _mdx_capacity_guidance(detail, mml_path):
+    """Guidance for an MDX serialization capacity failure, else None.
+
+    The generator enforces the MDX file format's 16-bit track-offset
+    limit while writing the .mdx file. The MML itself is complete and
+    retained, and players that compile MML with a large data buffer
+    are not bound by the file-format limit, so point the user at the
+    retained MML instead of leaving a bare compiler error.
+    """
+    if mml_path is None or not _MDX_CAPACITY_DETAIL.search(detail or ''):
+        return None
+    kib = mml_path.stat().st_size / 1024
+    return (f'Note: the MML was generated completely ({kib:.0f} KiB) and is retained. '
+            'This failure is the MDX file format\'s 16-bit track-offset limit, reached while '
+            'writing the .mdx file. If your player compiles MML itself with a large enough '
+            'data buffer (for example MXDRV started with -m:256), try the retained MML directly.')
 
 
 def _save_results(output, rows):
@@ -341,6 +366,10 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
         for label, evidence in (('compiler_native_mdx', native_copy), ('compiler_metadata', compiler_metadata)):
             if evidence.is_file() and evidence.stat().st_size:
                 row[label] = str(evidence.relative_to(output))
+        capacity_guidance = _mdx_capacity_guidance(
+            row['detail'], artifacts[0] if row['mml'] else None)
+        if capacity_guidance:
+            row['detail'] = '\n'.join(filter(None, (row['detail'], capacity_guidance)))
         if row['mdx']:
             diagnostic = inspect_export_commands(generator, artifacts[1], census, timeout)
             if diagnostic:
@@ -368,6 +397,8 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
         rows.append(row)
         _save_results(output, rows)
         print(f"{_display_name or relative}: {row['status']}", flush=True)
+        if capacity_guidance:
+            print(capacity_guidance, flush=True)
         if row.get('pcm_policy_requested') == 'auto' and row['pcm_policy']:
             print(f"PCM policy: auto -> {row['pcm_policy']} ({row['pcm_policy_reason']})", flush=True)
         for line in bank_console_lines(bank_summary):

@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT / 'scripts'), str(ROOT / 'py')]
-from export_mdx import inspect_export_commands, main, run_batch, tick_budget
+from export_mdx import _mdx_capacity_guidance, inspect_export_commands, main, run_batch, tick_budget
 from opm_mdx import mdx_tick
 
 
@@ -39,6 +39,27 @@ def successful_run(command, **kwargs):
         Path(command[2]).write_bytes(b'MDX')
         Path(command[3]).write_bytes(b'VGM')
     return subprocess.CompletedProcess(command, 0, '', '')
+
+
+class MdxCapacityGuidanceTests(unittest.TestCase):
+    def test_offset_failure_points_at_retained_mml(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mml = Path(tmp) / 'song.mdx.mml'
+            mml.write_bytes(b'x' * 231949)
+            for detail in ('data inconsistency: MDX track 5 offset exceeds the maximum 0xfffe',
+                           'loop start value -63105 cannot be represented in MDX',
+                           'Combined native MDX exceeds 65535 bytes'):
+                note = _mdx_capacity_guidance(detail, mml)
+                self.assertIn('227 KiB', note)
+                self.assertIn('MXDRV', note)
+
+    def test_other_failures_and_missing_mml_get_no_guidance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mml = Path(tmp) / 'song.mdx.mml'
+            mml.write_bytes(b'x')
+            self.assertIsNone(_mdx_capacity_guidance('some other compiler error', mml))
+            self.assertIsNone(_mdx_capacity_guidance(
+                'MDX track 1 offset exceeds the maximum 0xfffe', None))
 
 
 class ExportMdxTests(unittest.TestCase):
