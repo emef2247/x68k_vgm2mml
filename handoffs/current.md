@@ -1,3 +1,25 @@
+# OPN2 (YM2612) S2: FM -> OPM projection (2026-11-02, branch claude/opn2)
+
+py/opn2_opm.py projects the S1 analysis in the opna_opm shape
+(vgm-conv mapping, OPNA channel map: FM 0-2 -> OPM 0-2, FM 3-5 ->
+OPM 4-6, OPM ch3 reserved). Ch3-special/CSM reject without
+--force (OPNA precedent). While the DAC is enabled, ch6 FM output
+is gated from state; DAC sample playback itself (S3) and audible
+DCSG (S4) are --force omissions recorded in the settings JSON
+(<stem>.opn2-opm.json) and printed. One real-data correction:
+operator registers with channel bits 3 (0x30-0x9F, &3==3) select
+no channel on hardware — drivers upload padded voice rows — so
+the projection classifies them as known no-ops counted in the
+losses, mirroring opna_opm's slot classification (field note
+2026-11-02_opn2_unmapped_operator_slots.md).
+
+Verified: Burning Force 03 Bay Yard (the user's pinpoint target;
+the whole 16-track pack is FM-only: no DAC writes, no audible
+DCSG, no CSM) converts without --force and compiles to an
+18,835-byte MDX with the real fixture generator. 12 OPN2 tests
+pass (6 S1 + 6 S2). Remaining stages: S3 DAC bridge, S4 DCSG
+destination (decided from measurements at that gate).
+
 # OPN2 (YM2612) S1: frontend + native analysis (2026-11-02, branch claude/opn2)
 
 User-approved port of mucom88_vgm2mml's OPN2 support (design study:

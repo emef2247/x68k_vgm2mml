@@ -522,21 +522,27 @@ def main():
         return
 
     if route == 'opn2-to-opm':
-        from opn2_source import analyze_opn2_source
+        from opn2_opm import convert
         try:
-            summary = analyze_opn2_source(vgm_path, song_dir, base_name, usage)
+            mml, settings = convert(vgm_path, song_dir, dump_passes=args.dump_passes or args.debug,
+                track_layout=args.track_layout, notation=args.notation,
+                loops=not args.no_loops, song_loop=not args.no_song_loop,
+                title=args.title if args.title is not None else title_from_gd3(vgm_path, base_name, args.gd3_language),
+                normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms,
+                pitch_policy=args.opm_pitch_policy or 'clamp', force=args.force,
+                dcsg_present='dcsg' in usage['used_chips'])
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()
             parser.error(str(error))
-        report.update(status='source_analyzed', opn2=summary,
-                      reason='OPN2 target projection is not implemented yet; native analysis retained (S1)')
+        report.update(status='generated', projection_settings=settings)
         record_report()
-        print(f"OPN2 analysis: {summary['segments']} segments, "
-              f"{summary['key_counts']['channel_attack_events']} channel attacks, "
-              f"DAC data writes {summary['dac']['data_writes']} in {summary['dac']['runs']} runs, "
-              f"DAC stream controls {summary['dac']['stream_controls']}")
-        parser.error('OPN2 target projection is not implemented yet; native analysis retained (S1)')
+        print(f'MDX MML: {mml}')
+        for omission in settings['force_projection']['omitted']:
+            print(f"OPN2 projection: {omission['source_chip']} omitted ({omission['reason']})")
+        for domain, count in settings['excluded_or_approximated'].items():
+            print(f'OPN2 projection: {domain} ({count} occurrences)')
+        return
 
     if route == 'psg-scc-to-opm':
         from psg_scc_conversion import convert

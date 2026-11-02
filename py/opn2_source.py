@@ -88,6 +88,22 @@ def _dcsg_measurements(raw, source_end):
     return dict(channels=channels, issues=list(analysis.issues))
 
 
+def build_analysis(source, trace_path, *, loop_count=1):
+    """Build the OPN2 analysis for ``source``, writing its register trace.
+
+    Returns (analysis, clock_raw, source_end_vgmticks, events); the
+    events are the full command_times list the trace event ids index.
+    """
+    raw = read_vgm_bytes(source)
+    header = read_vgm_header(raw)
+    clock_raw = int.from_bytes(raw[0x2c:0x30], 'little') if header['version'] >= 0x150 else 0
+    events = tuple(command_times(raw, loop_count=loop_count))
+    source_end = max((event.vgmticks + event.wait_samples for event in events), default=0)
+    _trace_csv(raw, events, clock_raw, trace_path)
+    analysis = opn2.build_segments(trace_path, end_vgmticks=source_end)
+    return analysis, clock_raw, source_end, events
+
+
 def analyze_opn2_source(source, outdir, stem, usage):
     """Run the OPN2 state machine and retain its evidence in ``outdir``.
 
@@ -98,13 +114,8 @@ def analyze_opn2_source(source, outdir, stem, usage):
     root = Path(outdir)
     root.mkdir(parents=True, exist_ok=True)
     raw = read_vgm_bytes(source)
-    header = read_vgm_header(raw)
-    clock_raw = int.from_bytes(raw[0x2c:0x30], 'little') if header['version'] >= 0x150 else 0
-    events = tuple(command_times(raw))
-    source_end = max((event.vgmticks + event.wait_samples for event in events), default=0)
     trace_path = root / f'{stem}.native.opn2.registers.csv'
-    _trace_csv(raw, events, clock_raw, trace_path)
-    analysis = opn2.build_segments(trace_path, end_vgmticks=source_end)
+    analysis, clock_raw, source_end, events = build_analysis(source, trace_path)
     opn2.dump_analysis(analysis,
                        state_csv=root / f'{stem}.native.opn2.states.csv',
                        segments_csv=root / f'{stem}.native.opn2.segments.csv')
