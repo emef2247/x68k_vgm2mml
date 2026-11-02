@@ -1,3 +1,14 @@
+# NES DPCM gain halved for ADPCM playback (2026-11-02, claude/nes-apu ed3b8af)
+
+User listened to the FC Gradius II conversions (the 12d150b fix)
+on MMDSP and reported the ADPCM (DPCM drums) clearly too loud,
+about half being right. The export default --nes-balance fed the
+bridge BALANCE_GAINS['dpcm'] = 1.25, a value calibrated for MSX
+SCC slices. Halved to 0.625 in py/nesapu_projection.py; Tabidachi
+regeneration shows decoded sample peaks/RMS at 0.50x. Suite: the
+branch's failure set is unchanged (the 3 NES CLI subprocess tests
+fail identically with the change stashed; environment baseline).
+
 # Export CLI defaults (2026-10-30)
 
 User requested MDX export defaults: pcm-buffer-kib1200, pcm-policy best-effort, no-vgm=True. Explicit values and --vgm still override. Defaults resolve only for MDX so inherited OPM diagnostic routes retain behavior. Canonical/direct Python API defaults unchanged. Export34tests pass; no music conversion. Direct loader +4096margin gives1224704B PDX budget.
