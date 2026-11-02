@@ -133,6 +133,8 @@ def analyze_opn2_source(source, outdir, stem, usage):
         dac=dict(_dac_measurements(analysis),
                  stream_controls=len(stream_controls),
                  stream_ids=sorted({item['stream_id'] for item in stream_controls}),
+                 stream_play_commands=usage.get('dac_stream', {}).get('play_commands', 0),
+                 stream_seek_commands=usage.get('dac_stream', {}).get('seek_commands', 0),
                  data_blocks=dict(Counter(block['bank_type'] for block in usage.get('data_blocks', [])))),
         dcsg=_dcsg_measurements(raw, source_end) if 'dcsg' in usage['used_chips'] else None)
     return summary

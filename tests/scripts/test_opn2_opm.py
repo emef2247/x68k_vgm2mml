@@ -118,7 +118,30 @@ class Opn2DacPolicyTests(unittest.TestCase):
         self.assertEqual(gated[0]['target_data'] & 0xc0, 0)
 
 
+    def test_dac_writes_while_never_enabled_are_inert(self):
+        body = bytearray()
+        body.extend((0x52, 0x2a, 0x80, 0x52, 0x2a, 0x81, 0x52, 0x28, 0xf0,
+                     0x62, 0x52, 0x28, 0x00, 0x66))
+        analysis, clock_raw = analyze(bytes(body))
+        _rows, losses = project(analysis, clock_raw=clock_raw)
+        self.assertEqual(losses['dac_data_writes_while_disabled_ignored'], 2)
+        self.assertNotIn('dac_data_writes_omitted', losses)
+
+
 class Opn2ConvertTests(unittest.TestCase):
+    def test_dac_stream_requires_force_and_is_recorded(self):
+        body = bytes((0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00, 0x66))
+        stream = {'play_commands': 12, 'seek_commands': 2}
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'song.vgm'
+            source.write_bytes(build_vgm(body))
+            with self.assertRaises(ValueError):
+                convert(source, Path(tmp) / 'out', dac_stream=stream)
+            _mml, settings = convert(source, Path(tmp) / 'out', dac_stream=stream, force=True)
+            omitted = settings['force_projection']['omitted']
+            self.assertEqual([o['source_chip'] for o in omitted], ['opn2_dac_stream'])
+            self.assertEqual(omitted[0]['play_commands'], 12)
+
     def test_dcsg_audible_requires_force_and_is_recorded(self):
         body = bytearray()
         body.extend((0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00))

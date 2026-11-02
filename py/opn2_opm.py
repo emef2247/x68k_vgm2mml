@@ -76,8 +76,14 @@ def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, forc
         raise ValueError('OPN2 FM channel mapping must use distinct OPM channels')
     if analysis.csm_observed and not force:
         raise ValueError('OPN2 CSM timer-generated key events cannot project to ordinary OPM FM')
-    dac_writes = sum(1 for w in analysis.unmodeled_writes if w.domain == 'dac_data')
-    if dac_writes and not force:
+    # DAC data written while the DAC is disabled makes no sound; only
+    # writes inside an enabled span are sample playback.
+    enabled_spans = [(s.vgmticks, s.vgmticks_end) for s in analysis.segments
+                     if s.ch == 5 and s.state.dac_enabled == 1]
+    dac_live = sum(1 for w in analysis.unmodeled_writes if w.domain == 'dac_data'
+                   and any(start <= w.vgmticks < end for start, end in enabled_spans))
+    dac_inert = sum(1 for w in analysis.unmodeled_writes if w.domain == 'dac_data') - dac_live
+    if dac_live and not force:
         raise ValueError('YM2612 DAC sample playback is not projected yet (S3); '
                          'use --force to omit the DAC channel')
     slots = [w for w in analysis.unmodeled_writes if _unmapped_operator_slot(w)]
@@ -86,11 +92,13 @@ def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, forc
     if unknown and not force:
         raise ValueError('OPN2 FM projection encountered an unknown register effect')
     losses = Counter()
+    if dac_inert:
+        losses['dac_data_writes_while_disabled_ignored'] = dac_inert
     if slots:
         losses['unmapped_operator_slot_writes_ignored'] = len(slots)
     if force:
-        if dac_writes:
-            losses['dac_data_writes_omitted'] = dac_writes
+        if dac_live:
+            losses['dac_data_writes_omitted'] = dac_live
         if unknown:
             losses['forced_unmodeled_register_writes'] = len(unknown)
     rows, cache, groups = [], {}, {}
@@ -254,11 +262,16 @@ def write_vgm(rows, path, *, end, loop_start=None, loop_event_id=None):
 
 
 def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
-            dcsg_present=False, **options):
+            dcsg_present=False, dac_stream=None, **options):
     """Reconstruct native Segments, project FM, reuse canonical OPM conversion."""
     from opm_conversion import convert as convert_opm
     source, outdir = Path(source), Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
+    dac_stream = dac_stream or {}
+    if dac_stream.get('play_commands'):
+        if not force:
+            raise ValueError('YM2612 DAC stream playback is not projected yet (S3); '
+                             'use --force to omit the DAC stream channel')
     for suffix in ('.mdx.mml', '.opn2-opm.json', '.mdx.normalization.json',
                    '.mdx.normalization.csv', '.mdx.before.normalize.mml',
                    '.opn2_fm.omissions.csv', '.opn2_fm.omissions.json'):
@@ -283,6 +296,11 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
             omitted.append(dict(part='DEFG', source_chip='dcsg', action='omit_source_engine',
                                 reason='dcsg_stage_not_implemented',
                                 audible_samples=audible))
+    if dac_stream.get('play_commands'):
+        omitted.append(dict(part='J', source_chip='opn2_dac_stream', action='omit_source_engine',
+                            reason='dac_stream_stage_not_implemented',
+                            play_commands=dac_stream['play_commands'],
+                            seek_commands=dac_stream.get('seek_commands', 0)))
     with TemporaryDirectory(prefix='opn2-opm-') as temporary:
         work = outdir if dump_passes else Path(temporary)
         folder = work / 'projected_opm'

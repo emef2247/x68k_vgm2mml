@@ -30,6 +30,7 @@ def inspect_source(source):
     previous_time = 0
     banks = []
     dac_stream_controls = []
+    dac_stream_pending = []
     for event in command_times(raw):
         cmd, pos = event.command, event.address
         if event.vgmticks > previous_time and 'psg' in chips:
@@ -126,10 +127,23 @@ def inspect_source(source):
                 unsupported.append(dict(item, code='unsupported_stream_control',
                     reason='DAC Stream Control is not supported', stream_id=stream_id,
                     destination_chip=destination))
+        elif cmd == 0xe0 or 0x80 <= cmd <= 0x8f:
+            # DAC stream seek/play commands exist only for data-block
+            # stream playback; attribution waits until the pass ends
+            # (an OPN2 source makes them OPN2 DAC evidence).
+            dac_stream_pending.append((cmd, dict(item, reason='Unsupported source chip/stream command')))
         elif cmd in (0x61, 0x62, 0x63, 0x64, 0x66) or 0x70 <= cmd <= 0x7f:
             continue
         else:
             unsupported.append(dict(item, reason='Unsupported source chip/stream command'))
+    dac_stream = dict(play_commands=0, seek_commands=0)
+    if dac_stream_pending:
+        if 'opn2' in chips:
+            dac_stream = dict(
+                play_commands=sum(1 for cmd, _ in dac_stream_pending if cmd != 0xe0),
+                seek_commands=sum(1 for cmd, _ in dac_stream_pending if cmd == 0xe0))
+        else:
+            unsupported.extend(item for _, item in dac_stream_pending)
     opm_offset = 0x30 if header['version'] >= 0x110 else 0x10
     opm_clock = int.from_bytes(raw[opm_offset:opm_offset + 4], 'little')
     opll_clock = int.from_bytes(raw[0x10:0x14], 'little') if header['version'] >= 0x110 else 0
@@ -166,7 +180,7 @@ def inspect_source(source):
                 unused_declarations=sorted(chip for chip, clock in declarations.items()
                                            if clock and chip not in chips),
                 command_counts=dict(counts), first_use=first, data_blocks=banks,
-                dac_stream_controls=dac_stream_controls,
+                dac_stream_controls=dac_stream_controls, dac_stream=dac_stream,
                 unsupported_commands=unsupported)
 
 

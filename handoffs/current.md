@@ -1,3 +1,26 @@
+# OPN2: DAC stream recognition + Time Trax survey (2026-11-02, branch claude/opn2)
+
+Time Trax (Prototype, MD; the user's next target after Burning
+Force) cannot even be routed before this change: its DAC traffic
+is the VGM stream encoding — 852,695 play commands (0x80-0x8F)
+and 35,348 seeks (0xE0) against a single 280-byte data block in
+track 01 — and the frontend filed every one as an unsupported
+command (route blocked; the conversion report ballooned to
+146 MB). The frontend now attributes seek/play commands to the
+OPN2 DAC when the source uses one and aggregates them in
+usage['dac_stream'] (play/seek counts only). opn2_opm refuses
+stream playback without --force (S3 will decode it) and records
+the omission under force. Related refinement: 0x2A DAC data
+writes while the DAC is disabled are inert (initialization
+blips; Time Trax has 2) and no longer require --force.
+
+Survey facts for Time Trax 01: DCSG unused, no CSM, FM is 21k of
+942k events. With --force the FM part converts, but the MML
+(175 KB) fails MDX compilation: track 7 offset exceeds 0xFFFE.
+So this target has two walls: the stream DAC voice (a continuous
+wavetable-style voice streamed from a tiny block, not one-shot
+drums) and MDX capacity on long dense songs.
+
 # OPN2 (YM2612) S2: FM -> OPM projection (2026-11-02, branch claude/opn2)
 
 py/opn2_opm.py projects the S1 analysis in the opna_opm shape

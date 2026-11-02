@@ -530,7 +530,8 @@ def main():
                 title=args.title if args.title is not None else title_from_gd3(vgm_path, base_name, args.gd3_language),
                 normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms,
                 pitch_policy=args.opm_pitch_policy or 'clamp', force=args.force,
-                dcsg_present='dcsg' in usage['used_chips'])
+                dcsg_present='dcsg' in usage['used_chips'],
+                dac_stream=usage.get('dac_stream'))
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()

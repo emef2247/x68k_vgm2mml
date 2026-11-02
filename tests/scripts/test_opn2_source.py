@@ -98,6 +98,18 @@ class Opn2FrontendTests(unittest.TestCase):
         self.assertEqual(select_mdx_route(usage), 'opn2-to-opm')
 
 
+    def test_dac_stream_seek_and_play_are_opn2_evidence(self):
+        body = bytearray()
+        body.extend(bytes((0x67, 0x66, 0x00)) + struct.pack('<I', 4) + bytes((1, 2, 3, 4)))
+        body.extend(bytes((0xe0,)) + struct.pack('<I', 0))
+        body.extend((0x83, 0x85, 0x80))
+        body.extend((0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00, 0x66))
+        usage = inspect(build_vgm(bytes(body)))
+        self.assertEqual(usage['unsupported_commands'], [])
+        self.assertEqual(usage['dac_stream'], {'play_commands': 3, 'seek_commands': 1})
+        self.assertEqual(select_mdx_route(usage), 'opn2-to-opm')
+
+
 class Opn2AnalysisTests(unittest.TestCase):
     def test_segments_dac_state_and_measurements(self):
         raw = build_vgm(fm_song_body())
