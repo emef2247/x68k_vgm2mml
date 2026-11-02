@@ -35,11 +35,14 @@ DUTY_HIGH_STEPS = (4, 8, 16, 24)
 # (pulses capped at 10 in much game data, triangle fixed full, noise
 # bursts near full) against the SCC/PSG mix. Selected with
 # --nes-balance; individual factors can be overridden. The dpcm
-# factor also scales the MSM6258 ADPCM bridge on this target; 1.25
-# (the MSX slice calibration) rendered too loud against the FM mix
-# on real MDX playback, and the user halved it by ear (2026-11-02).
+# factor scales the SCC slice rendering of DPCM. The MSM6258 ADPCM
+# bridge has its own factor, dpcm_adpcm: 1.25 (the MSX slice
+# calibration) rendered too loud against the FM mix on real MDX
+# playback, the user halved it to 0.625 by ear (2026-11-02), and
+# after re-recording asked for the bridge alone at 0.4 while the
+# slice factor stays (2026-11-03).
 BALANCE_GAINS = {'pulse': 1.3, 'triangle': 0.75, 'noise': 0.8,
-                 'dpcm': 0.625, 'fds': 1.0}
+                 'dpcm': 0.625, 'dpcm_adpcm': 0.4, 'fds': 1.0}
 TRIANGLE_LEVELS = tuple(15 - i if i < 16 else i - 16 for i in range(32))
 
 

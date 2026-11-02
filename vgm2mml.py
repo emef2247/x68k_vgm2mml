@@ -344,6 +344,7 @@ def main():
             if args.nes_balance or args.nes_gain:
                 from nesapu_projection import BALANCE_GAINS
                 nes_gains = dict(BALANCE_GAINS)
+                explicit = set()
                 for item in args.nes_gain:
                     kind, _, factor = item.partition('=')
                     kind = kind.strip().lower()
@@ -353,6 +354,12 @@ def main():
                         nes_gains[kind] = float(factor)
                     except ValueError:
                         parser.error(f'--nes-gain factor must be a number: {item!r}')
+                    explicit.add(kind)
+                # An explicit dpcm override names the DPCM level as a
+                # whole; the ADPCM bridge follows it unless its own
+                # factor was named separately.
+                if 'dpcm' in explicit and 'dpcm_adpcm' not in explicit:
+                    nes_gains['dpcm_adpcm'] = nes_gains['dpcm']
             # The X68000 has a real PCM target: when the DPCM samples are
             # covered by data blocks, divert them to MSM6258 ADPCM/PDX
             # (built downstream in the PSG/SCC conversion) and keep the
@@ -365,7 +372,7 @@ def main():
                 nes_trace = analyze_nesapu(nes_raw)
                 if covered_event_indexes(nes_trace, nes_raw):
                     nes_dpcm_spec = (nes_trace, nes_raw,
-                                     (nes_gains or {}).get('dpcm', 1.0))
+                                     (nes_gains or {}).get('dpcm_adpcm', 1.0))
                     projected = project_nesapu(nes_raw, nes_trace,
                                                gains=nes_gains,
                                                dpcm_external=True)

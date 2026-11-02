@@ -103,10 +103,19 @@ class NesapuRouteTests(unittest.TestCase):
             self.assertEqual(
                 projection_summary(root / 'balanced', '--nes-balance'),
                 {'pulse': 1.3, 'triangle': 0.75, 'noise': 0.8,
-                 'dpcm': 0.625, 'fds': 1.0})
+                 'dpcm': 0.625, 'dpcm_adpcm': 0.4, 'fds': 1.0})
             overridden = projection_summary(root / 'override', '--nes-gain', 'pulse=1.0')
             self.assertEqual(overridden['pulse'], 1.0)
             self.assertEqual(overridden['triangle'], 0.75)
+            # An explicit dpcm override also moves the ADPCM bridge
+            # factor; naming dpcm_adpcm alone leaves the slices.
+            bridged = projection_summary(root / 'bridged', '--nes-gain', 'dpcm=0.9')
+            self.assertEqual(bridged['dpcm'], 0.9)
+            self.assertEqual(bridged['dpcm_adpcm'], 0.9)
+            bridge_only = projection_summary(root / 'bridgeonly',
+                                             '--nes-gain', 'dpcm_adpcm=0.2')
+            self.assertEqual(bridge_only['dpcm'], 0.625)
+            self.assertEqual(bridge_only['dpcm_adpcm'], 0.2)
 
     def test_cli_dpcm_rides_adpcm_by_default(self):
         # A covered DPCM sample (RAM block + trigger) is diverted to
