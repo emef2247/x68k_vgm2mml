@@ -8,8 +8,8 @@ ordinary OPM conversion. YM2612 differences from YM2608: no SSG,
 no prescaler (divisor fixed at 6), no 0x29 channel-enable gate, and
 the DAC channel in place of ADPCM-B. While the DAC is enabled,
 channel 6 FM output is gated (the hardware disconnects it); the DAC
-sample stream itself is a later stage (S3), as is the companion
-SN76489 (S4) — both are explicit --force omissions until then.
+sample stream is bridged to MSM6258 by py/opn2_pcm.py (S3). The
+companion SN76489 (S4) remains an explicit --force omission.
 """
 import csv
 import json
@@ -61,7 +61,8 @@ def dump_fm_omissions(analysis, outdir, stem, *, force):
     return summary
 
 
-def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, force=False):
+def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, force=False,
+            dac_external=False):
     """Return target write rows plus explicit losses, retaining source identities."""
     clock_hz = clock_raw & 0x3fffffff
     if not 0 < clock_hz < 0x40000000:
@@ -83,9 +84,9 @@ def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, forc
     dac_live = sum(1 for w in analysis.unmodeled_writes if w.domain == 'dac_data'
                    and any(start <= w.vgmticks < end for start, end in enabled_spans))
     dac_inert = sum(1 for w in analysis.unmodeled_writes if w.domain == 'dac_data') - dac_live
-    if dac_live and not force:
-        raise ValueError('YM2612 DAC sample playback is not projected yet (S3); '
-                         'use --force to omit the DAC channel')
+    if dac_live and not force and not dac_external:
+        raise ValueError('YM2612 DAC sample playback requires the DAC bridge '
+                         'or --force to omit the DAC channel')
     slots = [w for w in analysis.unmodeled_writes if _unmapped_operator_slot(w)]
     unknown = [w for w in analysis.unmodeled_writes
                if w.domain != 'dac_data' and not _unmapped_operator_slot(w)]
@@ -96,11 +97,12 @@ def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, forc
         losses['dac_data_writes_while_disabled_ignored'] = dac_inert
     if slots:
         losses['unmapped_operator_slot_writes_ignored'] = len(slots)
-    if force:
-        if dac_live:
-            losses['dac_data_writes_omitted'] = dac_live
-        if unknown:
-            losses['forced_unmodeled_register_writes'] = len(unknown)
+    if dac_external and dac_live:
+        losses['dac_data_writes_projected_to_pcm'] = dac_live
+    elif force and dac_live:
+        losses['dac_data_writes_omitted'] = dac_live
+    if force and unknown:
+        losses['forced_unmodeled_register_writes'] = len(unknown)
     rows, cache, groups = [], {}, {}
     for s in analysis.segments:
         if s.chip_instance or s.clock_raw != clock_raw:
@@ -262,19 +264,19 @@ def write_vgm(rows, path, *, end, loop_start=None, loop_event_id=None):
 
 
 def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
-            dcsg_present=False, dac_stream=None, **options):
+            dcsg_present=False, dac_stream=None, dac=True, **options):
     """Reconstruct native Segments, project FM, reuse canonical OPM conversion."""
     from opm_conversion import convert as convert_opm
     source, outdir = Path(source), Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     dac_stream = dac_stream or {}
-    if dac_stream.get('play_commands'):
-        if not force:
-            raise ValueError('YM2612 DAC stream playback is not projected yet (S3); '
-                             'use --force to omit the DAC stream channel')
+    if dac_stream.get('play_commands') and not dac and not force:
+        raise ValueError('YM2612 DAC stream playback requires the DAC bridge '
+                         'or --force to omit the DAC stream channel')
     for suffix in ('.mdx.mml', '.opn2-opm.json', '.mdx.normalization.json',
                    '.mdx.normalization.csv', '.mdx.before.normalize.mml',
-                   '.opn2_fm.omissions.csv', '.opn2_fm.omissions.json'):
+                   '.opn2_fm.omissions.csv', '.opn2_fm.omissions.json',
+                   '.opn2_dac.events.csv'):
         artifact = outdir / (source.stem + suffix)
         if artifact.resolve() == source.resolve() or not artifact.resolve().is_relative_to(outdir.resolve()):
             raise ValueError('OPN2 conversion output would replace or leave its source/output boundary')
@@ -296,9 +298,9 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
             omitted.append(dict(part='DEFG', source_chip='dcsg', action='omit_source_engine',
                                 reason='dcsg_stage_not_implemented',
                                 audible_samples=audible))
-    if dac_stream.get('play_commands'):
+    if dac_stream.get('play_commands') and not dac:
         omitted.append(dict(part='J', source_chip='opn2_dac_stream', action='omit_source_engine',
-                            reason='dac_stream_stage_not_implemented',
+                            reason='dac_bridge_disabled',
                             play_commands=dac_stream['play_commands'],
                             seek_commands=dac_stream.get('seek_commands', 0)))
     with TemporaryDirectory(prefix='opn2-opm-') as temporary:
@@ -311,8 +313,32 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
         if not analysis.events:
             raise ValueError('Input has no OPN2 register evidence')
         clock_hz = clock_raw & 0x3fffffff
+        bridge, dac_stats = None, None
+        if dac:
+            from opn2_pcm import project_dac
+            candidate = project_dac(
+                raw, events, analysis,
+                loop_start=loop_meta['decoded_end_samples'] if repeating else None,
+                loop_count=2 if repeating else 1,
+                pcm_profile=options.get('pcm_profile', 'standard'))
+            dac_stats = candidate.dac_stats
+            if candidate.playbacks:
+                bridge = candidate
+                bridge.dump(outdir, source.stem)
+            elif dac_stream.get('play_commands') and not (
+                    dac_stats['manual_bytes'] or dac_stats['autonomous_bytes']):
+                candidate.dump(outdir, source.stem)
+                if not force:
+                    raise ValueError('YM2612 DAC stream playback could not be decoded '
+                                     '(see the opn2_dac evidence); use --force to omit it')
+                omitted.append(dict(part='J', source_chip='opn2_dac_stream',
+                                    action='omit_source_engine',
+                                    reason='dac_stream_not_decoded',
+                                    play_commands=dac_stream['play_commands'],
+                                    seek_commands=dac_stream.get('seek_commands', 0)))
         rows, losses = project(analysis, clock_raw=clock_raw,
-                               pitch_policy=options.get('pitch_policy', 'clamp'), force=force)
+                               pitch_policy=options.get('pitch_policy', 'clamp'), force=force,
+                               dac_external=bridge is not None)
         fm_force = dump_fm_omissions(analysis, outdir, source.stem, force=force)
         target = folder / (source.stem + '.vgm')
         if target.resolve() == source.resolve():
@@ -333,10 +359,13 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
             channel_allocation=dict(model='OPNA route map: FM ch0-2 -> OPM 0-2, FM ch3-5 -> OPM 4-6; OPM ch3 reserved'),
             force_projection=dict(omitted=omitted, fm_omitted_writes=fm_force['omitted_writes'],
                                   fm_writes_csv=fm_force['writes_csv'], fm_omissions=fm_force['omissions']),
+            dac=dac_stats,
             source_end_vgmticks=analysis.source_end_vgmticks, excluded_or_approximated=losses,
             pitch='committed 11-bit FNUM; existing nominal OPM KC/KF projection',
             target_only_assumptions='unwritten counterpart controls/pitch use reset zero',
-            limitations='FM EG/DT rates unretimed; DAC (S3) and DCSG (S4) not projected; no acoustic equivalence',
+            limitations=('FM EG/DT rates unretimed; DAC projected to MSM6258 ADPCM (S3); '
+                         'DCSG (S4) not projected; no acoustic equivalence' if bridge is not None else
+                         'FM EG/DT rates unretimed; DAC and DCSG (S4) not projected; no acoustic equivalence'),
             source_loop=loop_meta, passes_retained=dump_passes,
             source_map=str(Path('projected_opm') / mapping.name) if dump_passes else None)
         (folder / 'provenance.json').write_text(json.dumps(settings, indent=2) + '\n', encoding='utf-8')
@@ -344,6 +373,7 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
             json.dumps(settings, indent=2) + '\n', encoding='utf-8')
         result, _, _ = convert_opm(target, outdir, dump_passes=dump_passes,
             song_loop=song_loop, replayed_song_loop=True, force=force,
+            pcm_analysis_override=bridge,
             normalization_source_times={r['target_source_event_id']: r['source_vgmticks'] for r in rows},
             **options)
     return result, settings

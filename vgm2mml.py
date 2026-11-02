@@ -149,6 +149,11 @@ def build_parser():
                           help='Carry NES DPCM on the MSM6258 ADPCM/PDX target instead of SCC '
                                'waveform slices (nesapu-to-opm route only; --no-nes-dpcm '
                                'restores the slice rendering)')
+    advanced.add_argument('--opn2-dac', action=argparse.BooleanOptionalAction, default=True,
+                          help='Carry YM2612 DAC sample playback (0x2A write runs and DAC '
+                               'stream commands) on the MSM6258 ADPCM/PDX target '
+                               '(opn2-to-opm route only; --no-opn2-dac requires --force '
+                               'to omit the DAC channel)')
     selection=advanced.add_mutually_exclusive_group()
     selection.add_argument('--psg-only','--psg_only',action='store_true',help='Project only PSG; retain native source evidence')
     selection.add_argument('--scc-only','--scc_only',action='store_true',help='Project only SCC; retain native source evidence')
@@ -412,7 +417,7 @@ def main():
         report['source_selection']=source_selection
         if args.psg_output=='pcm' and (route!='psg-scc-to-opm' or args.scc_only or args.notation!='structured'):
             raise ValueError('--psg-output pcm requires structured PSG/SCC MDX input and cannot combine with --scc-only')
-        pcm_applicable = (route in ('opna-fm-to-opm', 'opm-c140-source', 'opm-msm6295-source')
+        pcm_applicable = (route in ('opna-fm-to-opm', 'opm-c140-source', 'opm-msm6295-source', 'opn2-to-opm')
                           or route == 'opm-segapcm-source' and not args.fm_only
                           or route == 'native-opm-pcm' and 'pcm' in usage['used_chips']
                           or route=='psg-scc-to-opm' and args.psg_output=='pcm')
@@ -531,7 +536,10 @@ def main():
                 normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms,
                 pitch_policy=args.opm_pitch_policy or 'clamp', force=args.force,
                 dcsg_present='dcsg' in usage['used_chips'],
-                dac_stream=usage.get('dac_stream'))
+                dac_stream=usage.get('dac_stream'), dac=args.opn2_dac,
+                pcm_policy=args.pcm_policy or 'auto', pcm_profile=args.pcm_profile,
+                pcm_generator=args.pcm_generator, pdx_format=args.pdx_format,
+                pcm_capacity=pcm_capacity)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()
@@ -543,6 +551,9 @@ def main():
             print(f"OPN2 projection: {omission['source_chip']} omitted ({omission['reason']})")
         for domain, count in settings['excluded_or_approximated'].items():
             print(f'OPN2 projection: {domain} ({count} occurrences)')
+        if settings.get('dac') and settings['dac'].get('playbacks'):
+            print(f"OPN2 DAC: {settings['dac']['playbacks']} PCM playbacks, "
+                  f"{settings['dac']['unique_samples']} unique samples")
         return
 
     if route == 'psg-scc-to-opm':

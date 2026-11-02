@@ -102,10 +102,28 @@ def dac_body():
 
 
 class Opn2DacPolicyTests(unittest.TestCase):
-    def test_dac_data_requires_force(self):
+    def test_dac_data_requires_force_or_bridge(self):
         analysis, clock_raw = analyze(dac_body())
         with self.assertRaises(ValueError):
             project(analysis, clock_raw=clock_raw)
+
+    def test_dac_data_projects_to_pcm_via_bridge(self):
+        generator = next((path for path in (
+            Path(__file__).resolve().parents[2] / 'scripts/mdx_fixture_generator/target/release/mdx-fixture-generator',
+            Path.home() / 'workspace/x68k_c140_worktree/scripts/mdx_fixture_generator/target/release/mdx-fixture-generator')
+            if path.is_file()), None)
+        if generator is None:
+            self.skipTest('MDX fixture generator is not built in this environment')
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'song.vgm'
+            source.write_bytes(build_vgm(dac_body()))
+            mml, settings = convert(source, Path(tmp) / 'out', pcm_generator=generator)
+            self.assertTrue(Path(mml).is_file())
+            self.assertEqual(settings['dac']['playbacks'], 1)
+            self.assertEqual(settings['dac']['write_bytes'], 8)
+            self.assertEqual(settings['excluded_or_approximated']
+                             ['dac_data_writes_projected_to_pcm'], 8)
+            self.assertTrue(list(Path(tmp, 'out').rglob('*.pdx')))
 
     def test_dac_enable_gates_ch6_output(self):
         analysis, clock_raw = analyze(dac_body())
@@ -129,15 +147,16 @@ class Opn2DacPolicyTests(unittest.TestCase):
 
 
 class Opn2ConvertTests(unittest.TestCase):
-    def test_dac_stream_requires_force_and_is_recorded(self):
+    def test_dac_stream_without_bridge_requires_force_and_is_recorded(self):
         body = bytes((0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00, 0x66))
         stream = {'play_commands': 12, 'seek_commands': 2}
         with tempfile.TemporaryDirectory() as tmp:
             source = Path(tmp) / 'song.vgm'
             source.write_bytes(build_vgm(body))
             with self.assertRaises(ValueError):
-                convert(source, Path(tmp) / 'out', dac_stream=stream)
-            _mml, settings = convert(source, Path(tmp) / 'out', dac_stream=stream, force=True)
+                convert(source, Path(tmp) / 'out', dac_stream=stream, dac=False)
+            _mml, settings = convert(source, Path(tmp) / 'out', dac_stream=stream,
+                                      dac=False, force=True)
             omitted = settings['force_projection']['omitted']
             self.assertEqual([o['source_chip'] for o in omitted], ['opn2_dac_stream'])
             self.assertEqual(omitted[0]['play_commands'], 12)
