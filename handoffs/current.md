@@ -386,3 +386,13 @@ wrapper in convert() copies the same set. Verified: Gradius II
 playbacks contain stops/holds/resets still end as
 pcm_replay_unavailable because soundlog 0.15.0 cannot preserve
 them in replay verification; the MDX/PDX themselves are produced.
+
+NES balance, third calibration (2026-11-03): BALANCE_GAINS pulse
+1.3 -> 2.0 and noise 0.8 -> 1.2. Gradius II's own data caps pulse
+volumes at 8 of 15, so the melodic lanes sat low against the ADPCM
+hits even after the bridge went to 0.4; the lanes now rise toward
+the PCM instead of only the PCM coming down (the SMB3 pattern from
+the MSX route). Triangle 0.75 / dpcm 0.625 / dpcm_adpcm 0.4 are
+unchanged. Full suite failure set identical before/after (28).
+User's listening check on the regenerated Gradius II export is the
+remaining step.

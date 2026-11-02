@@ -40,8 +40,12 @@ DUTY_HIGH_STEPS = (4, 8, 16, 24)
 # calibration) rendered too loud against the FM mix on real MDX
 # playback, the user halved it to 0.625 by ear (2026-11-02), and
 # after re-recording asked for the bridge alone at 0.4 while the
-# slice factor stays (2026-11-03).
-BALANCE_GAINS = {'pulse': 1.3, 'triangle': 0.75, 'noise': 0.8,
+# slice factor stays (2026-11-03). Pulse and noise were then
+# raised (1.3 -> 2.0, 0.8 -> 1.2) so the melodic lanes come up
+# toward the PCM level instead of only cutting the PCM: Gradius II
+# data caps pulse volumes at 8 of 15, leaving ample headroom
+# (user's listening call, 2026-11-03).
+BALANCE_GAINS = {'pulse': 2.0, 'triangle': 0.75, 'noise': 1.2,
                  'dpcm': 0.625, 'dpcm_adpcm': 0.4, 'fds': 1.0}
 TRIANGLE_LEVELS = tuple(15 - i if i < 16 else i - 16 for i in range(32))
 
