@@ -409,7 +409,12 @@ def main():
                         help='Rust replay helper and default mmlx/typed PCM compiler')
     parser.add_argument('--timeout', type=positive, default=1200, help='Seconds per stage per input (default: 1200)')
     parser.add_argument('--max-ticks', type=positive, help='Playback limit; default derived from source waits')
-    parser.add_argument('--no-song-loop', action='store_true', help='Export one finite source pass, without the declared VGM song loop')
+    loop = parser.add_mutually_exclusive_group()
+    loop.add_argument('--vgm-song-loop', dest='song_loop', action='store_true',
+                      help='Render the declared VGM song loop (state-preserving second traversal); the default is one finite pass')
+    loop.add_argument('--no-song-loop', dest='song_loop', action='store_false',
+                      help='Export one finite source pass, without the declared VGM song loop (the default)')
+    parser.set_defaults(song_loop=False)
     replay = parser.add_mutually_exclusive_group()
     replay.add_argument('--vgm', dest='no_vgm', action='store_false',
                         help='Also replay the generated MDX to a verification VGM (off by default)')
@@ -460,7 +465,7 @@ def main():
     # the standard recipe, and the remaining options stay accepted but
     # unlisted, so --help shows only the everyday controls.
     for action in parser._actions:
-        if action.dest not in ('help', 'input', 'outdir', 'force', 'no_song_loop'):
+        if action.dest not in ('help', 'input', 'outdir', 'force', 'song_loop'):
             action.help = argparse.SUPPRESS
     args = parser.parse_args()
     # Export-layer recipe default (the canonical converter keeps its own):
@@ -476,7 +481,7 @@ def main():
                          psg_gain=args.psg_gain,scc_gain=args.scc_gain,scc_model=args.scc_model,scc_voice_bank=args.scc_voice_bank,
                           opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy,
                           normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms, no_vgm=args.no_vgm,
-                          listening_layout=True, song_loop=not args.no_song_loop, fm_only=args.fm_only, force=args.force,pcm_profile=args.pcm_profile,psg_only=args.psg_only,scc_only=args.scc_only,psg_output=args.psg_output,segapcm_projection=args.segapcm_projection,c140_projection=args.c140_projection,c140_mix_gain_db=args.c140_mix_gain_db,pcm_bank_merge=args.pcm_bank_merge,pdx_format=args.pdx_format,
+                          listening_layout=True, song_loop=args.song_loop, fm_only=args.fm_only, force=args.force,pcm_profile=args.pcm_profile,psg_only=args.psg_only,scc_only=args.scc_only,psg_output=args.psg_output,segapcm_projection=args.segapcm_projection,c140_projection=args.c140_projection,c140_mix_gain_db=args.c140_mix_gain_db,pcm_bank_merge=args.pcm_bank_merge,pdx_format=args.pdx_format,
                           pcm_buffer_kib=args.pcm_buffer_kib,pcm_loader=args.pcm_loader,pcm_buffer_margin_bytes=args.pcm_buffer_margin_bytes,
                           nes_balance=args.nes_balance,nes_gain=args.nes_gain,nes_dpcm=args.nes_dpcm)
     except (OSError, ValueError) as error:

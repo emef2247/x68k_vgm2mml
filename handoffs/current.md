@@ -327,3 +327,37 @@ Do not replace the packer or set a universal library-derived byte cap.
 User is running MSX run_test.sh; leave that checkout/execution alone pending
 completion notice. Preserve unfinished native-layer integration and existing
 MSM6295 work. No commits/staging/push performed for this audit.
+
+---
+
+# Export default: finite one pass; VGM song loop is opt-in (2026-11-02)
+
+User decision after the DQ3_06/DQ3_27 capacity failures: a first-time
+user running the plain export should not hit compilation_failed on
+popular songs. scripts/export_mdx.py now defaults to one finite
+source pass; the declared VGM song loop (state-preserving second
+traversal) is rendered only with --vgm-song-loop. --no-song-loop
+remains accepted (it is the default). The canonical converter
+vgm2mml.py keeps its own loop-on default; this is an export-layer
+recipe default, like the C140 mix gain. README (ja/en) updated:
+examples, option table, and the size troubleshooting note.
+
+Measured effect (SMB3 World 1 Map, same input): default MDX
+10,324 bytes with Song loop emitted=False; --vgm-song-loop
+19,445 bytes emitted=True (~1.9x). The DQ3 failure analysis behind
+this: compiled totals ~82 KB (06) / ~98 KB (27) against the
+0xFFFE MDX track-offset limit, with the loop body (88% / 76% of
+the song) stored twice and the busiest additive lane pair at
+~61 KB on its own. One-pass estimates for DQ3 (from performed-unit
+counts) are ~44 KB / ~55 KB, inside the limit; end-to-end
+confirmation still needs the original DQ3 VGMs, which the user's
+diagnostic archives did not include.
+
+Verification: test_export_mdx (38) and test_opm_song_loop (6)
+pass; full-suite failure set is the established 27 (a pristine
+worktree shows 30 only because a fresh checkout lacks the .tools
+setup -- SCC voice fitting core -- which is environmental).
+Known VM limitation, pre-existing on pristine HEAD: the final
+package assembly step fails here with "Missing PDX beside input"
+even though conversion and MDX compilation succeed; the user's
+environment packages normally.

@@ -25,10 +25,10 @@ VGMファイルを置いたディレクトリを指定して、一括変換し�
 python scripts/export_mdx.py INDIR --outdir OUTDIR --force
 ```
 
-VGMの曲全体ループを使わず、1周だけ出力する場合：
+既定ではVGMの曲全体ループを使わず、1周で終了するMDXを生成します（大きな曲でも上限に収まりやすくするため）。VGMの曲全体ループを、状態保存つきの2周目再生として描く場合：
 
 ```bash
-python scripts/export_mdx.py INDIR --outdir OUTDIR --force --no-song-loop
+python scripts/export_mdx.py INDIR --outdir OUTDIR --force --vgm-song-loop
 ```
 
 MDXの生成にはMXCまたはmmlxなどのMDXコンパイラが必要です。PDXの生成にはsoundlogを利用しています。
@@ -44,7 +44,8 @@ MDXの生成にはMXCまたはmmlxなどのMDXコンパイラが必要です。P
 |---|---|
 | `--outdir OUTDIR` | 変換結果の出力先ディレクトリ |
 | `--force` | 未対応の演奏要素や容量超過PCMなど、許容された範囲を診断付きで省略して続行 |
-| `--no-song-loop` | VGMの曲全体ループを使わず、1周で終了するMDXを生成 |
+| `--vgm-song-loop` | VGMの曲全体ループを状態保存つきの2周目再生として描く（既定は1周で終了するMDX） |
+| `--no-song-loop` | VGMの曲全体ループを使わず、1周で終了するMDXを生成（既定の動作。互換のため受理） |
 | `--psg-output {opm,pcm}` | PSGの演奏情報をOPMまたはPCMのどちらに変換するかを選択 |
 | `--nes-balance`／`--no-nes-balance` | NES APU音源にNESミキサーのバランスを補正するマッピングゲインを適用（export_mdxでは既定で有効） |
 | `--nes-dpcm`／`--no-nes-dpcm` | NES APU音源のDPCMをSCC波形スライスではなくMSM6258 ADPCM（PDX）で鳴らす（既定で有効。サンプルデータのあるトリガーのみ対象） |
@@ -74,7 +75,7 @@ VGMには音符ではなく音源レジスタへの書き込みが記録され�
 
 **MML生成、MDX/PDXへのコンパイル、X68000での再生確認は別の検証段階です。** コンパイルに成功しても、元の音声との一致や実機・エミュレータでの再生成功を保証するものではありません。
 
-PCM容量、MDXトラックサイズ、プレイヤーのメモリ制約などによって変換・再生できない場合があります。曲ループの位置やMDXサイズが原因の場合は、`--no-song-loop` を試してください。
+PCM容量、MDXトラックサイズ、プレイヤーのメモリ制約などによって変換・再生できない場合があります。`--vgm-song-loop` を指定した場合はループ分だけMDXが大きくなります。サイズが原因で失敗する場合は、既定の1周出力を試してください。
 
 ## 構成
 
@@ -138,10 +139,10 @@ Place the VGM files in a directory and convert them in one batch.
 python scripts/export_mdx.py INDIR --outdir OUTDIR --force
 ```
 
-To output a single pass instead of the VGM's whole-song loop:
+By default the export generates an MDX that ends after one pass, without the VGM's whole-song loop (so that even large songs stay within the MDX limits). To render the VGM's whole-song loop as a state-preserving second traversal:
 
 ```bash
-python scripts/export_mdx.py INDIR --outdir OUTDIR --force --no-song-loop
+python scripts/export_mdx.py INDIR --outdir OUTDIR --force --vgm-song-loop
 ```
 
 Generating MDX requires an MDX compiler such as MXC or mmlx. PDX generation uses soundlog.
@@ -156,7 +157,8 @@ To install the external tools automatically, use [scripts/setup_tools.sh](script
 |---|---|
 | `--outdir OUTDIR` | Output directory for the conversion results |
 | `--force` | Omit unsupported performance elements, over-capacity PCM and the like within the tolerated range, with diagnostics, and continue |
-| `--no-song-loop` | Generate an MDX that ends after one pass instead of using the VGM's whole-song loop |
+| `--vgm-song-loop` | Render the VGM's whole-song loop as a state-preserving second traversal (the default is an MDX that ends after one pass) |
+| `--no-song-loop` | Generate an MDX that ends after one pass instead of using the VGM's whole-song loop (the default; accepted for compatibility) |
 | `--psg-output {opm,pcm}` | Choose whether PSG performance information is converted to OPM or to PCM |
 | `--nes-balance` / `--no-nes-balance` | For NES APU sources, apply mapping gains that compensate the NES mixer balance (enabled by default in export_mdx) |
 | `--nes-dpcm` / `--no-nes-dpcm` | Play NES APU DPCM as MSM6258 ADPCM (PDX) instead of SCC waveform slices (enabled by default; only triggers with sample data) |
@@ -186,7 +188,7 @@ A VGM records writes to sound-chip registers rather than notes, so MML generatio
 
 **MML generation, compilation to MDX/PDX, and playback confirmation on an X68000 are separate verification stages.** A successful compile does not guarantee agreement with the original audio, or successful playback on real hardware or an emulator.
 
-Conversion or playback may fail because of PCM capacity, MDX track size, player memory limits and so on. If the song-loop position or the MDX size is the cause, try `--no-song-loop`.
+Conversion or playback may fail because of PCM capacity, MDX track size, player memory limits and so on. With `--vgm-song-loop` the MDX grows by the loop portion; if size is the cause of a failure, try the default one-pass output.
 
 ## Layout
 
