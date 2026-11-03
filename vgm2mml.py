@@ -159,6 +159,14 @@ def build_parser():
                                'MSM6258 ADPCM/PDX target (opn2-to-opm route only; '
                                '--no-opn2-dcsg requires --force to omit the DCSG '
                                'channels)')
+    advanced.add_argument('--opn2-dac-gain', type=float, default=1.0,
+                          help='Linear gain for the YM2612 DAC waveform in the '
+                               'combined opn2-to-opm PCM bridge (default: 1.0; '
+                               '0 mutes the DAC element)')
+    advanced.add_argument('--opn2-dcsg-gain', type=float, default=1.0,
+                          help='Linear gain for the rendered SN76489 (DCSG) '
+                               'waveform in the combined opn2-to-opm PCM '
+                               'bridge (default: 1.0; 0 mutes the DCSG element)')
     selection=advanced.add_mutually_exclusive_group()
     selection.add_argument('--psg-only','--psg_only',action='store_true',help='Project only PSG; retain native source evidence')
     selection.add_argument('--scc-only','--scc_only',action='store_true',help='Project only SCC; retain native source evidence')
@@ -534,6 +542,8 @@ def main():
     if route == 'opn2-to-opm':
         from opn2_opm import convert
         try:
+            if args.opn2_dac_gain < 0 or args.opn2_dcsg_gain < 0:
+                raise ValueError('OPN2 bridge gains must be non-negative')
             mml, settings = convert(vgm_path, song_dir, dump_passes=args.dump_passes or args.debug,
                 track_layout=args.track_layout, notation=args.notation,
                 loops=not args.no_loops, song_loop=not args.no_song_loop,
@@ -543,6 +553,7 @@ def main():
                 dcsg_present='dcsg' in usage['used_chips'],
                 dac_stream=usage.get('dac_stream'), dac=args.opn2_dac,
                 dcsg=args.opn2_dcsg,
+                dac_gain=args.opn2_dac_gain, dcsg_gain=args.opn2_dcsg_gain,
                 pcm_policy=args.pcm_policy or 'auto', pcm_profile=args.pcm_profile,
                 pcm_generator=args.pcm_generator, pdx_format=args.pdx_format,
                 pcm_capacity=pcm_capacity)
