@@ -36,4 +36,5 @@ def read_vgm_header(raw):
                 c140_type=field(0x96, 1, 0x161),
                 msm6258_clock_raw=field(0x90, 4, 0x161),
                 msm6258_flags=field(0x94, 1, 0x161),
-                scc_clock_raw=field(0x9c, 4, 0x161))
+                scc_clock_raw=field(0x9c, 4, 0x161),
+                nes_apu_clock_raw=field(0x84, 4, 0x161))

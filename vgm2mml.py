@@ -140,6 +140,15 @@ def build_parser():
     advanced.add_argument('--scc-model',choices=('additive','additive8','fm-additive','fm-fm'),default=None,
                           help='SCC OPM voice approximation; default fm-additive; automatically fit a bank when omitted')
     advanced.add_argument('--scc-voice-bank',type=Path,help='Offline fitted YM2151 SCC voice bank JSON')
+    advanced.add_argument('--nes-balance', action='store_true',
+                          help='Apply the NES mapping balance gains in the NES APU projection '
+                               '(nesapu-to-opm route only)')
+    advanced.add_argument('--nes-gain', action='append', default=[], metavar='KIND=FACTOR',
+                          help='Override one NES mapping gain (pulse, triangle, noise, dpcm, fds)')
+    advanced.add_argument('--nes-dpcm', action=argparse.BooleanOptionalAction, default=True,
+                          help='Carry NES DPCM on the MSM6258 ADPCM/PDX target instead of SCC '
+                               'waveform slices (nesapu-to-opm route only; --no-nes-dpcm '
+                               'restores the slice rendering)')
     selection=advanced.add_mutually_exclusive_group()
     selection.add_argument('--psg-only','--psg_only',action='store_true',help='Project only PSG; retain native source evidence')
     selection.add_argument('--scc-only','--scc_only',action='store_true',help='Project only SCC; retain native source evidence')
@@ -171,6 +180,8 @@ def build_parser():
                             help='OPM + SegaPCM diagnostic export: retain native SegaPCM evidence, omit it from MDX MML')
     diagnostic.add_argument('--dump-passes', action='store_true',
                             help='Keep source/state/Segment CSVs and target analysis passes')
+    parser.add_argument('--emit-vgm', action='store_true',
+                        help='Also write <stem>.target.vgm beside the MML: the projected OPM stream the MML was built from, with bound PCM playbacks merged as MSM6258 streams (PSG/SCC, NES, DCSG and OPNA routes)')
     diagnostic.add_argument('--debug', action='store_true',
                             help='Keep diagnostics (MGSDRV also keeps all chip MML variants)')
     diagnostic.add_argument('--pcm-generator', help='External typed PCM MDX/PDX helper path')
@@ -321,6 +332,73 @@ def main():
                                     else ', '.join(usage['used_chips'])))
             route = 'mgs-compatibility'
         report['chip_projection'] = route
+        nes_dpcm_spec = None
+        if route == 'nesapu-to-opm':
+            # NES APU front end: rewrite the source into the SCC + PSG-noise
+            # intermediate, then let the ordinary PSG/SCC route consume it.
+            # The projection declares AY type 0x10 (YM2149, the MSX target
+            # profile) in its header; the intermediate's AY part only drives
+            # the noise generator, and the downstream PSG/SCC profile models
+            # the AY8910 legacy type, so the intermediate copy declares 0.
+            from nesapu_projection import project as project_nesapu
+            from vgm_io import read_vgm_bytes
+            nes_gains = None
+            if args.nes_balance or args.nes_gain:
+                from nesapu_projection import BALANCE_GAINS
+                nes_gains = dict(BALANCE_GAINS)
+                explicit = set()
+                for item in args.nes_gain:
+                    kind, _, factor = item.partition('=')
+                    kind = kind.strip().lower()
+                    if kind not in nes_gains:
+                        parser.error(f'--nes-gain kind must be one of {sorted(nes_gains)}: {item!r}')
+                    try:
+                        nes_gains[kind] = float(factor)
+                    except ValueError:
+                        parser.error(f'--nes-gain factor must be a number: {item!r}')
+                    explicit.add(kind)
+                # An explicit dpcm override names the DPCM level as a
+                # whole; the ADPCM bridge follows it unless its own
+                # factor was named separately.
+                if 'dpcm' in explicit and 'dpcm_adpcm' not in explicit:
+                    nes_gains['dpcm_adpcm'] = nes_gains['dpcm']
+            # The X68000 has a real PCM target: when the DPCM samples are
+            # covered by data blocks, divert them to MSM6258 ADPCM/PDX
+            # (built downstream in the PSG/SCC conversion) and keep the
+            # SCC waveform lane free of slices. Uncovered triggers render
+            # as slices exactly as before.
+            if args.nes_dpcm:
+                from nesapu import analyze as analyze_nesapu
+                from nesapu_pcm import covered_event_indexes
+                nes_raw = read_vgm_bytes(vgm_path)
+                nes_trace = analyze_nesapu(nes_raw)
+                if covered_event_indexes(nes_trace, nes_raw):
+                    nes_dpcm_spec = (nes_trace, nes_raw,
+                                     (nes_gains or {}).get('dpcm_adpcm', 1.0))
+                    projected = project_nesapu(nes_raw, nes_trace,
+                                               gains=nes_gains,
+                                               dpcm_external=True)
+                else:
+                    projected = project_nesapu(nes_raw, nes_trace,
+                                               gains=nes_gains)
+            else:
+                projected = project_nesapu(read_vgm_bytes(vgm_path),
+                                           gains=nes_gains)
+            intermediate = bytearray(projected.vgm)
+            intermediate[0x78] = 0
+            target_dir = Path(song_dir) / '_nesapu_target'
+            target_dir.mkdir(exist_ok=True)
+            projected_path = target_dir / (base_name + '.vgm')
+            projected_path.write_bytes(bytes(intermediate))
+            with open(Path(song_dir) / (base_name + '.nesapu_projection.json'),
+                      'w', encoding='utf-8') as stream:
+                json.dump(projected.summary, stream, indent=2)
+                stream.write('\n')
+            report['nesapu_projection'] = projected.summary
+            vgm_path = str(projected_path)
+            usage = inspect_source(vgm_path)
+            report['projected_source'] = usage
+            route = 'psg-scc-to-opm'
         report['force_requested'] = args.force
         if args.force and (args.target != 'mdx' or route not in (
                 'opna-fm-to-opm', 'native-opm-pcm', 'opm-segapcm-source', 'opm-c140-source', 'opm-msm6295-source', 'psg-scc-to-opm', 'dcsg-to-opm')):
@@ -381,7 +459,8 @@ def main():
                 title=args.title if args.title is not None else title_from_gd3(vgm_path, base_name, args.gd3_language),
                 loops=not args.no_loops, song_loop=not args.no_song_loop,
                 normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms,
-                fm_state_ms=args.fm_state_ms, pitch_policy=args.opm_pitch_policy or 'clamp', force=args.force)
+                fm_state_ms=args.fm_state_ms, pitch_policy=args.opm_pitch_policy or 'clamp', force=args.force,
+                emit_vgm=args.emit_vgm)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()
@@ -391,12 +470,18 @@ def main():
         for line in console_lines(plan):
             print(line)
         print(f'MDX MML: {mml}')
+        if args.emit_vgm:
+            if plan.settings.get('target_vgm'):
+                print(f"Target VGM: {Path(song_dir) / (base_name + '.target.vgm')}")
+            else:
+                print('Target VGM: not produced for this conversion')
         return
 
     if route == 'opna-fm-to-opm':
         from opna_opm import convert
         try:
             mml, settings = convert(vgm_path, song_dir, dump_passes=args.dump_passes or args.debug,
+                emit_vgm=args.emit_vgm,
                 track_layout=args.track_layout, notation=args.notation,
                 loops=not args.no_loops, song_loop=not args.no_song_loop,
                 title=args.title if args.title is not None else title_from_gd3(vgm_path, base_name, args.gd3_language),
@@ -411,6 +496,11 @@ def main():
         report.update(status='generated', projection_settings=settings)
         record_report()
         print(f'MDX MML: {mml}')
+        if args.emit_vgm:
+            if settings.get('target_vgm'):
+                print(f"Target VGM: {Path(song_dir) / (base_name + '.target.vgm')}")
+            else:
+                print('Target VGM: not produced for this conversion')
         forced = settings['force_projection']
         if forced['omitted_intervals']:
             print(f"WARNING: --force muted {forced['omitted_intervals']} unsupported SSG intervals; "
@@ -456,6 +546,7 @@ def main():
         from psg_scc_conversion import convert
         try:
             mml, plan = convert(vgm_path, song_dir, psg_gain=args.psg_gain,
+                                nes_dpcm=nes_dpcm_spec,
                                 scc_gain=.125 if args.scc_gain is None else args.scc_gain,
                                 scc_model=args.scc_model or ('additive' if compatibility_target=='opm-additive' else 'fm-additive'),
                                 scc_voice_bank=args.scc_voice_bank,source_selection=source_selection,psg_output=args.psg_output,
@@ -466,7 +557,7 @@ def main():
                                 dump_passes=args.dump_passes or args.debug,
                                 notation=args.notation, loops=not args.no_loops, song_loop=not args.no_song_loop,
                                 normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms,
-                                force=args.force)
+                                force=args.force, emit_vgm=args.emit_vgm)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()
@@ -480,6 +571,11 @@ def main():
         if source_selection!='all':
             print('Output source selection: '+source_selection.upper()+' only; native source evidence retained')
         print(f'MDX MML: {mml}')
+        if args.emit_vgm:
+            if plan.settings.get('target_vgm'):
+                print(f"Target VGM: {Path(song_dir) / (base_name + '.target.vgm')}")
+            else:
+                print('Target VGM: not available for the held-register compatibility projection')
         if normalize:
             with open(os.path.join(song_dir, base_name + '.mdx.normalization.json'), encoding='utf-8') as stream:
                 normalization = json.load(stream)
@@ -488,6 +584,9 @@ def main():
 
     if args.target == 'mdx':
         from opm_conversion import convert
+        if args.emit_vgm:
+            print('Target VGM: not available for native OPM routes yet; '
+                  'the projected routes (PSG/SCC, NES, DCSG, OPNA) support --emit-vgm')
         try:
             mml, _, _ = convert(vgm_path, song_dir, dump_passes=args.dump_passes or args.debug,
                                 track_layout=args.track_layout, notation=args.notation,

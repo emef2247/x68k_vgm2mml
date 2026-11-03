@@ -9,7 +9,7 @@ from vgm_io import read_vgm_bytes
 from vgm_loop import read_loop_metadata
 
 
-def convert(source, outdir, *, notation='structured', loops=True, song_loop=True,
+def convert(source, outdir, *, notation='structured', loops=True, song_loop=True, emit_vgm=False,
             title=None, normalize_lengths=None, normalization_ms=8, fm_state_ms=24,
             pitch_policy='clamp', force=False):
     from dcsg import analyze, dump_analysis
@@ -72,4 +72,8 @@ def convert(source, outdir, *, notation='structured', loops=True, song_loop=True
         artifact = folder / (source.stem + suffix)
         if artifact.is_file():
             shutil.copyfile(artifact, out / artifact.name)
+    if emit_vgm:
+        from target_vgm_emit import emit_target_vgm
+        plan.settings['target_vgm'] = emit_target_vgm(
+            target, out / (source.stem + '.target.vgm'))
     return result, plan

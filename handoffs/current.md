@@ -1,3 +1,14 @@
+# NES DPCM gain halved for ADPCM playback (2026-11-02, claude/nes-apu ed3b8af)
+
+User listened to the FC Gradius II conversions (the 12d150b fix)
+on MMDSP and reported the ADPCM (DPCM drums) clearly too loud,
+about half being right. The export default --nes-balance fed the
+bridge BALANCE_GAINS['dpcm'] = 1.25, a value calibrated for MSX
+SCC slices. Halved to 0.625 in py/nesapu_projection.py; Tabidachi
+regeneration shows decoded sample peaks/RMS at 0.50x. Suite: the
+branch's failure set is unchanged (the 3 NES CLI subprocess tests
+fail identically with the change stashed; environment baseline).
+
 # Export CLI defaults (2026-10-30)
 
 User requested MDX export defaults: pcm-buffer-kib1200, pcm-policy best-effort, no-vgm=True. Explicit values and --vgm still override. Defaults resolve only for MDX so inherited OPM diagnostic routes retain behavior. Canonical/direct Python API defaults unchanged. Export34tests pass; no music conversion. Direct loader +4096margin gives1224704B PDX budget.
@@ -327,3 +338,79 @@ Do not replace the packer or set a universal library-derived byte cap.
 User is running MSX run_test.sh; leave that checkout/execution alone pending
 completion notice. Preserve unfinished native-layer integration and existing
 MSM6295 work. No commits/staging/push performed for this audit.
+
+---
+
+# Export default: finite one pass; VGM song loop is opt-in (2026-11-02)
+
+User decision after the DQ3_06/DQ3_27 capacity failures: a first-time
+user running the plain export should not hit compilation_failed on
+popular songs. scripts/export_mdx.py now defaults to one finite
+source pass; the declared VGM song loop (state-preserving second
+traversal) is rendered only with --vgm-song-loop. --no-song-loop
+remains accepted (it is the default). The canonical converter
+vgm2mml.py keeps its own loop-on default; this is an export-layer
+recipe default, like the C140 mix gain. README (ja/en) updated:
+examples, option table, and the size troubleshooting note.
+
+Measured effect (SMB3 World 1 Map, same input): default MDX
+10,324 bytes with Song loop emitted=False; --vgm-song-loop
+19,445 bytes emitted=True (~1.9x). The DQ3 failure analysis behind
+this: compiled totals ~82 KB (06) / ~98 KB (27) against the
+0xFFFE MDX track-offset limit, with the loop body (88% / 76% of
+the song) stored twice and the busiest additive lane pair at
+~61 KB on its own. One-pass estimates for DQ3 (from performed-unit
+counts) are ~44 KB / ~55 KB, inside the limit; end-to-end
+confirmation still needs the original DQ3 VGMs, which the user's
+diagnostic archives did not include.
+
+Verification: test_export_mdx (38) and test_opm_song_loop (6)
+pass; full-suite failure set is the established 27 (a pristine
+worktree shows 30 only because a fresh checkout lacks the .tools
+setup -- SCC voice fitting core -- which is environmental).
+Correction (2026-11-02): the "Missing PDX beside input" failure
+once recorded here as a VM-only limitation was a misattribution.
+It is a real bug, reproduced in the user's environment with
+Gradius II (nearly every track): psg_scc_conversion._convert ran
+the inner OPM conversion in projected_opm/ and lifted only the
+MML and normalization JSON to the track folder, leaving the typed
+MDX/PDX pair and the PCM assessment behind, so package assembly
+could not find the PDX named by the MML. Any NES (or PSG/SCC)
+conversion whose PCM bridge generates a typed pair was affected;
+tracks without PCM references passed. Fixed on claude/nes-apu:
+_convert now also lifts the pair (via the assessment's generated
+artifact record) and the assessment JSON/CSV, and the tempdir
+wrapper in convert() copies the same set. Verified: Gradius II
+"Tabidachi (Air Battle)" went from compilation_failed to success
+(typed_pcm_mmlx). Note a separate follow-on: tracks whose DPCM
+playbacks contain stops/holds/resets still end as
+pcm_replay_unavailable because soundlog 0.15.0 cannot preserve
+them in replay verification; the MDX/PDX themselves are produced.
+
+NES balance, third calibration (2026-11-03): BALANCE_GAINS pulse
+1.3 -> 2.0 and noise 0.8 -> 1.2. Gradius II's own data caps pulse
+volumes at 8 of 15, so the melodic lanes sat low against the ADPCM
+hits even after the bridge went to 0.4; the lanes now rise toward
+the PCM instead of only the PCM coming down (the SMB3 pattern from
+the MSX route). Triangle 0.75 / dpcm 0.625 / dpcm_adpcm 0.4 are
+unchanged. Full suite failure set identical before/after (28).
+User's listening check on the regenerated Gradius II export is the
+remaining step.
+
+Target VGM deliverable (2026-11-03): --emit-vgm on vgm2mml.py and
+export_mdx.py writes <stem>.target.vgm beside the MML for the
+projected routes (PSG/SCC incl. NES, DCSG, OPNA): the projected FM
+target VGM verbatim plus the PCM bridge's playbacks merged as
+MSM6258 streams, minus the playbacks the binding omitted (read from
+its omitted-playbacks CSV). New module py/target_vgm_emit.py; the
+export publishes tracks/<stem>.target.vgm and records it in
+results.csv. Native OPM routes print an explicit not-available note.
+Validation: Gradius II Tabidachi FM sequence identical to the
+projected target; 242/248 merged playbacks re-analyze issue-free
+(the rest are retrigger cuts with sole irregular_byte_supply, which
+the binding itself accepts); loop expansion lands exactly on
+total + loop_samples; ymfm renders the finite export at 19.20 s.
+OPNA real-data validation is still open (no YM2608 pack in the VM;
+hook covered by unit tests). opn2_opm on claude/opn2 /
+claude/opna-voice needs the same hook when the branches converge.
+Full suite failure set identical before/after (28).
