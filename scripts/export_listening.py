@@ -69,12 +69,12 @@ def _check_publications(package, folder, stem, owned):
     publications = owned.get('published', {})
     for published, digest in publications.items():
         target = _bounded(package / published, package)
-        if target.parent != folder or target.name not in {stem + ext for ext in ('.mml', '.mdx', '.pdx')}:
+        if target.parent != folder or target.name not in {stem + ext for ext in ('.mml', '.mdx', '.pdx', '.target.vgm')}:
             raise ValueError(f'Invalid listening ownership entry: {target}')
         if target.exists() and (not target.is_file() or _digest(target) != digest):
             raise ValueError(f'Refusing to replace modified listening artifact: {target}')
     actual = {p.name.casefold(): p for p in folder.iterdir()} if folder.is_dir() else {}
-    for extension in ('.mml', '.mdx', '.pdx'):
+    for extension in ('.mml', '.mdx', '.pdx', '.target.vgm'):
         target = _bounded(folder / (stem + extension), package)
         existing = actual.get(target.name.casefold())
         if existing is not None and existing.relative_to(package).as_posix() not in publications:
@@ -146,7 +146,7 @@ def _check_planned_layout(planned, output):
         directory(folder)
         directory(package / '_diagnostics' / stem)
         artifact(staged)
-        for extension in ('.mml', '.mdx', '.pdx'):
+        for extension in ('.mml', '.mdx', '.pdx', '.target.vgm'):
             artifact(folder / (stem + extension))
         for name in ('listening_manifest.json', 'listening_manifest.json.tmp', 'results.csv', 'results.json'):
             artifact(package / name)
@@ -246,7 +246,7 @@ def run_listening_batch(source, output, *, core, options):
             if row.get(label):
                 row[label] = str(_bounded(diagnostics / row[label], output).relative_to(output))
         candidates = {}
-        for label, extension in (('mml', '.mml'), ('mdx', '.mdx'), ('pdx', '.pdx')):
+        for label, extension in (('mml', '.mml'), ('mdx', '.mdx'), ('pdx', '.pdx'), ('target_vgm', '.target.vgm')):
             diagnostic = row.get(label)
             row[label] = ''
             if diagnostic and (label == 'mml' or row['status'] == 'success'):
@@ -269,7 +269,7 @@ def run_listening_batch(source, output, *, core, options):
         _save_manifest(manifest_path, entries)
         rows.append(row)
         local_row = dict(row, input=key)
-        for label in (*path_labels, 'mml', 'mdx', 'pdx'):
+        for label in (*path_labels, 'mml', 'mdx', 'pdx', 'target_vgm'):
             if local_row.get(label):
                 local_row[label] = str((output / local_row[label]).relative_to(package))
         if package not in package_rows:
