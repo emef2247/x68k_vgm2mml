@@ -102,7 +102,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
               max_ticks=None,psg_model=None,psg_gain=None,scc_gain=None,scc_model=None,scc_voice_bank=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mmlx', mxc=None, run68=None,
               normalize_lengths=None, normalization_ms=8, fm_state_ms=24, no_vgm=True, song_loop=True, listening_layout=False, _title=None,
-              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output=None,segapcm_projection='auto',c140_projection='bank',c140_mix_gain_db=0.0,pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096,nes_balance=True,nes_gain=(),nes_dpcm=True,opn2_dac_gain=0.5,opn2_dcsg_gain=0.145):
+              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output=None,segapcm_projection='auto',c140_projection='bank',c140_mix_gain_db=0.0,pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096,nes_balance=True,nes_gain=(),nes_dpcm=True,emit_vgm=False,opn2_dac_gain=0.5,opn2_dcsg_gain=0.145):
     if listening_layout:
         from export_listening import run_listening_batch
         return run_listening_batch(source, output, core=run_batch, options=dict(
@@ -110,7 +110,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
             psg_model=psg_model,psg_gain=psg_gain,scc_gain=scc_gain,scc_model=scc_model,scc_voice_bank=scc_voice_bank,
             opm_pitch_policy=opm_pitch_policy, pcm_policy=pcm_policy, compiler=compiler,
             mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, fm_state_ms=fm_state_ms, no_vgm=no_vgm, song_loop=song_loop, fm_only=fm_only, force=force,pcm_profile=pcm_profile,psg_only=psg_only,scc_only=scc_only,psg_output=psg_output,segapcm_projection=segapcm_projection,c140_projection=c140_projection,c140_mix_gain_db=c140_mix_gain_db,pcm_bank_merge=pcm_bank_merge,pdx_format=pdx_format,
-            pcm_buffer_kib=pcm_buffer_kib,pcm_loader=pcm_loader,pcm_buffer_margin_bytes=pcm_buffer_margin_bytes,opn2_dac_gain=opn2_dac_gain,opn2_dcsg_gain=opn2_dcsg_gain))
+            pcm_buffer_kib=pcm_buffer_kib,pcm_loader=pcm_loader,pcm_buffer_margin_bytes=pcm_buffer_margin_bytes,emit_vgm=emit_vgm,opn2_dac_gain=opn2_dac_gain,opn2_dcsg_gain=opn2_dcsg_gain))
     source, output = Path(source).resolve(), Path(output).resolve()
     from pcm_capacity import resolve_pcm_capacity
     resolve_pcm_capacity(buffer_kib=pcm_buffer_kib,loader=pcm_loader,margin_bytes=pcm_buffer_margin_bytes)
