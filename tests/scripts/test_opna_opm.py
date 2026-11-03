@@ -35,6 +35,11 @@ class OpnaOpmTests(unittest.TestCase):
                       dump_opna_segments=True, loop_count=1)
             return metadata['analysis']
 
+    def test_invalid_key_channel_is_tolerated(self):
+        analysis = self.analyze(bytes.fromhex('56 28 f3 56 28 f0 62 56 28 00'))
+        _rows, losses = project(analysis, clock_hz=7987200)
+        self.assertEqual(losses['invalid_key_channel_writes_ignored'], 1)
+
     def test_operator_bank_pan_key_and_committed_pitch(self):
         analysis = self.analyze(bytes.fromhex(
             '57 38 71 57 b0 1f 57 b4 80 '

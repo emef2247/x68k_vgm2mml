@@ -9,7 +9,10 @@ no prescaler (divisor fixed at 6), no 0x29 channel-enable gate, and
 the DAC channel in place of ADPCM-B. While the DAC is enabled,
 channel 6 FM output is gated (the hardware disconnects it); the DAC
 sample stream is bridged to MSM6258 by py/opn2_pcm.py (S3). The
-companion SN76489 (S4) remains an explicit --force omission.
+companion SN76489 is rendered to MSM6258 by py/opn2_dcsg_pcm.py
+(S4) whenever it does not share the song with DAC playback; the
+combined DAC+DCSG renderer is a later stage, and until then that
+combination remains an explicit --force omission.
 """
 import csv
 import json
@@ -99,8 +102,13 @@ def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, forc
         raise ValueError('YM2612 DAC sample playback requires the DAC bridge '
                          'or --force to omit the DAC channel')
     slots = [w for w in analysis.unmodeled_writes if _unmapped_operator_slot(w)]
+    # Key writes whose channel field names no channel (3 or 7) decode
+    # to nothing on the hardware; drivers emit them from table sweeps.
+    invalid_keys = [w for w in analysis.unmodeled_writes
+                    if w.domain == 'invalid_key_channel']
     unknown = [w for w in analysis.unmodeled_writes
-               if w.domain != 'dac_data' and not _unmapped_operator_slot(w)]
+               if w.domain != 'dac_data' and not _unmapped_operator_slot(w)
+               and w.domain != 'invalid_key_channel']
     if unknown and not force:
         raise ValueError('OPN2 FM projection encountered an unknown register effect')
     losses = Counter()
@@ -108,6 +116,8 @@ def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, forc
         losses['dac_data_writes_while_disabled_ignored'] = dac_inert
     if slots:
         losses['unmapped_operator_slot_writes_ignored'] = len(slots)
+    if invalid_keys:
+        losses['invalid_key_channel_writes_ignored'] = len(invalid_keys)
     if dac_external and dac_live:
         losses['dac_data_writes_projected_to_pcm'] = dac_live
     elif force and dac_live:
@@ -309,7 +319,7 @@ def write_vgm(rows, path, *, end, loop_start=None, loop_event_id=None):
 
 
 def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
-            dcsg_present=False, dac_stream=None, dac=True, **options):
+            dcsg_present=False, dac_stream=None, dac=True, dcsg=True, **options):
     """Reconstruct native Segments, project FM, reuse canonical OPM conversion."""
     from opm_conversion import convert as convert_opm
     source, outdir = Path(source), Path(outdir)
@@ -332,17 +342,20 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
         raise ValueError('Cannot project an invalid declared OPN2 song loop')
     repeating = song_loop and loop_meta['status'] == 'valid'
     omitted = []
+    dcsg_audible = 0
     if dcsg_present:
         from dcsg import analyze as analyze_dcsg
-        dcsg = analyze_dcsg(raw)
-        audible = sum(s.length_samples for s in dcsg.segments if s.audible)
-        if audible:
+        dcsg_audible = sum(s.length_samples for s in analyze_dcsg(raw).segments
+                           if s.audible)
+        if dcsg_audible and not dcsg:
             if not force:
-                raise ValueError('SN76489 (DCSG) projection is not implemented yet (S4); '
-                                 'use --force to omit the DCSG channels')
-            omitted.append(dict(part='DEFG', source_chip='dcsg', action='omit_source_engine',
-                                reason='dcsg_stage_not_implemented',
-                                audible_samples=audible))
+                raise ValueError('SN76489 (DCSG) projection requires the DCSG '
+                                 'bridge (--opn2-dcsg) or --force to omit the '
+                                 'DCSG channels')
+            omitted.append(dict(part='DEFG', source_chip='dcsg',
+                                action='omit_source_engine',
+                                reason='dcsg_bridge_disabled',
+                                audible_samples=dcsg_audible))
     if dac_stream.get('play_commands') and not dac:
         omitted.append(dict(part='J', source_chip='opn2_dac_stream', action='omit_source_engine',
                             reason='dac_bridge_disabled',
@@ -381,9 +394,37 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
                                     reason='dac_stream_not_decoded',
                                     play_commands=dac_stream['play_commands'],
                                     seek_commands=dac_stream.get('seek_commands', 0)))
+        dac_bridged = bridge is not None
+        dcsg_stats = None
+        if dcsg_audible and dcsg:
+            from dcsg import analyze as analyze_dcsg
+            from opn2_dcsg_pcm import project_dcsg
+            dcsg_analysis = analyze_dcsg(raw, loop_count=2 if repeating else 1)
+            if bridge is None:
+                candidate = project_dcsg(
+                    raw, dcsg_analysis,
+                    source_end=analysis.source_end_vgmticks,
+                    loop_start=(loop_meta['decoded_end_samples']
+                                if repeating else None),
+                    loop_count=2 if repeating else 1,
+                    pcm_profile=options.get('pcm_profile', 'standard'))
+                dcsg_stats = candidate.dcsg_stats
+                if candidate.playbacks:
+                    bridge = candidate
+                    bridge.dump(outdir, source.stem)
+            elif not force:
+                raise ValueError('SN76489 (DCSG) together with DAC playback '
+                                 'needs the combined renderer (S4b); use '
+                                 '--force to omit the DCSG channels')
+            else:
+                omitted.append(dict(part='DEFG', source_chip='dcsg',
+                                    action='omit_source_engine',
+                                    reason='dcsg_combined_stage_pending',
+                                    audible_samples=dcsg_audible))
+                dcsg_stats = dict(audible_samples=dcsg_audible, projected=False)
         rows, losses = project(analysis, clock_raw=clock_raw,
                                pitch_policy=options.get('pitch_policy', 'clamp'), force=force,
-                               dac_external=bridge is not None)
+                               dac_external=dac_bridged)
         fm_force = dump_fm_omissions(analysis, outdir, source.stem, force=force)
         target = folder / (source.stem + '.vgm')
         if target.resolve() == source.resolve():
@@ -404,13 +445,17 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
             channel_allocation=dict(model='OPNA route map: FM ch0-2 -> OPM 0-2, FM ch3-5 -> OPM 4-6; OPM ch3 reserved'),
             force_projection=dict(omitted=omitted, fm_omitted_writes=fm_force['omitted_writes'],
                                   fm_writes_csv=fm_force['writes_csv'], fm_omissions=fm_force['omissions']),
-            dac=dac_stats,
+            dac=dac_stats, dcsg=dcsg_stats,
             source_end_vgmticks=analysis.source_end_vgmticks, excluded_or_approximated=losses,
             pitch='committed 11-bit FNUM; existing nominal OPM KC/KF projection',
             target_only_assumptions='unwritten counterpart controls/pitch use reset zero',
-            limitations=('FM EG/DT rates: identity is the derived nearest-rate law at the fixed prescaler; DAC projected to MSM6258 ADPCM (S3); '
-                         'DCSG (S4) not projected; no acoustic equivalence' if bridge is not None else
-                         'FM EG/DT rates: identity is the derived nearest-rate law at the fixed prescaler; DAC and DCSG (S4) not projected; no acoustic equivalence'),
+            limitations=('FM EG/DT rates: identity is the derived nearest-rate law at the fixed prescaler; '
+                         + ('DAC projected to MSM6258 ADPCM (S3); ' if dac_bridged
+                            else 'DAC not projected; ')
+                         + ('DCSG projected to MSM6258 ADPCM (S4); ' if dcsg_stats
+                            and dcsg_stats.get('playbacks')
+                            else 'DCSG (S4) not projected; ')
+                         + 'no acoustic equivalence'),
             source_loop=loop_meta, passes_retained=dump_passes,
             source_map=str(Path('projected_opm') / mapping.name) if dump_passes else None)
         (folder / 'provenance.json').write_text(json.dumps(settings, indent=2) + '\n', encoding='utf-8')

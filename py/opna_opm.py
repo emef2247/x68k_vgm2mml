@@ -109,13 +109,20 @@ def project(analysis, *, clock_hz, pitch_policy='clamp', channel_map=None, force
     if analysis.csm_observed and not force:
         raise ValueError('OPNA CSM timer-generated key events cannot project to ordinary OPM FM')
     slots = [w for w in analysis.unmodeled_writes if _unmapped_operator_slot(w)]
+    # Key writes whose channel field names no channel decode to
+    # nothing on the hardware, as on the OPN2 side.
+    invalid_keys = [w for w in analysis.unmodeled_writes
+                    if w.domain == 'invalid_key_channel']
     unknown = [w for w in analysis.unmodeled_writes
-               if w.domain not in NON_FM and not _unmapped_operator_slot(w)]
+               if w.domain not in NON_FM and not _unmapped_operator_slot(w)
+               and w.domain != 'invalid_key_channel']
     if unknown and not force:
         raise ValueError('OPNA FM projection encountered an unknown register effect')
     losses = Counter(w.domain for w in analysis.unmodeled_writes)
     if slots:
         losses['unmapped_operator_slot_writes_ignored'] = len(slots)
+    if invalid_keys:
+        losses['invalid_key_channel_writes_ignored'] = len(invalid_keys)
     if force and unknown:
         losses['forced_unmodeled_register_writes'] = len(unknown)
     rows, cache, groups = [], {}, {}

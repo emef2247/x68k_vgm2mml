@@ -154,6 +154,11 @@ def build_parser():
                                'stream commands) on the MSM6258 ADPCM/PDX target '
                                '(opn2-to-opm route only; --no-opn2-dac requires --force '
                                'to omit the DAC channel)')
+    advanced.add_argument('--opn2-dcsg', action=argparse.BooleanOptionalAction, default=True,
+                          help='Render the companion SN76489 (DCSG) channels to the '
+                               'MSM6258 ADPCM/PDX target (opn2-to-opm route only; '
+                               '--no-opn2-dcsg requires --force to omit the DCSG '
+                               'channels)')
     selection=advanced.add_mutually_exclusive_group()
     selection.add_argument('--psg-only','--psg_only',action='store_true',help='Project only PSG; retain native source evidence')
     selection.add_argument('--scc-only','--scc_only',action='store_true',help='Project only SCC; retain native source evidence')
@@ -537,6 +542,7 @@ def main():
                 pitch_policy=args.opm_pitch_policy or 'clamp', force=args.force,
                 dcsg_present='dcsg' in usage['used_chips'],
                 dac_stream=usage.get('dac_stream'), dac=args.opn2_dac,
+                dcsg=args.opn2_dcsg,
                 pcm_policy=args.pcm_policy or 'auto', pcm_profile=args.pcm_profile,
                 pcm_generator=args.pcm_generator, pdx_format=args.pdx_format,
                 pcm_capacity=pcm_capacity)

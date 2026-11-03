@@ -68,6 +68,13 @@ class Opn2ProjectionTests(unittest.TestCase):
         _rows, losses = project(analysis, clock_raw=clock_raw)
         self.assertEqual(losses['unmapped_operator_slot_writes_ignored'], 1)
 
+    def test_invalid_key_channel_is_tolerated(self):
+        body = bytearray()
+        body.extend((0x52, 0x28, 0x03, 0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00, 0x66))
+        analysis, clock_raw = analyze(bytes(body))
+        _rows, losses = project(analysis, clock_raw=clock_raw)
+        self.assertEqual(losses['invalid_key_channel_writes_ignored'], 1)
+
     def test_ch3_special_rejected_without_force(self):
         body = bytearray()
         body.extend((0x52, 0x27, 0x40, 0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00, 0x66))
@@ -193,7 +200,7 @@ class Opn2ConvertTests(unittest.TestCase):
             self.assertEqual([o['source_chip'] for o in omitted], ['opn2_dac_stream'])
             self.assertEqual(omitted[0]['play_commands'], 12)
 
-    def test_dcsg_audible_requires_force_and_is_recorded(self):
+    def test_dcsg_audible_without_bridge_requires_force_and_is_recorded(self):
         body = bytearray()
         body.extend((0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00))
         body.extend((0x50, 0xac, 0x50, 0x08, 0x50, 0xb5, 0x62, 0x50, 0xbf, 0x66))
@@ -201,11 +208,32 @@ class Opn2ConvertTests(unittest.TestCase):
             source = Path(tmp) / 'song.vgm'
             source.write_bytes(build_vgm(bytes(body)))
             with self.assertRaises(ValueError):
-                convert(source, Path(tmp) / 'out', dcsg_present=True)
-            mml, settings = convert(source, Path(tmp) / 'out', dcsg_present=True, force=True)
+                convert(source, Path(tmp) / 'out', dcsg_present=True, dcsg=False)
+            mml, settings = convert(source, Path(tmp) / 'out', dcsg_present=True,
+                                    dcsg=False, force=True)
             self.assertTrue(Path(mml).is_file())
             omitted = settings['force_projection']['omitted']
             self.assertEqual([o['source_chip'] for o in omitted], ['dcsg'])
+            self.assertEqual(omitted[0]['reason'], 'dcsg_bridge_disabled')
+
+    def test_dcsg_audible_projects_via_bridge(self):
+        generator = next((path for path in (
+            Path(__file__).resolve().parents[2] / 'scripts/mdx_fixture_generator/target/release/mdx-fixture-generator',
+            Path.home() / 'workspace/x68k_c140_worktree/scripts/mdx_fixture_generator/target/release/mdx-fixture-generator')
+            if path.is_file()), None)
+        if generator is None:
+            self.skipTest('MDX fixture generator is not built in this environment')
+        body = bytearray()
+        body.extend((0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00))
+        body.extend((0x50, 0xac, 0x50, 0x08, 0x50, 0xb5, 0x62, 0x50, 0xbf, 0x66))
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'song.vgm'
+            source.write_bytes(build_vgm(bytes(body)))
+            mml, settings = convert(source, Path(tmp) / 'out', dcsg_present=True,
+                                    pcm_generator=generator)
+            self.assertTrue(Path(mml).is_file())
+            self.assertGreaterEqual(settings['dcsg']['playbacks'], 1)
+            self.assertEqual(settings['force_projection']['omitted'], [])
 
 
 if __name__ == '__main__':
