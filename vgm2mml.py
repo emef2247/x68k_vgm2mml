@@ -149,6 +149,11 @@ def build_parser():
                           help='Carry NES DPCM on the MSM6258 ADPCM/PDX target instead of SCC '
                                'waveform slices (nesapu-to-opm route only; --no-nes-dpcm '
                                'restores the slice rendering)')
+    advanced.add_argument('--opn2-dac', action=argparse.BooleanOptionalAction, default=True,
+                          help='Carry YM2612 DAC sample playback (0x2A write runs and DAC '
+                               'stream commands) on the MSM6258 ADPCM/PDX target '
+                               '(opn2-to-opm route only; --no-opn2-dac requires --force '
+                               'to omit the DAC channel)')
     selection=advanced.add_mutually_exclusive_group()
     selection.add_argument('--psg-only','--psg_only',action='store_true',help='Project only PSG; retain native source evidence')
     selection.add_argument('--scc-only','--scc_only',action='store_true',help='Project only SCC; retain native source evidence')
@@ -401,7 +406,7 @@ def main():
             route = 'psg-scc-to-opm'
         report['force_requested'] = args.force
         if args.force and (args.target != 'mdx' or route not in (
-                'opna-fm-to-opm', 'native-opm-pcm', 'opm-segapcm-source', 'opm-c140-source', 'opm-msm6295-source', 'psg-scc-to-opm', 'dcsg-to-opm')):
+                'opna-fm-to-opm', 'native-opm-pcm', 'opm-segapcm-source', 'opm-c140-source', 'opm-msm6295-source', 'psg-scc-to-opm', 'dcsg-to-opm', 'opn2-to-opm')):
             raise ValueError('--force requires a supported MDX source route and --target mdx')
         if args.fm_only and (args.target != 'mdx' or route != 'opm-segapcm-source'
                              or 'opm' not in usage['used_chips']):
@@ -421,7 +426,7 @@ def main():
         report['source_selection']=source_selection
         if args.psg_output=='pcm' and (route!='psg-scc-to-opm' or args.scc_only or args.notation!='structured'):
             raise ValueError('--psg-output pcm requires structured PSG/SCC MDX input and cannot combine with --scc-only')
-        pcm_applicable = (route in ('opna-fm-to-opm', 'opm-c140-source', 'opm-msm6295-source')
+        pcm_applicable = (route in ('opna-fm-to-opm', 'opm-c140-source', 'opm-msm6295-source', 'opn2-to-opm')
                           or route == 'opm-segapcm-source' and not args.fm_only
                           or route == 'native-opm-pcm' and 'pcm' in usage['used_chips']
                           or route=='psg-scc-to-opm' and args.psg_output=='pcm')
@@ -434,7 +439,7 @@ def main():
             raise ValueError('--target opm-additive requires the additive PSG model')
         if route == 'psg-scc-to-opm' and (args.notation == 'legacy' or args.track_layout != 'channels'):
             raise ValueError('PSG/SCC OPM projection supports structured/registers notation and channel tracks')
-        if route in ('native-opm-pcm', 'opna-fm-to-opm', 'opm-segapcm-source', 'opm-c140-source', 'opm-msm6295-source') and any(v is not None for v in (args.psg_model,args.psg_gain,args.scc_gain,args.scc_model,args.scc_voice_bank)):
+        if route in ('native-opm-pcm', 'opna-fm-to-opm', 'opm-segapcm-source', 'opm-c140-source', 'opm-msm6295-source', 'opn2-to-opm') and any(v is not None for v in (args.psg_model,args.psg_gain,args.scc_gain,args.scc_model,args.scc_voice_bank)):
             raise ValueError('PSG/SCC projection options do not apply to native MDX')
         report['status'] = 'resolved'
         record_report()
@@ -540,6 +545,36 @@ def main():
             if selection.get('requested') == 'auto':
                 print(f"PCM policy: auto -> {selection['effective']} ({selection['reason']})")
             print(f'PCM known losses: {len(assessment["known_losses"])}; assessment: {assessment_path}')
+        return
+
+    if route == 'opn2-to-opm':
+        from opn2_opm import convert
+        try:
+            mml, settings = convert(vgm_path, song_dir, dump_passes=args.dump_passes or args.debug,
+                track_layout=args.track_layout, notation=args.notation,
+                loops=not args.no_loops, song_loop=not args.no_song_loop,
+                title=args.title if args.title is not None else title_from_gd3(vgm_path, base_name, args.gd3_language),
+                normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms,
+                pitch_policy=args.opm_pitch_policy or 'clamp', force=args.force,
+                dcsg_present='dcsg' in usage['used_chips'],
+                dac_stream=usage.get('dac_stream'), dac=args.opn2_dac,
+                pcm_policy=args.pcm_policy or 'auto', pcm_profile=args.pcm_profile,
+                pcm_generator=args.pcm_generator, pdx_format=args.pdx_format,
+                pcm_capacity=pcm_capacity)
+        except (OSError, ValueError) as error:
+            report.update(status='blocked', reason=str(error))
+            record_report()
+            parser.error(str(error))
+        report.update(status='generated', projection_settings=settings)
+        record_report()
+        print(f'MDX MML: {mml}')
+        for omission in settings['force_projection']['omitted']:
+            print(f"OPN2 projection: {omission['source_chip']} omitted ({omission['reason']})")
+        for domain, count in settings['excluded_or_approximated'].items():
+            print(f'OPN2 projection: {domain} ({count} occurrences)')
+        if settings.get('dac') and settings['dac'].get('playbacks'):
+            print(f"OPN2 DAC: {settings['dac']['playbacks']} PCM playbacks, "
+                  f"{settings['dac']['unique_samples']} unique samples")
         return
 
     if route == 'psg-scc-to-opm':

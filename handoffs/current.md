@@ -1,13 +1,96 @@
-# NES DPCM gain halved for ADPCM playback (2026-11-02, claude/nes-apu ed3b8af)
+# OPN2 S3: DAC bridge to MSM6258 (2026-11-02, branch claude/opn2, f7c5840)
 
-User listened to the FC Gradius II conversions (the 12d150b fix)
-on MMDSP and reported the ADPCM (DPCM drums) clearly too loud,
-about half being right. The export default --nes-balance fed the
-bridge BALANCE_GAINS['dpcm'] = 1.25, a value calibrated for MSX
-SCC slices. Halved to 0.625 in py/nesapu_projection.py; Tabidachi
-regeneration shows decoded sample peaks/RMS at 0.50x. Suite: the
-branch's failure set is unchanged (the 3 NES CLI subprocess tests
-fail identically with the change stashed; environment baseline).
+py/opn2_pcm.py bridges the YM2612 DAC to the PCM/PDX target, on by
+default (--opn2-dac / --no-opn2-dac). Both real-world encodings
+decode into one byte timeline: 0x2A write runs (gated by the
+analysis's DAC-enabled spans) and DAC streams (type-0 blocks,
+0x90-0x95 setup, 0x93 autonomous starts on the libvgm phase model,
+0x95 fast starts arming 0xE0 seeks / 0x8n plays). Lessons baked in:
+seeks/plays often come with NO setup commands (Bloodlines, Shinobi)
+and bind to one implicit bank context; stream supplies are NOT
+gated by the DAC enable bit (Time Trax never sets it yet streams
+its whole soundtrack); Bloodlines' entire DAC activity is a tick-0
+artifact (240 wait-0 plays + silence writes) that correctly yields
+no playbacks. Runs split at >10 ms gaps and at the song-loop
+boundary, dedupe by waveform hash; decode notes ride in the PCM
+analysis observations (any entry in issues blocks the planner as
+"not representable"). Verified: Burning Force 03 MML/MDX
+byte-identical to S2; Shinobi 06 (with --force for DCSG) gives 518
+playbacks / 63 samples, PDX 148,389 B, MDX 33,802 B compiled. Time
+Trax 01 decodes fully (1.58M plays, expanded) but its continuous
+stream is one waveform per traversal and exceeds PDX capacity
+(2,080,280 B needed) — phrase-level slicing of continuous streams
+is the remaining DAC gap, alongside the known FM MML capacity wall.
+Next stage is S4 (DCSG destination, decision at the gate with the
+duty measurements already in opn2_source summaries).
+
+# OPN2: DAC stream recognition + Time Trax survey (2026-11-02, branch claude/opn2)
+
+Time Trax (Prototype, MD; the user's next target after Burning
+Force) cannot even be routed before this change: its DAC traffic
+is the VGM stream encoding — 852,695 play commands (0x80-0x8F)
+and 35,348 seeks (0xE0) against a single 280-byte data block in
+track 01 — and the frontend filed every one as an unsupported
+command (route blocked; the conversion report ballooned to
+146 MB). The frontend now attributes seek/play commands to the
+OPN2 DAC when the source uses one and aggregates them in
+usage['dac_stream'] (play/seek counts only). opn2_opm refuses
+stream playback without --force (S3 will decode it) and records
+the omission under force. Related refinement: 0x2A DAC data
+writes while the DAC is disabled are inert (initialization
+blips; Time Trax has 2) and no longer require --force.
+
+Survey facts for Time Trax 01: DCSG unused, no CSM, FM is 21k of
+942k events. With --force the FM part converts, but the MML
+(175 KB) fails MDX compilation: track 7 offset exceeds 0xFFFE.
+So this target has two walls: the stream DAC voice (a continuous
+wavetable-style voice streamed from a tiny block, not one-shot
+drums) and MDX capacity on long dense songs.
+
+# OPN2 (YM2612) S2: FM -> OPM projection (2026-11-02, branch claude/opn2)
+
+py/opn2_opm.py projects the S1 analysis in the opna_opm shape
+(vgm-conv mapping, OPNA channel map: FM 0-2 -> OPM 0-2, FM 3-5 ->
+OPM 4-6, OPM ch3 reserved). Ch3-special/CSM reject without
+--force (OPNA precedent). While the DAC is enabled, ch6 FM output
+is gated from state; DAC sample playback itself (S3) and audible
+DCSG (S4) are --force omissions recorded in the settings JSON
+(<stem>.opn2-opm.json) and printed. One real-data correction:
+operator registers with channel bits 3 (0x30-0x9F, &3==3) select
+no channel on hardware — drivers upload padded voice rows — so
+the projection classifies them as known no-ops counted in the
+losses, mirroring opna_opm's slot classification (field note
+2026-11-02_opn2_unmapped_operator_slots.md).
+
+Verified: Burning Force 03 Bay Yard (the user's pinpoint target;
+the whole 16-track pack is FM-only: no DAC writes, no audible
+DCSG, no CSM) converts without --force and compiles to an
+18,835-byte MDX with the real fixture generator. 12 OPN2 tests
+pass (6 S1 + 6 S2). Remaining stages: S3 DAC bridge, S4 DCSG
+destination (decided from measurements at that gate).
+
+# OPN2 (YM2612) S1: frontend + native analysis (2026-11-02, branch claude/opn2)
+
+User-approved port of mucom88_vgm2mml's OPN2 support (design study:
+~/workspace/x68k_opn2_study/DESIGN.md in the agent workspace). S1 only:
+py/opn2.py is a port of mucom88's musical_hal opn2.py with one
+adaptation (DAC enable 0x2B bit 7 is channel-6 state, not an
+unmodeled write; DAC data 0x2A stays unmodeled-retained).
+py/opn2_source.py builds the register-evidence CSV, dumps
+states/segments/unmodeled CSVs, and measures DAC encoding (0x2A runs
+vs stream controls) and DCSG duty for the later stages.
+conversion_config inventories 0x52/0x53 (second instance 0xA2/0xA3
+unsupported), reads the clock at 0x2C, retains YM2612 DAC stream
+controls as evidence, and routes {'opn2'} / {'opn2','dcsg'} to
+'opn2-to-opm', which currently stops after analysis with an explicit
+S1 message. 6 synthetic tests pass; the full-suite failure set is
+unchanged (27 names, same VM).
+
+Burning Force (MD, 16 tracks, user's target pack; track 03 Bay Yard
+is the pinpoint goal) measured FM-only on every track: no DAC
+writes, no audible DCSG, no CSM. S2 (FM->OPM) alone makes the pack
+play. Next: S2 projection in the opna_opm shape, OPNA channel map,
+ch3-special/CSM reject without --force.
 
 # Export CLI defaults (2026-10-30)
 

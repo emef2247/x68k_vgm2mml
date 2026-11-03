@@ -29,6 +29,8 @@ def inspect_source(source):
     scc_silent = True
     previous_time = 0
     banks = []
+    dac_stream_controls = []
+    dac_stream_pending = []
     for event in command_times(raw):
         cmd, pos = event.command, event.address
         if event.vgmticks > previous_time and 'psg' in chips:
@@ -40,7 +42,8 @@ def inspect_source(source):
         counts[f'{cmd:#04x}'] += 1
         item = dict(command=f'{cmd:#04x}', address=pos, source_samples=event.vgmticks)
         chip = {0x54: 'opm', 0xa4: 'opm', 0x56: 'opna', 0x57: 'opna',
-                0xa6: 'opna', 0xa7: 'opna', 0xa0: 'psg', 0xd2: 'scc',
+                0xa6: 'opna', 0xa7: 'opna', 0x52: 'opn2', 0x53: 'opn2',
+                0xa2: 'opn2', 0xa3: 'opn2', 0xa0: 'psg', 0xd2: 'scc',
                 0x51: 'opll', 0x50: 'dcsg', 0x30: 'dcsg', 0x4f: 'dcsg', 0x3f: 'dcsg', 0xb7: 'pcm', 0xc0: 'segapcm', 0xd4: 'c140', 0xb8: 'msm6295',
                 0xb4: 'nesapu'}.get(cmd)
         if chip:
@@ -50,6 +53,8 @@ def inspect_source(source):
                 unsupported.append(dict(item, reason='Second OPM instance is not supported'))
             elif cmd in (0xa6, 0xa7):
                 unsupported.append(dict(item, reason='Second OPNA instance is not supported'))
+            elif cmd in (0xa2, 0xa3):
+                unsupported.append(dict(item, reason='Second OPN2 instance is not supported'))
             elif cmd == 0x51:
                 reg, value = raw[pos + 1:pos + 3]
                 opll_key_on |= bool((0x20 <= reg <= 0x28 and value & 0x10)
@@ -109,14 +114,36 @@ def inspect_source(source):
                 # The PCM analyzer retains commands and validates their supplies.
                 chips.add('pcm')
                 first.setdefault('pcm', item)
+            elif destination is not None and destination & 0x7f == 2:
+                # YM2612 DAC stream supplies are retained as OPN2
+                # evidence; the OPN2 analysis validates their use.
+                if destination & 0x80:
+                    unsupported.append(dict(item, reason='Second OPN2 instance is not supported'))
+                else:
+                    chips.add('opn2')
+                    first.setdefault('opn2', item)
+                    dac_stream_controls.append(dict(item, stream_id=stream_id))
             else:
                 unsupported.append(dict(item, code='unsupported_stream_control',
                     reason='DAC Stream Control is not supported', stream_id=stream_id,
                     destination_chip=destination))
+        elif cmd == 0xe0 or 0x80 <= cmd <= 0x8f:
+            # DAC stream seek/play commands exist only for data-block
+            # stream playback; attribution waits until the pass ends
+            # (an OPN2 source makes them OPN2 DAC evidence).
+            dac_stream_pending.append((cmd, dict(item, reason='Unsupported source chip/stream command')))
         elif cmd in (0x61, 0x62, 0x63, 0x64, 0x66) or 0x70 <= cmd <= 0x7f:
             continue
         else:
             unsupported.append(dict(item, reason='Unsupported source chip/stream command'))
+    dac_stream = dict(play_commands=0, seek_commands=0)
+    if dac_stream_pending:
+        if 'opn2' in chips:
+            dac_stream = dict(
+                play_commands=sum(1 for cmd, _ in dac_stream_pending if cmd != 0xe0),
+                seek_commands=sum(1 for cmd, _ in dac_stream_pending if cmd == 0xe0))
+        else:
+            unsupported.extend(item for _, item in dac_stream_pending)
     opm_offset = 0x30 if header['version'] >= 0x110 else 0x10
     opm_clock = int.from_bytes(raw[opm_offset:opm_offset + 4], 'little')
     opll_clock = int.from_bytes(raw[0x10:0x14], 'little') if header['version'] >= 0x110 else 0
@@ -126,6 +153,8 @@ def inspect_source(source):
                         segapcm=header['segapcm_clock_raw'], c140=header['c140_clock_raw'],
                         nesapu=int.from_bytes(raw[0x84:0x88], 'little') & 0x3fffffff
                                if header['version'] >= 0x161 else 0,
+                        opn2=int.from_bytes(raw[0x2c:0x30], 'little')
+                             if header['version'] >= 0x150 else 0,
                         msm6295=header['msm6295_clock_raw'])
     has_song_loop = bool(int.from_bytes(raw[0x1c:0x20], 'little'))
     initialization = {}
@@ -151,6 +180,7 @@ def inspect_source(source):
                 unused_declarations=sorted(chip for chip, clock in declarations.items()
                                            if clock and chip not in chips),
                 command_counts=dict(counts), first_use=first, data_blocks=banks,
+                dac_stream_controls=dac_stream_controls, dac_stream=dac_stream,
                 unsupported_commands=unsupported)
 
 
@@ -183,6 +213,8 @@ def select_mdx_route(usage, *, compatibility_target=None):
         return 'opm-segapcm-source'
     if chips and chips <= {'opm', 'pcm'}:
         return 'native-opm-pcm'
+    if chips == {'opn2'} or chips == {'opn2', 'dcsg'}:
+        return 'opn2-to-opm'
     if chips == {'dcsg'}:
         return 'dcsg-to-opm'
     if chips == {'opna'}:
