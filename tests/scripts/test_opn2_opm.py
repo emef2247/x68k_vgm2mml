@@ -75,6 +75,37 @@ class Opn2ProjectionTests(unittest.TestCase):
         _rows, losses = project(analysis, clock_raw=clock_raw)
         self.assertEqual(losses['invalid_key_channel_writes_ignored'], 1)
 
+    def test_unassigned_register_is_tolerated(self):
+        body = bytearray()
+        body.extend((0x52, 0xcc, 0x0b, 0x53, 0xec, 0x0c, 0x52, 0xb7, 0x00,
+                     0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00, 0x66))
+        analysis, clock_raw = analyze(bytes(body))
+        _rows, losses = project(analysis, clock_raw=clock_raw)
+        self.assertEqual(losses['unassigned_register_writes_ignored'], 3)
+
+    def test_uninterpreted_write_inside_map_still_rejected(self):
+        body = bytearray()
+        body.extend((0x52, 0x21, 0x00, 0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00, 0x66))
+        analysis, clock_raw = analyze(bytes(body))
+        with self.assertRaises(ValueError):
+            project(analysis, clock_raw=clock_raw)
+
+    def test_unassigned_low_register_is_tolerated(self):
+        body = bytearray()
+        body.extend((0x52, 0x00, 0xf7, 0x52, 0x08, 0x07,
+                     0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00, 0x66))
+        analysis, clock_raw = analyze(bytes(body))
+        _rows, losses = project(analysis, clock_raw=clock_raw)
+        self.assertEqual(losses['unassigned_register_writes_ignored'], 2)
+
+    def test_unassigned_gap_registers_are_tolerated(self):
+        body = bytearray()
+        body.extend((0x52, 0x20, 0xf7, 0x52, 0x2c, 0x57,
+                     0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00, 0x66))
+        analysis, clock_raw = analyze(bytes(body))
+        _rows, losses = project(analysis, clock_raw=clock_raw)
+        self.assertEqual(losses['unassigned_register_writes_ignored'], 2)
+
     def test_ch3_special_rejected_without_force(self):
         body = bytearray()
         body.extend((0x52, 0x27, 0x40, 0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00, 0x66))

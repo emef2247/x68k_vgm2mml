@@ -1,3 +1,36 @@
+# OPN2 DAC bridge gain default lowered to 0.375 (2026-11-04, claude/opn2-dead-registers)
+
+On the user's instruction after listening to the Alien Soldier /
+Gunstar Heroes conversions, the OPN2 DAC bridge gain default goes
+from 0.5 to 0.375 (a 25% cut). The DCSG gain stays at 0.145, so
+the DAC:DCSG balance inside combined tracks shifts accordingly;
+that is the requested change, not an oversight. Every default
+site was updated together: opn2_opm.convert, opn2_pcm.project_dac,
+opn2_dcsg_pcm.project_combined, vgm2mml --opn2-dac-gain,
+export_mdx (argparse, run_batch signature and help text), and the
+export test that pins the default. Verified on Alien Soldier 02:
+no-option output is byte-identical to explicit
+--opn2-dac-gain 0.375 (PDX and ADPCM samples) and differs from
+explicit 0.5 exactly in the DAC-bearing samples. Suite: 1202
+tests, 22F+8E, skipped 115 - the branch baseline.
+
+# Unassigned-register writes no longer need --force (2026-11-04, claude/opn2-dead-registers)
+
+Both FM projection gates (opn2_opm, opna_opm) now exempt writes to
+registers the chip does not implement, counted as
+unassigned_register_writes_ignored, in the same family as the
+unmapped-operator-slot and invalid-key-channel exemptions. On the
+YM2612 side the exemption is map-complete: 0x00-0x20, 0x23, 0x29,
+0x2c-0x2f and 0xb7-0xff, with only the 0x21 test register carved out
+(it can affect the chip). On the YM2608 side only 0xb7-0xff applies,
+because its low address range is real (SSG / ADPCM). Evidence is
+Alien Soldier: track 04 writes 0xcc/0xec with slowly incrementing
+data (40 writes, now ignored; the track generates without --force),
+and track 08 sweeps 0xb8-0x2c wrapping past 0xff (88 writes ignored;
+it then stops only at the MDX 64KB capacity wall, like the other
+dense tracks). Suite: 1202 tests, failures/errors identical to the
+baseline counts (22F+8E, skipped 115).
+
 # OPN2 bridge gains now reach the single-element paths (2026-11-03, claude/opn2-s4-dcsg)
 
 On the user's instruction, the bridge gains also apply when

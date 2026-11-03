@@ -401,7 +401,7 @@ def dac_waveform(raw, events, analysis, *, loop_start=None):
 
 
 def project_dac(raw, events, analysis, *, loop_start=None, loop_count=1,
-                pcm_profile='standard', dac_gain=0.5):
+                pcm_profile='standard', dac_gain=0.375):
     """Build the MSM6258 analysis for a song's YM2612 DAC traffic.
 
     ``events`` must be the caller's command_times pass in the same
