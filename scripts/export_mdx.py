@@ -102,7 +102,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
               max_ticks=None,psg_model=None,psg_gain=None,scc_gain=None,scc_model=None,scc_voice_bank=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mmlx', mxc=None, run68=None,
               normalize_lengths=None, normalization_ms=8, fm_state_ms=24, no_vgm=True, song_loop=True, listening_layout=False, _title=None,
-              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output=None,segapcm_projection='auto',c140_projection='bank',c140_mix_gain_db=0.0,pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096,nes_balance=True,nes_gain=(),nes_dpcm=True,emit_vgm=False):
+              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output=None,segapcm_projection='auto',c140_projection='bank',c140_mix_gain_db=0.0,pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096,nes_balance=True,nes_gain=(),nes_dpcm=True,opn2_dac_gain=0.5,opn2_dcsg_gain=0.145):
     if listening_layout:
         from export_listening import run_listening_batch
         return run_listening_batch(source, output, core=run_batch, options=dict(
@@ -110,7 +110,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
             psg_model=psg_model,psg_gain=psg_gain,scc_gain=scc_gain,scc_model=scc_model,scc_voice_bank=scc_voice_bank,
             opm_pitch_policy=opm_pitch_policy, pcm_policy=pcm_policy, compiler=compiler,
             mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, fm_state_ms=fm_state_ms, no_vgm=no_vgm, song_loop=song_loop, fm_only=fm_only, force=force,pcm_profile=pcm_profile,psg_only=psg_only,scc_only=scc_only,psg_output=psg_output,segapcm_projection=segapcm_projection,c140_projection=c140_projection,c140_mix_gain_db=c140_mix_gain_db,pcm_bank_merge=pcm_bank_merge,pdx_format=pdx_format,
-            pcm_buffer_kib=pcm_buffer_kib,pcm_loader=pcm_loader,pcm_buffer_margin_bytes=pcm_buffer_margin_bytes,emit_vgm=emit_vgm))
+            pcm_buffer_kib=pcm_buffer_kib,pcm_loader=pcm_loader,pcm_buffer_margin_bytes=pcm_buffer_margin_bytes,opn2_dac_gain=opn2_dac_gain,opn2_dcsg_gain=opn2_dcsg_gain))
     source, output = Path(source).resolve(), Path(output).resolve()
     from pcm_capacity import resolve_pcm_capacity
     resolve_pcm_capacity(buffer_kib=pcm_buffer_kib,loader=pcm_loader,margin_bytes=pcm_buffer_margin_bytes)
@@ -160,6 +160,8 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
         raise ValueError('PCM bank merge must be budget96, similar or off')
     if pdx_format not in ('ex-pdx', 'standard'):
         raise ValueError('PDX format must be ex-pdx or standard')
+    if opn2_dac_gain < 0 or opn2_dcsg_gain < 0:
+        raise ValueError('OPN2 bridge gains must be non-negative')
     options = ['--pdx-format',pdx_format,'--pcm-bank-merge',pcm_bank_merge,'--pcm-profile',pcm_profile,
                '--segapcm-projection',segapcm_projection,'--c140-projection',c140_projection,
                '--c140-mix-gain-db',str(c140_mix_gain_db)]
@@ -171,6 +173,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
     if nes_balance:options.append('--nes-balance')
     for gain in nes_gain:options.extend(['--nes-gain',gain])
     options.append('--nes-dpcm' if nes_dpcm else '--no-nes-dpcm')
+    options.extend(['--opn2-dac-gain',str(opn2_dac_gain),'--opn2-dcsg-gain',str(opn2_dcsg_gain)])
     if force:
         options.append('--force')
     if fm_only:
@@ -467,6 +470,10 @@ def main():
                         help='NES APU route only: override one NES mapping gain (pulse, triangle, noise, dpcm, fds)')
     parser.add_argument('--nes-dpcm',action=argparse.BooleanOptionalAction,default=True,
                         help='NES APU route only: carry DPCM on ADPCM/PDX instead of SCC slices (export default: on)')
+    parser.add_argument('--opn2-dac-gain',type=float,default=0.5,
+                        help='OPN2 route only: linear gain for the DAC waveform in the combined PCM bridge (default: 0.5)')
+    parser.add_argument('--opn2-dcsg-gain',type=float,default=0.145,
+                        help='OPN2 route only: linear gain for the DCSG waveform in the combined PCM bridge (default: 0.145)')
     parser.add_argument('--pcm-bank-merge',choices=('budget96','similar','off'),default='budget96',
                         help='PCM sharing: budget96 (default) fits 96 samples and the PCM buffer budget; similar keeps quality bounds; off keeps exact sharing')
     # The export surface is intentionally small: the defaults below carry
@@ -489,7 +496,7 @@ def main():
                          psg_gain=args.psg_gain,scc_gain=args.scc_gain,scc_model=args.scc_model,scc_voice_bank=args.scc_voice_bank,
                           opm_pitch_policy=args.opm_pitch_policy, pcm_policy=args.pcm_policy,
                           normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms, no_vgm=args.no_vgm,
-                          listening_layout=True, song_loop=args.song_loop, fm_only=args.fm_only, force=args.force,pcm_profile=args.pcm_profile,psg_only=args.psg_only,scc_only=args.scc_only,psg_output=args.psg_output,segapcm_projection=args.segapcm_projection,c140_projection=args.c140_projection,c140_mix_gain_db=args.c140_mix_gain_db,pcm_bank_merge=args.pcm_bank_merge,pdx_format=args.pdx_format,
+                          listening_layout=True, song_loop=args.song_loop, fm_only=args.fm_only, force=args.force,pcm_profile=args.pcm_profile,psg_only=args.psg_only,scc_only=args.scc_only,psg_output=args.psg_output,segapcm_projection=args.segapcm_projection,c140_projection=args.c140_projection,c140_mix_gain_db=args.c140_mix_gain_db,pcm_bank_merge=args.pcm_bank_merge,pdx_format=args.pdx_format,opn2_dac_gain=args.opn2_dac_gain,opn2_dcsg_gain=args.opn2_dcsg_gain,
                           pcm_buffer_kib=args.pcm_buffer_kib,pcm_loader=args.pcm_loader,pcm_buffer_margin_bytes=args.pcm_buffer_margin_bytes,
                           nes_balance=args.nes_balance,nes_gain=args.nes_gain,nes_dpcm=args.nes_dpcm,emit_vgm=args.emit_vgm)
     except (OSError, ValueError) as error:

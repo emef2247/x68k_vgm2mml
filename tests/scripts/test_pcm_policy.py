@@ -27,6 +27,17 @@ class PcmPolicyTests(unittest.TestCase):
         self.assertEqual(selection['stream_supply_count'],0)
         self.assertEqual(selection['reason'],'no_observed_dac_stream_supplies')
 
+    def test_auto_selects_best_effort_for_opn2_projections(self):
+        from types import SimpleNamespace
+        from pcm_assessment import select_pcm_policy
+        for origin in ('projected_msm6258_from_opn2_dac',
+                       'projected_msm6258_from_opn2_dcsg',
+                       'projected_msm6258_from_opn2_dac_dcsg'):
+            effective, selection = select_pcm_policy(
+                'auto', SimpleNamespace(source_origin=origin, stream_supplies=()))
+            self.assertEqual(effective, 'best-effort')
+            self.assertEqual(selection['reason'], 'opn2_projection_transcoding')
+
     def test_unused_stream_setup_does_not_enable_loss(self):
         body,_=playback(bytes(range(32)))
         native=analyze(vgm(data_block(bytes.fromhex('12 34'))+stream_setup()+body))

@@ -68,6 +68,13 @@ class Opn2ProjectionTests(unittest.TestCase):
         _rows, losses = project(analysis, clock_raw=clock_raw)
         self.assertEqual(losses['unmapped_operator_slot_writes_ignored'], 1)
 
+    def test_invalid_key_channel_is_tolerated(self):
+        body = bytearray()
+        body.extend((0x52, 0x28, 0x03, 0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00, 0x66))
+        analysis, clock_raw = analyze(bytes(body))
+        _rows, losses = project(analysis, clock_raw=clock_raw)
+        self.assertEqual(losses['invalid_key_channel_writes_ignored'], 1)
+
     def test_ch3_special_rejected_without_force(self):
         body = bytearray()
         body.extend((0x52, 0x27, 0x40, 0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00, 0x66))
@@ -76,6 +83,38 @@ class Opn2ProjectionTests(unittest.TestCase):
             project(analysis, clock_raw=clock_raw)
         _rows, losses = project(analysis, clock_raw=clock_raw, force=True)
         self.assertGreater(losses['ch3_special_frequencies_not_projected'], 0)
+
+    def test_lfo_depths_bridged_while_lfo_active(self):
+        body = bytearray()
+        def w(reg, val):
+            body.extend((0x52, reg, val))
+        w(0x22, 0x0d)          # LFO enable, rate 5
+        w(0xb4, 0xe3)          # ch0: L/R on, AMS 2, PMS 3
+        w(0xb0, 0x32)
+        w(0xa4, 0x22)
+        w(0xa0, 0x00)
+        w(0x28, 0xf0)
+        body.append(0x62)
+        w(0x28, 0x00)
+        w(0x22, 0x05)          # LFO disable: bridge span ends
+        body.append(0x66)
+        analysis, clock_raw = analyze(bytes(body))
+        rows, losses = project(analysis, clock_raw=clock_raw)
+        controls = [(r['target_register'], r['target_data']) for r in rows]
+        self.assertIn((0x1b, 0x02), controls)      # triangle waveform
+        self.assertIn((0x19, 0x80 | 86), controls)  # PMD 86
+        self.assertIn((0x19, 16), controls)         # AMD 16
+        self.assertEqual(losses['lfo_depths_bridged'], 1)
+        start = controls.index((0x19, 0x80 | 86))
+        self.assertIn((0x19, 0x80), controls[start:])
+        self.assertIn((0x19, 0), controls[start:])
+
+    def test_no_lfo_sensitivities_no_bridge(self):
+        analysis, clock_raw = analyze(fm_body())
+        rows, losses = project(analysis, clock_raw=clock_raw)
+        controls = [(r['target_register'], r['target_data']) for r in rows]
+        self.assertNotIn((0x1b, 0x02), controls)
+        self.assertFalse(losses.get('lfo_depths_bridged'))
 
 
 def dac_body():
@@ -161,7 +200,7 @@ class Opn2ConvertTests(unittest.TestCase):
             self.assertEqual([o['source_chip'] for o in omitted], ['opn2_dac_stream'])
             self.assertEqual(omitted[0]['play_commands'], 12)
 
-    def test_dcsg_audible_requires_force_and_is_recorded(self):
+    def test_dcsg_audible_without_bridge_requires_force_and_is_recorded(self):
         body = bytearray()
         body.extend((0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00))
         body.extend((0x50, 0xac, 0x50, 0x08, 0x50, 0xb5, 0x62, 0x50, 0xbf, 0x66))
@@ -169,11 +208,59 @@ class Opn2ConvertTests(unittest.TestCase):
             source = Path(tmp) / 'song.vgm'
             source.write_bytes(build_vgm(bytes(body)))
             with self.assertRaises(ValueError):
-                convert(source, Path(tmp) / 'out', dcsg_present=True)
-            mml, settings = convert(source, Path(tmp) / 'out', dcsg_present=True, force=True)
+                convert(source, Path(tmp) / 'out', dcsg_present=True, dcsg=False)
+            mml, settings = convert(source, Path(tmp) / 'out', dcsg_present=True,
+                                    dcsg=False, force=True)
             self.assertTrue(Path(mml).is_file())
             omitted = settings['force_projection']['omitted']
             self.assertEqual([o['source_chip'] for o in omitted], ['dcsg'])
+            self.assertEqual(omitted[0]['reason'], 'dcsg_bridge_disabled')
+
+    def test_dcsg_audible_projects_via_bridge(self):
+        generator = next((path for path in (
+            Path(__file__).resolve().parents[2] / 'scripts/mdx_fixture_generator/target/release/mdx-fixture-generator',
+            Path.home() / 'workspace/x68k_c140_worktree/scripts/mdx_fixture_generator/target/release/mdx-fixture-generator')
+            if path.is_file()), None)
+        if generator is None:
+            self.skipTest('MDX fixture generator is not built in this environment')
+        body = bytearray()
+        body.extend((0x52, 0x28, 0xf0, 0x62, 0x52, 0x28, 0x00))
+        body.extend((0x50, 0xac, 0x50, 0x08, 0x50, 0xb5, 0x62, 0x50, 0xbf, 0x66))
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'song.vgm'
+            source.write_bytes(build_vgm(bytes(body)))
+            mml, settings = convert(source, Path(tmp) / 'out', dcsg_present=True,
+                                    pcm_generator=generator)
+            self.assertTrue(Path(mml).is_file())
+            self.assertGreaterEqual(settings['dcsg']['playbacks'], 1)
+            self.assertEqual(settings['force_projection']['omitted'], [])
+            self.assertEqual(settings['pcm_policy_engagement']['engaged'],
+                             'best-effort')
+            self.assertEqual(settings['pcm_policy_engagement']['reason'],
+                             'opn2_projection_bridge')
+
+    def test_dac_and_dcsg_project_via_combined_bridge(self):
+        generator = next((path for path in (
+            Path(__file__).resolve().parents[2] / 'scripts/mdx_fixture_generator/target/release/mdx-fixture-generator',
+            Path.home() / 'workspace/x68k_c140_worktree/scripts/mdx_fixture_generator/target/release/mdx-fixture-generator')
+            if path.is_file()), None)
+        if generator is None:
+            self.skipTest('MDX fixture generator is not built in this environment')
+        body = bytearray(dac_body()[:-1])
+        body.extend((0x50, 0xac, 0x50, 0x08, 0x50, 0xb5, 0x62, 0x50, 0xbf))
+        body.append(0x66)
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'song.vgm'
+            source.write_bytes(build_vgm(bytes(body)))
+            mml, settings = convert(source, Path(tmp) / 'out', dcsg_present=True,
+                                    pcm_generator=generator)
+            self.assertTrue(Path(mml).is_file())
+            self.assertTrue(settings['dcsg']['combined'])
+            self.assertGreaterEqual(settings['dcsg']['playbacks'], 1)
+            self.assertGreaterEqual(settings['dac']['combined_playbacks'], 1)
+            self.assertEqual(settings['force_projection']['omitted'], [])
+            self.assertEqual(settings['pcm_policy_engagement']['engaged'],
+                             'best-effort')
 
 
 if __name__ == '__main__':

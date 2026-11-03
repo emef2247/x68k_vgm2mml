@@ -1,3 +1,152 @@
+# OPN2 bridge gains now reach the single-element paths (2026-11-03, claude/opn2-s4-dcsg)
+
+On the user's instruction, the bridge gains also apply when
+only one element sounds: project_dac takes dac_gain (applied
+at the waveform fill, clamped to int16) and project_dcsg
+takes dcsg_gain (applied to the rendered wave before
+slicing); convert passes both through, and each path records
+its gain in its stats. dac_waveform itself stays unscaled —
+the combined bridge scales at mix time, so scaling it too
+would double-apply (an edit briefly landed there and was
+moved; check both amplitude sites when touching this file).
+Verified on real data: Shinobi 03 (combined) is byte-
+identical to the approved half set; 18 (DCSG-only) changed
+and records dcsg_gain 0.145; project_dac on 03 at gains
+1.0/0.5 gives identical playback counts (150) and a decoded
+RMS ratio of exactly 0.500. Suite failure multiset identical
+(1193 tests, 22F+8E). Note the consequence: DCSG-only and
+DAC-only tracks now render quieter than in the round-2
+approved set (18 was approved unscaled); that re-balance is
+what the user asked for here.
+
+# OPN2 bridge gains become the defaults (2026-11-03, claude/opn2-s4-dcsg)
+
+Listening round 2 approved the half set ("no more
+strangeness"): dac_gain 0.5 / dcsg_gain 0.145 are now the
+defaults in opn2_opm.convert, opn2_dcsg_pcm.project_combined,
+vgm2mml.py and scripts/export_mdx.py (run_batch signature,
+argparse and the listening options dict). Verified: an
+option-free export of Shinobi 03 reproduces the approved half
+set's MDX/PDX byte-for-byte; suite failure multiset identical
+to the ef9f0cd baseline (1193 tests, 22F+8E, from log files).
+Coverage note: the gains reach only the combined renderer —
+project_dcsg (DCSG-only) and project_dac (DAC-only) take no
+gain, so track 18 was byte-identical across both listening
+sets and its approved level is the unscaled one. Whether the
+single-element paths should take the gains too is left as a
+user decision. Full measurement record: field note
+2026-11-03_opn2_dcsg_bridge_calibration.md.
+
+# OPN2 bridge gain options exposed (2026-11-03, branch claude/opn2-s4-dcsg)
+
+User listening on Revenge of Shinobi 03 found the combined PCM
+about 20% hot. Measurement: on 03 the DCSG element runs at 52% of
+the DAC RMS (21% of PCM energy, +1.04 dB over the DAC alone) with
+66% audible occupancy, versus 2% / +0.08 dB on 06; on the source
+side 06's DAC is actually the larger one, so the excess is a
+render-side balance issue, not source level. dac_gain/dcsg_gain
+already existed in opn2_opm.convert and are now exposed as
+--opn2-dac-gain / --opn2-dcsg-gain in vgm2mml.py and
+scripts/export_mdx.py (defaults stay 1.0 / 1.0; negative values
+rejected). export main() always uses the listening layout, so
+run_batch forwards the gains in both the subprocess option list
+and the listening options dict; new tests in test_export_mdx.py
+cover the listening hop and the negative check. Suite A/B from
+log files: failure multiset identical (after 1192 tests vs
+baseline 1190, 22F+8E both). A dcsg_gain 0.5 conversion of track
+03 (pair named 03gain0.5.mdx/.pdx) was generated for listening.
+The user moved evaluation to this branch (their earlier data was
+converted on opna-voice, where DCSG is omitted under --force, so
+the PCM content differs by construction). Default-gain decision
+(dcsg 0.5?) stays with the user's listening. Caution: a pair
+renamed by hand-shortening the MDX header's embedded PDX name
+failed to load in MMDSP ("file read error"); regenerate with the
+target stem instead of patching the header.
+
+# OPN2 S4a: DCSG-to-PCM bridge (2026-11-03, branch claude/opn2-s4-dcsg)
+
+Cut from claude/opna-voice at adb5ec3. py/opn2_dcsg_pcm.py renders
+the SN76489 mix from dcsg Segments (tones: segment frequency +
+2 dB/step attenuation; noise: header LFSR mask/width, re-seeded on
+resets; stereo folded to mono; tone phase restarts at zero on
+return from silence so repeated phrases dedupe). convert() gained
+dcsg=True (--opn2-dcsg): DCSG-only songs bridge to MSM6258;
+DAC + DCSG together stop at an explicit S4b gate (or omit under
+--force as dcsg_combined_stage_pending). Verified on Revenge of
+Shinobi track 18 (generated; 39 runs -> 18 unique samples; PDX
+287,224 B; no clipping) and track 06 (hits the S4b gate as
+designed). Next: S4b combined renderer, validated on 06, then 17,
+then 12/14. Measurements: ~/workspace/x68k_opn2_study/DESIGN.md.
+
+Also on this branch: key writes with channel field 3/7
+(invalid_key_channel) are hardware no-ops and are now tolerated
+and counted by both opn2_opm and opna_opm gates, mirroring the
+operator-slot rule (Shinobi 18 was blocked by one tick-0 write).
+
+# LFO bridge + OPM route audit + provenance cleanup (2026-11-02, claude/opna-voice 89478d4)
+
+HW LFO bridge implemented in the projections (not the music
+layer): OPNA/OPN2 emitted 0x18 (rate) and 0x38 (PMS/AMS) but
+never 0x19 (PMD/AMD) or 0x1B (waveform), so source LFO was
+inert. Both project() functions now emit (0x1B, 0x02),
+(0x19, 0x80|86), (0x19, 16) once per span where the source LFO
+is enabled and some channel has nonzero sensitivity, zeroing
+the depths at span end (losses: lfo_depths_bridged). PMD 86
+maps OPM PMS steps onto the OPN 3.4*2^k cent series; AMD 16
+gives AMS steps 0/3.0/6.0/12.0 dB. New tests in both test
+files; BF03 changes by exactly one byte (the initial LFO byte,
+now the derived table value).
+
+OPM route audit (user request): the native OPM Segment layer
+is complete (every write stored, snapshots carry all fields;
+segments split on any change plus always on test/timer-control
+writes). Nonchanging writes never reach Segments — measured
+per conversion as source_nonchanging_writes_not_in_segments —
+and are value-idempotent on the chip. The y-write flow carries
+everything else; verified end-to-end on the authored
+hardware_lfo_depths fixture (LFRQ/PMD/AMD/waveform/test-reg
+sync pulses/PMS-AMS all present with authored values). Known
+documented non-goals stand: LFO phase, timer expiry and CSM
+attacks are not simulated; unlike the OPN routes, the native
+route does not surface csm_observed in its summary (reporting
+gap, left for a later decision). Non-4MHz clocks retime pitch
+only (EG/LFO/noise/timers documented as not retuned).
+
+Provenance (user direction: referencing information is fine,
+copying algorithms is not; code should stand as original):
+the 8-entry LFO rate table was re-derived from ymfm's divider
+model, corroborated by Nuked-OPN2 lfo_cycles (OPNA table
+c1 c8 ca cb cd d5 fc ff; OPN2 c0 c7 c9 ca cc d4 fb ff; rate 7
+saturates). 'vgm-conv' reason strings, docstring attribution,
+the REFERENCE constants and the summary mapping label were
+removed from opna_opm/opn2_opm. README (JA/EN) and
+THIRD_PARTY_NOTICES now scope vgm-conv to the PSG route only
+(psg_opm_fm still references it) and credit FITOM's
+voice-parameter-reference as the FM semantics reference.
+Suite: failure-name set identical before/after (verified from
+log files: 1176 tests 22F+8E baseline, 1179 tests 22F+8E after;
+background-delivered summaries disagreed and were disregarded).
+Field note: 2026-11-02_opn_lfo_depths_bridged_and_rate_table_derived.md.
+
+# OPNA->OPM voice laws V1: prescaler-aware EG (2026-11-02, claude/opna-voice a155c34)
+
+Study in ~/workspace/opna_opm_voice/ (AUDIT.md, DESIGN.md,
+eg_rate_map.py/.csv), prompted by the user's BF03 listening
+(playing fine, timbre not quite right; direction: convert the
+principled way first, judge by listening). Established laws:
+TL identity (FITOM common 0.75 dB/step space), DT identity (ymfm
+shares one detune table/sign across OPN and OPM), EG identity at
+prescaler 6 / OPN2 (nearest-rate derivation; residuals -11% /
+-15%). Implemented: prescaler 3/2 EG correction in opna_opm
+(AR/D1R/D2R +2/+3, RR +1, 0 frozen, counted in the summary).
+BF03 output byte-identical. Suite failure set unchanged (the 3
+NES CLI tests that fail in any worktree pass in the main
+checkout; worktree artifact, not a regression).
+Open: the MDX route does not render hardware LFO at all (state
+captured, never consumed), so PMS/AMS depth laws (OPN vs OPM
+models differ structurally; PMD/AMD is the lever) wait on an LFO
+rendering design decision.
+
 # OPN2 S3: DAC bridge to MSM6258 (2026-11-02, branch claude/opn2, f7c5840)
 
 py/opn2_pcm.py bridges the YM2612 DAC to the PCM/PDX target, on by

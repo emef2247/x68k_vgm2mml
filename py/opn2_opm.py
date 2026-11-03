@@ -1,7 +1,7 @@
 """Native YM2612 (OPN2) FM Segments -> exact-sample projected OPM -> MDX path.
 
-The projection follows py/opna_opm.py (the vgm-conv OPNToOPMConverter
-shape): operator registers are re-laid out field by field, committed
+The projection follows py/opna_opm.py (the register-layout mapping
+derived from the project's ymfm-based audit): operator registers are re-laid out field by field, committed
 FNUM/BLOCK goes through the existing 4 MHz OPM pitch helper, and the
 output is an intermediate VGM of pure OPM writes consumed by the
 ordinary OPM conversion. YM2612 differences from YM2608: no SSG,
@@ -9,7 +9,11 @@ no prescaler (divisor fixed at 6), no 0x29 channel-enable gate, and
 the DAC channel in place of ADPCM-B. While the DAC is enabled,
 channel 6 FM output is gated (the hardware disconnects it); the DAC
 sample stream is bridged to MSM6258 by py/opn2_pcm.py (S3). The
-companion SN76489 (S4) remains an explicit --force omission.
+companion SN76489 is rendered to MSM6258 by py/opn2_dcsg_pcm.py
+(S4); when a song uses both the DAC and the DCSG, the two are
+mixed into a single MSM6258 stream by the same module, since the
+target has only one PCM channel and the two overlap most of the
+time in real material.
 """
 import csv
 import json
@@ -28,7 +32,18 @@ from vgm_timing import command_times
 
 
 TARGET_CLOCK = 4000000
-REFERENCE = '780a20ed505e23eb21aa9c6ce3f349029718b5a0'
+
+# LFO rate mapping, derived from the chip models in ymfm (and
+# corroborated by Nuked-OPN2's die-derived divider counts): the OPN
+# LFO advances its 7-bit value when the counter's low byte reaches
+# {109, 78, 72, 68, 63, 45, 9, 6}[rate] at the FM sample clock
+# (OPN2 7,670,454/144 = 53.3 kHz), while the OPM rate byte is a 4.4
+# float step giving Hz = 62,500 * ((0x10 | (b & 0xf)) << (b >> 4))
+# / 2**30. Each entry is the OPM byte nearest in Hz to the source
+# rate (3.85/5.40/5.86/6.21/6.71/9.46/51.9/83.0 Hz). Source rate 7
+# exceeds the OPM maximum of 59.1 Hz and saturates at 0xff.
+# Derivation script: opna_opm_voice study, lfo_rate_map.py.
+_LFO_RATE_TO_OPM = (0xc0, 0xc7, 0xc9, 0xca, 0xcc, 0xd4, 0xfb, 0xff)
 
 
 def _unmapped_operator_slot(write):
@@ -88,8 +103,13 @@ def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, forc
         raise ValueError('YM2612 DAC sample playback requires the DAC bridge '
                          'or --force to omit the DAC channel')
     slots = [w for w in analysis.unmodeled_writes if _unmapped_operator_slot(w)]
+    # Key writes whose channel field names no channel (3 or 7) decode
+    # to nothing on the hardware; drivers emit them from table sweeps.
+    invalid_keys = [w for w in analysis.unmodeled_writes
+                    if w.domain == 'invalid_key_channel']
     unknown = [w for w in analysis.unmodeled_writes
-               if w.domain != 'dac_data' and not _unmapped_operator_slot(w)]
+               if w.domain != 'dac_data' and not _unmapped_operator_slot(w)
+               and w.domain != 'invalid_key_channel']
     if unknown and not force:
         raise ValueError('OPN2 FM projection encountered an unknown register effect')
     losses = Counter()
@@ -97,6 +117,8 @@ def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, forc
         losses['dac_data_writes_while_disabled_ignored'] = dac_inert
     if slots:
         losses['unmapped_operator_slot_writes_ignored'] = len(slots)
+    if invalid_keys:
+        losses['invalid_key_channel_writes_ignored'] = len(invalid_keys)
     if dac_external and dac_live:
         losses['dac_data_writes_projected_to_pcm'] = dac_live
     elif force and dac_live:
@@ -133,7 +155,34 @@ def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, forc
             target_ch=channel_map.get(s.ch) if s and register != 0x18 else None,
             source_row=None, inferred_key=False, synthetic_phase=None))
 
-    emit(None, 0x18, 0xc2, 'vgm-conv initial LFO frequency')
+    emit(None, 0x18, _LFO_RATE_TO_OPM[0], 'initial LFO frequency')
+
+    # Hardware LFO bridge: same law as the OPNA route. The source
+    # LFO waveform is a fixed triangle and its depths live in the
+    # per-channel PMS/AMS steps, while OPM scales those steps by
+    # the global PMD/AMD latches. PMD 86 makes the OPM PMS steps
+    # 3.4 * 2^k cents (the OPN series) for PMS 1..3 and keeps 4..7
+    # within +25%/-38%; AMD 16 makes the OPM AMS steps
+    # 0/3.0/6.0/12.0 dB against the source 0/1.4/5.9/11.8 dB. The
+    # depths are emitted once per span in which the source LFO is
+    # enabled and some channel has nonzero sensitivity, and zeroed
+    # when that span ends; rate and sensitivities already flow as
+    # 0x18/0x38 writes.
+    lfo = {'enabled': False, 'on': False, 'sensitivities': {}}
+
+    def lfo_bridge(s):
+        active = lfo['enabled'] and any(
+            pms or ams for pms, ams in lfo['sensitivities'].values())
+        if active and not lfo['on']:
+            emit(s, 0x1b, 0x02, 'OPN fixed triangle as OPM LFO waveform')
+            emit(s, 0x19, 0x80 | 86, 'OPM PMD scaled to OPN PMS depth steps')
+            emit(s, 0x19, 16, 'OPM AMD scaled to OPN AMS depth steps')
+            losses['lfo_depths_bridged'] += 1
+            lfo['on'] = True
+        elif not active and lfo['on']:
+            emit(s, 0x19, 0x80, 'LFO bridge span ended: PM depth zero')
+            emit(s, 0x19, 0, 'LFO bridge span ended: AM depth zero')
+            lfo['on'] = False
 
     def target_channel(s):
         return channel_map.get(s.ch)  # Same map as the OPNA route: OPM 0..2/4..6.
@@ -155,7 +204,12 @@ def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, forc
             block = 0
         else:
             fnum, block = state.fnum, state.block
-        frequency = fnum * clock_hz * (6 / state.fm_prescale_divisor) / (144 * 2 ** (20 - block))
+        # Hardware pitch: the OPN phase counter is 20 bits and the block
+        # scales FNUM by 2**(block-1), so Hz = fnum * clock / (144 *
+        # 2**(21-block)) at prescale 6 (YM3438 manual formula; ymfm's
+        # Nuked-verified phase generator agrees). The 2**(20-block)
+        # form used here before played every note one octave high.
+        frequency = fnum * clock_hz * (6 / state.fm_prescale_divisor) / (144 * 2 ** (21 - block))
         if frequency:
             try:
                 kc, kf, actual = opm_pitch(frequency, TARGET_CLOCK)
@@ -185,7 +239,7 @@ def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, forc
                     0x60: lambda: op.am_enabled << 7 | op.d1r,
                     0x70: lambda: op.d2r, 0x80: lambda: op.sl << 4 | op.rr}[reg & 0xf0]()
             emit(s, 0x40 + ((reg & 0xf0) - 0x30) * 2 + bank * 8 + ch,
-                 data, 'vgm-conv operator bank mapping; DT2 reset zero')
+                 data, 'operator bank mapping; DT2 reset zero')
         elif 0x90 <= reg <= 0x9f:
             if state.operators[(reg >> 2) & 3].ssg_eg_enabled:
                 losses['ssg_eg_not_available_on_opm'] += 1
@@ -194,23 +248,25 @@ def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, forc
         elif 0xb0 <= reg <= 0xb2 or 0xb4 <= reg <= 0xb6:
             # Target-only reset assumptions for unwritten counterpart controls.
             emit(s, 0x20 + ch, channel_control(s),
-                 'vgm-conv RL swap and FB/algorithm')
+                 'RL swap and FB/algorithm')
             if reg >= 0xb4:
-                emit(s, 0x38 + ch, state.pms << 4 | state.ams, 'vgm-conv PMS/AMS mapping')
+                emit(s, 0x38 + ch, state.pms << 4 | state.ams, 'PMS/AMS mapping')
+                lfo['sensitivities'][s.ch] = (state.pms or 0, state.ams or 0)
+                lfo_bridge(s)
         elif 0xa0 <= reg <= 0xa2:
             pitch(s)
         elif s.port == 0 and reg == 0x28:
-            emit(s, 8, state.key_mask << 3 | ch, 'vgm-conv operator key mask')
+            emit(s, 8, state.key_mask << 3 | ch, 'operator key mask')
         elif s.port == 0 and reg == 0x2b:
             for item in segments:
                 if target_channel(item) is not None:
                     emit(item, 0x20 + target_channel(item), channel_control(item),
                          'DAC enable as channel-6 output gate; FM state retained')
         elif s.port == 0 and reg == 0x22:
-            emit(s, 0x18, (0xc2, 0xc9, 0xcb, 0xcd, 0xcf, 0xd6, 0xfb, 0xff)[state.lfo_rate],
-                 'vgm-conv approximate LFO frequency')
-            if state.lfo_enabled:
-                losses['lfo_depth_waveform_and_speed_not_equivalent'] += 1
+            emit(s, 0x18, _LFO_RATE_TO_OPM[state.lfo_rate],
+                 'approximate LFO frequency (derived rate table)')
+            lfo['enabled'] = bool(state.lfo_enabled)
+            lfo_bridge(s)
         elif s.port == 0 and reg in (0x24, 0x25, 0x26, 0x27):
             losses['source_timer_controls_not_projected'] += 1
             if force and reg == 0x27:
@@ -264,7 +320,8 @@ def write_vgm(rows, path, *, end, loop_start=None, loop_event_id=None):
 
 
 def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
-            dcsg_present=False, dac_stream=None, dac=True, **options):
+            dcsg_present=False, dac_stream=None, dac=True, dcsg=True,
+            dac_gain=0.5, dcsg_gain=0.145, **options):
     """Reconstruct native Segments, project FM, reuse canonical OPM conversion."""
     from opm_conversion import convert as convert_opm
     source, outdir = Path(source), Path(outdir)
@@ -287,17 +344,20 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
         raise ValueError('Cannot project an invalid declared OPN2 song loop')
     repeating = song_loop and loop_meta['status'] == 'valid'
     omitted = []
+    dcsg_audible = 0
     if dcsg_present:
         from dcsg import analyze as analyze_dcsg
-        dcsg = analyze_dcsg(raw)
-        audible = sum(s.length_samples for s in dcsg.segments if s.audible)
-        if audible:
+        dcsg_audible = sum(s.length_samples for s in analyze_dcsg(raw).segments
+                           if s.audible)
+        if dcsg_audible and not dcsg:
             if not force:
-                raise ValueError('SN76489 (DCSG) projection is not implemented yet (S4); '
-                                 'use --force to omit the DCSG channels')
-            omitted.append(dict(part='DEFG', source_chip='dcsg', action='omit_source_engine',
-                                reason='dcsg_stage_not_implemented',
-                                audible_samples=audible))
+                raise ValueError('SN76489 (DCSG) projection requires the DCSG '
+                                 'bridge (--opn2-dcsg) or --force to omit the '
+                                 'DCSG channels')
+            omitted.append(dict(part='DEFG', source_chip='dcsg',
+                                action='omit_source_engine',
+                                reason='dcsg_bridge_disabled',
+                                audible_samples=dcsg_audible))
     if dac_stream.get('play_commands') and not dac:
         omitted.append(dict(part='J', source_chip='opn2_dac_stream', action='omit_source_engine',
                             reason='dac_bridge_disabled',
@@ -314,17 +374,18 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
             raise ValueError('Input has no OPN2 register evidence')
         clock_hz = clock_raw & 0x3fffffff
         bridge, dac_stats = None, None
+        dac_candidate = None
         if dac:
             from opn2_pcm import project_dac
             candidate = project_dac(
                 raw, events, analysis,
                 loop_start=loop_meta['decoded_end_samples'] if repeating else None,
                 loop_count=2 if repeating else 1,
-                pcm_profile=options.get('pcm_profile', 'standard'))
+                pcm_profile=options.get('pcm_profile', 'standard'),
+                dac_gain=dac_gain)
             dac_stats = candidate.dac_stats
             if candidate.playbacks:
-                bridge = candidate
-                bridge.dump(outdir, source.stem)
+                dac_candidate = candidate
             elif dac_stream.get('play_commands') and not (
                     dac_stats['manual_bytes'] or dac_stats['autonomous_bytes']):
                 candidate.dump(outdir, source.stem)
@@ -336,9 +397,58 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
                                     reason='dac_stream_not_decoded',
                                     play_commands=dac_stream['play_commands'],
                                     seek_commands=dac_stream.get('seek_commands', 0)))
+        dcsg_stats = None
+        combined = False
+        if dcsg_audible and dcsg:
+            from dcsg import analyze as analyze_dcsg
+            dcsg_analysis = analyze_dcsg(raw, loop_count=2 if repeating else 1)
+            if dac_candidate is not None:
+                from opn2_dcsg_pcm import project_combined
+                bridge = project_combined(
+                    raw, events, analysis, dcsg_analysis,
+                    loop_start=(loop_meta['decoded_end_samples']
+                                if repeating else None),
+                    loop_count=2 if repeating else 1,
+                    pcm_profile=options.get('pcm_profile', 'standard'),
+                    dac_gain=dac_gain, dcsg_gain=dcsg_gain)
+                dac_stats = bridge.dac_stats
+                dcsg_stats = bridge.dcsg_stats
+                combined = True
+                bridge.dump(outdir, source.stem)
+            else:
+                from opn2_dcsg_pcm import project_dcsg
+                candidate = project_dcsg(
+                    raw, dcsg_analysis,
+                    source_end=analysis.source_end_vgmticks,
+                    loop_start=(loop_meta['decoded_end_samples']
+                                if repeating else None),
+                    loop_count=2 if repeating else 1,
+                    pcm_profile=options.get('pcm_profile', 'standard'),
+                    dcsg_gain=dcsg_gain)
+                dcsg_stats = candidate.dcsg_stats
+                if candidate.playbacks:
+                    bridge = candidate
+                    bridge.dump(outdir, source.stem)
+        elif dac_candidate is not None:
+            bridge = dac_candidate
+            bridge.dump(outdir, source.stem)
+        dac_bridged = dac_candidate is not None or combined
+        # The OPN2 bridges are derived renderings/transcodings, the
+        # class of source the PCM policy treats as best-effort under
+        # auto (as for the PSG/C140/MSM6295 projections). Engage it
+        # explicitly here: after bank preparation the analysis is
+        # re-origined to the native-bank view, so the policy
+        # selection there can no longer see the projected origin,
+        # and a strict resolution would block the bank reduction's
+        # recorded replacements. An explicit user policy stands.
+        policy_engagement = None
+        if bridge is not None and options.get('pcm_policy', 'auto') == 'auto':
+            options['pcm_policy'] = 'best-effort'
+            policy_engagement = dict(requested='auto', engaged='best-effort',
+                                     reason='opn2_projection_bridge')
         rows, losses = project(analysis, clock_raw=clock_raw,
                                pitch_policy=options.get('pitch_policy', 'clamp'), force=force,
-                               dac_external=bridge is not None)
+                               dac_external=dac_bridged)
         fm_force = dump_fm_omissions(analysis, outdir, source.stem, force=force)
         target = folder / (source.stem + '.vgm')
         if target.resolve() == source.resolve():
@@ -355,17 +465,21 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
             writer.writerows(rows)
         settings = dict(state_origin='projected_opm', source_chip='YM2612', target_chip='YM2151',
             source_clock_hz=clock_hz, target_clock_hz=TARGET_CLOCK,
-            mapping='vgm-conv OPNToOPMConverter', reference_revision=REFERENCE,
+            mapping='register-layout mapping derived from ymfm-based audit',
             channel_allocation=dict(model='OPNA route map: FM ch0-2 -> OPM 0-2, FM ch3-5 -> OPM 4-6; OPM ch3 reserved'),
             force_projection=dict(omitted=omitted, fm_omitted_writes=fm_force['omitted_writes'],
                                   fm_writes_csv=fm_force['writes_csv'], fm_omissions=fm_force['omissions']),
-            dac=dac_stats,
+            dac=dac_stats, dcsg=dcsg_stats, pcm_policy_engagement=policy_engagement,
             source_end_vgmticks=analysis.source_end_vgmticks, excluded_or_approximated=losses,
             pitch='committed 11-bit FNUM; existing nominal OPM KC/KF projection',
             target_only_assumptions='unwritten counterpart controls/pitch use reset zero',
-            limitations=('FM EG/DT rates unretimed; DAC projected to MSM6258 ADPCM (S3); '
-                         'DCSG (S4) not projected; no acoustic equivalence' if bridge is not None else
-                         'FM EG/DT rates unretimed; DAC and DCSG (S4) not projected; no acoustic equivalence'),
+            limitations=('FM EG/DT rates: identity is the derived nearest-rate law at the fixed prescaler; '
+                         + ('DAC projected to MSM6258 ADPCM (S3); ' if dac_bridged
+                            else 'DAC not projected; ')
+                         + ('DCSG projected to MSM6258 ADPCM (S4); ' if dcsg_stats
+                            and dcsg_stats.get('playbacks')
+                            else 'DCSG (S4) not projected; ')
+                         + 'no acoustic equivalence'),
             source_loop=loop_meta, passes_retained=dump_passes,
             source_map=str(Path('projected_opm') / mapping.name) if dump_passes else None)
         (folder / 'provenance.json').write_text(json.dumps(settings, indent=2) + '\n', encoding='utf-8')

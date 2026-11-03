@@ -21,15 +21,10 @@ attenuation steps of headroom. Segment processing and target generation are
 implemented in this project; the external converter is not a runtime dependency.
 The upstream notice is retained for these referenced mapping materials.
 
-The OPNA FM projection in `py/opna_opm.py` also references
-[opn-to-opm-converter.ts](https://github.com/digital-sound-antiques/vgm-conv/blob/780a20ed505e23eb21aa9c6ce3f349029718b5a0/src/converter/opn-to-opm-converter.ts)
-at the same revision for operator-bank addresses, channels0..2/4..6, key masks,
-RL swapping, FB/algorithm, PMS/AMS and approximate LFO frequency mapping.
-This project consumes native committed11-bit FNUM/BLOCK and uses its existing
-4MHz OPM pitch helper, rather than the upstream raw-register9-bit cache path.
-Source parsing, exact-sample serialization and MDX generation use this project's
-separate stages; vgm-conv is not a runtime dependency. The ISC notice below
-also applies to the referenced OPN mapping materials.
+The OPNA / OPN2 FM projections (`py/opna_opm.py`, `py/opn2_opm.py`) do not
+reference vgm-conv: their register mapping, EG/LFO laws and pitch handling
+are this project's own derivation from the chips' register layouts and
+chip models (ymfm; Nuked-OPN2 for the LFO divider counts).
 
 Upstream [LICENSE.md](https://github.com/digital-sound-antiques/vgm-conv/blob/780a20ed505e23eb21aa9c6ce3f349029718b5a0/LICENSE.md):
 

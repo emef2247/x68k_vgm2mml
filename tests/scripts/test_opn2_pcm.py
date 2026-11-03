@@ -7,7 +7,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'py'))
 
-from opn2_pcm import dac_timeline, project_dac
+from opn2_pcm import dac_timeline, dac_waveform, project_dac
 from opn2_source import build_analysis
 
 OPN2_CLOCK = 7670454
@@ -51,6 +51,25 @@ class Opn2DacWriteRunTests(unittest.TestCase):
         self.assertEqual(len(result.playbacks), 1)
         self.assertEqual(len(result.samples), 1)
         self.assertEqual(result.playbacks[0].termination, 'song_end')
+
+    def test_dac_waveform_spans_match_bridge_playbacks(self):
+        body = bytearray()
+        write_run(body, [0xa0, 0x60, 0xc0, 0x40])
+        body.extend((0x61, 0xe8, 0x03))
+        write_run(body, [0xa0, 0x60, 0xc0, 0x40])
+        body.append(0x66)
+        source, analysis, events = analyze(bytes(body))
+        raw = source.read_bytes()
+        wave, _issues, _stats, spans = dac_waveform(raw, events, analysis)
+        result = project_dac(raw, events, analysis)
+        self.assertEqual([(start, stop) for start, stop, *_ in spans],
+                         [(p.start_vgmticks, p.end_vgmticks)
+                          for p in result.playbacks])
+        for start, stop, *_ in spans:
+            self.assertTrue(any(v != 0 for v in wave[start:stop]))
+        outside = [v for i, v in enumerate(wave)
+                   if not any(s <= i < e for s, e, *_ in spans)]
+        self.assertTrue(all(v == 0 for v in outside))
 
     def test_gap_splits_and_identical_runs_dedupe(self):
         body = bytearray()
