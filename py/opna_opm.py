@@ -72,9 +72,18 @@ def _unmapped_operator_slot(write):
             and 0x30 <= write.register <= 0x9f and write.register & 3 == 3)
 
 
+def _unassigned_register(write):
+    # The YM2608 FM register map likewise ends at 0xb6 on both ports;
+    # writes at or above 0xb7 select no register on the hardware.
+    return (write.domain == 'uninterpreted' and write.chip_type == 'YM2608'
+            and write.chip_instance == 0 and write.port in (0, 1)
+            and write.register >= 0xb7)
+
+
 def dump_fm_omissions(analysis, outdir, stem, *, force):
     omissions = [dict(asdict(w),
                       reason='unmapped_fm_operator_slot' if _unmapped_operator_slot(w) else
+                             'unassigned_register' if _unassigned_register(w) else
                              'unsupported_register_effect:' + w.domain,
                       action='omit_write_from_target')
                  for w in analysis.unmodeled_writes
@@ -113,9 +122,13 @@ def project(analysis, *, clock_hz, pitch_policy='clamp', channel_map=None, force
     # nothing on the hardware, as on the OPN2 side.
     invalid_keys = [w for w in analysis.unmodeled_writes
                     if w.domain == 'invalid_key_channel']
+    # Writes past the end of the register map select no register and
+    # are inert on the hardware, as on the OPN2 side.
+    dead = [w for w in analysis.unmodeled_writes if _unassigned_register(w)]
     unknown = [w for w in analysis.unmodeled_writes
                if w.domain not in NON_FM and not _unmapped_operator_slot(w)
-               and w.domain != 'invalid_key_channel']
+               and w.domain != 'invalid_key_channel'
+               and not _unassigned_register(w)]
     if unknown and not force:
         raise ValueError('OPNA FM projection encountered an unknown register effect')
     losses = Counter(w.domain for w in analysis.unmodeled_writes)
@@ -123,6 +136,8 @@ def project(analysis, *, clock_hz, pitch_policy='clamp', channel_map=None, force
         losses['unmapped_operator_slot_writes_ignored'] = len(slots)
     if invalid_keys:
         losses['invalid_key_channel_writes_ignored'] = len(invalid_keys)
+    if dead:
+        losses['unassigned_register_writes_ignored'] = len(dead)
     if force and unknown:
         losses['forced_unmodeled_register_writes'] = len(unknown)
     rows, cache, groups = [], {}, {}

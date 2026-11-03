@@ -54,9 +54,28 @@ def _unmapped_operator_slot(write):
             and 0x30 <= write.register <= 0x9f and write.register & 3 == 3)
 
 
+def _unassigned_register(write):
+    # The YM2612 register map has holes the analysis leaves
+    # uninterpreted: nothing is implemented at 0x00-0x20 (the chip has
+    # no SSG section), in the gaps beside the common registers (0x23,
+    # 0x29, 0x2c-0x2f), or past the FM block end at 0xb6. Writes there
+    # select no functional register and are inert on the hardware;
+    # drivers emit them as workspace or padded sweeps anyway (Alien
+    # Soldier writes 0xcc/0xec with slowly incrementing data and sweeps
+    # 0xb8-0x2c, wrapping past 0xff). The 0x21 test register is
+    # deliberately not exempted: it can affect the chip.
+    if not (write.domain == 'uninterpreted' and write.chip_instance == 0
+            and write.port in (0, 1)):
+        return False
+    reg = write.register
+    return (reg <= 0x20 or reg == 0x23 or reg == 0x29
+            or 0x2c <= reg <= 0x2f or reg >= 0xb7)
+
+
 def dump_fm_omissions(analysis, outdir, stem, *, force):
     omissions = [dict(asdict(w),
                       reason='unmapped_fm_operator_slot' if _unmapped_operator_slot(w) else
+                             'unassigned_register' if _unassigned_register(w) else
                              'unsupported_register_effect:' + w.domain,
                       action='omit_write_from_target')
                  for w in analysis.unmodeled_writes
@@ -107,9 +126,13 @@ def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, forc
     # to nothing on the hardware; drivers emit them from table sweeps.
     invalid_keys = [w for w in analysis.unmodeled_writes
                     if w.domain == 'invalid_key_channel']
+    # Writes past the end of the register map select no register and
+    # are inert on the hardware, like the slot and key cases above.
+    dead = [w for w in analysis.unmodeled_writes if _unassigned_register(w)]
     unknown = [w for w in analysis.unmodeled_writes
                if w.domain != 'dac_data' and not _unmapped_operator_slot(w)
-               and w.domain != 'invalid_key_channel']
+               and w.domain != 'invalid_key_channel'
+               and not _unassigned_register(w)]
     if unknown and not force:
         raise ValueError('OPN2 FM projection encountered an unknown register effect')
     losses = Counter()
@@ -119,6 +142,8 @@ def project(analysis, *, clock_raw, pitch_policy='clamp', channel_map=None, forc
         losses['unmapped_operator_slot_writes_ignored'] = len(slots)
     if invalid_keys:
         losses['invalid_key_channel_writes_ignored'] = len(invalid_keys)
+    if dead:
+        losses['unassigned_register_writes_ignored'] = len(dead)
     if dac_external and dac_live:
         losses['dac_data_writes_projected_to_pcm'] = dac_live
     elif force and dac_live:

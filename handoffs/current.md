@@ -1,3 +1,20 @@
+# Unassigned-register writes no longer need --force (2026-11-04, claude/opn2-dead-registers)
+
+Both FM projection gates (opn2_opm, opna_opm) now exempt writes to
+registers the chip does not implement, counted as
+unassigned_register_writes_ignored, in the same family as the
+unmapped-operator-slot and invalid-key-channel exemptions. On the
+YM2612 side the exemption is map-complete: 0x00-0x20, 0x23, 0x29,
+0x2c-0x2f and 0xb7-0xff, with only the 0x21 test register carved out
+(it can affect the chip). On the YM2608 side only 0xb7-0xff applies,
+because its low address range is real (SSG / ADPCM). Evidence is
+Alien Soldier: track 04 writes 0xcc/0xec with slowly incrementing
+data (40 writes, now ignored; the track generates without --force),
+and track 08 sweeps 0xb8-0x2c wrapping past 0xff (88 writes ignored;
+it then stops only at the MDX 64KB capacity wall, like the other
+dense tracks). Suite: 1202 tests, failures/errors identical to the
+baseline counts (22F+8E, skipped 115).
+
 # OPN2 bridge gains now reach the single-element paths (2026-11-03, claude/opn2-s4-dcsg)
 
 On the user's instruction, the bridge gains also apply when
