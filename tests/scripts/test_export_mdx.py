@@ -76,7 +76,7 @@ class ExportMdxTests(unittest.TestCase):
             with patch('export_listening.run_listening_batch', return_value=[]) as batch:
                 run_batch(source,out,generator=generator,listening_layout=True)
             options=batch.call_args.kwargs['options']
-            self.assertEqual(options['opn2_dac_gain'],0.5)
+            self.assertEqual(options['opn2_dac_gain'],0.375)
             self.assertEqual(options['opn2_dcsg_gain'],0.145)
 
     def test_negative_opn2_bridge_gain_rejected(self):

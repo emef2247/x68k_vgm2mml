@@ -159,9 +159,9 @@ def build_parser():
                                'MSM6258 ADPCM/PDX target (opn2-to-opm route only; '
                                '--no-opn2-dcsg requires --force to omit the DCSG '
                                'channels)')
-    advanced.add_argument('--opn2-dac-gain', type=float, default=0.5,
+    advanced.add_argument('--opn2-dac-gain', type=float, default=0.375,
                           help='Linear gain for the YM2612 DAC waveform in the '
-                               'combined opn2-to-opm PCM bridge (default: 0.5; '
+                               'combined opn2-to-opm PCM bridge (default: 0.375; '
                                '0 mutes the DAC element)')
     advanced.add_argument('--opn2-dcsg-gain', type=float, default=0.145,
                           help='Linear gain for the rendered SN76489 (DCSG) '
