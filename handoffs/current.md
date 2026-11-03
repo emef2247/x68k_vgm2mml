@@ -1,3 +1,21 @@
+# OPN2 bridge gains become the defaults (2026-11-03, claude/opn2-s4-dcsg)
+
+Listening round 2 approved the half set ("no more
+strangeness"): dac_gain 0.5 / dcsg_gain 0.145 are now the
+defaults in opn2_opm.convert, opn2_dcsg_pcm.project_combined,
+vgm2mml.py and scripts/export_mdx.py (run_batch signature,
+argparse and the listening options dict). Verified: an
+option-free export of Shinobi 03 reproduces the approved half
+set's MDX/PDX byte-for-byte; suite failure multiset identical
+to the ef9f0cd baseline (1193 tests, 22F+8E, from log files).
+Coverage note: the gains reach only the combined renderer —
+project_dcsg (DCSG-only) and project_dac (DAC-only) take no
+gain, so track 18 was byte-identical across both listening
+sets and its approved level is the unscaled one. Whether the
+single-element paths should take the gains too is left as a
+user decision. Full measurement record: field note
+2026-11-03_opn2_dcsg_bridge_calibration.md.
+
 # OPN2 bridge gain options exposed (2026-11-03, branch claude/opn2-s4-dcsg)
 
 User listening on Revenge of Shinobi 03 found the combined PCM

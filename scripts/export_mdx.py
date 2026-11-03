@@ -102,7 +102,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
               max_ticks=None,psg_model=None,psg_gain=None,scc_gain=None,scc_model=None,scc_voice_bank=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mmlx', mxc=None, run68=None,
               normalize_lengths=None, normalization_ms=8, fm_state_ms=24, no_vgm=True, song_loop=True, listening_layout=False, _title=None,
-              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output=None,segapcm_projection='auto',c140_projection='bank',c140_mix_gain_db=0.0,pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096,nes_balance=True,nes_gain=(),nes_dpcm=True,opn2_dac_gain=1.0,opn2_dcsg_gain=1.0):
+              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output=None,segapcm_projection='auto',c140_projection='bank',c140_mix_gain_db=0.0,pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096,nes_balance=True,nes_gain=(),nes_dpcm=True,opn2_dac_gain=0.5,opn2_dcsg_gain=0.145):
     if listening_layout:
         from export_listening import run_listening_batch
         return run_listening_batch(source, output, core=run_batch, options=dict(
@@ -462,10 +462,10 @@ def main():
                         help='NES APU route only: override one NES mapping gain (pulse, triangle, noise, dpcm, fds)')
     parser.add_argument('--nes-dpcm',action=argparse.BooleanOptionalAction,default=True,
                         help='NES APU route only: carry DPCM on ADPCM/PDX instead of SCC slices (export default: on)')
-    parser.add_argument('--opn2-dac-gain',type=float,default=1.0,
-                        help='OPN2 route only: linear gain for the DAC waveform in the combined PCM bridge (default: 1.0)')
-    parser.add_argument('--opn2-dcsg-gain',type=float,default=1.0,
-                        help='OPN2 route only: linear gain for the DCSG waveform in the combined PCM bridge (default: 1.0)')
+    parser.add_argument('--opn2-dac-gain',type=float,default=0.5,
+                        help='OPN2 route only: linear gain for the DAC waveform in the combined PCM bridge (default: 0.5)')
+    parser.add_argument('--opn2-dcsg-gain',type=float,default=0.145,
+                        help='OPN2 route only: linear gain for the DCSG waveform in the combined PCM bridge (default: 0.145)')
     parser.add_argument('--pcm-bank-merge',choices=('budget96','similar','off'),default='budget96',
                         help='PCM sharing: budget96 (default) fits 96 samples and the PCM buffer budget; similar keeps quality bounds; off keeps exact sharing')
     # The export surface is intentionally small: the defaults below carry

@@ -159,14 +159,14 @@ def build_parser():
                                'MSM6258 ADPCM/PDX target (opn2-to-opm route only; '
                                '--no-opn2-dcsg requires --force to omit the DCSG '
                                'channels)')
-    advanced.add_argument('--opn2-dac-gain', type=float, default=1.0,
+    advanced.add_argument('--opn2-dac-gain', type=float, default=0.5,
                           help='Linear gain for the YM2612 DAC waveform in the '
-                               'combined opn2-to-opm PCM bridge (default: 1.0; '
+                               'combined opn2-to-opm PCM bridge (default: 0.5; '
                                '0 mutes the DAC element)')
-    advanced.add_argument('--opn2-dcsg-gain', type=float, default=1.0,
+    advanced.add_argument('--opn2-dcsg-gain', type=float, default=0.145,
                           help='Linear gain for the rendered SN76489 (DCSG) '
                                'waveform in the combined opn2-to-opm PCM '
-                               'bridge (default: 1.0; 0 mutes the DCSG element)')
+                               'bridge (default: 0.145; 0 mutes the DCSG element)')
     selection=advanced.add_mutually_exclusive_group()
     selection.add_argument('--psg-only','--psg_only',action='store_true',help='Project only PSG; retain native source evidence')
     selection.add_argument('--scc-only','--scc_only',action='store_true',help='Project only SCC; retain native source evidence')

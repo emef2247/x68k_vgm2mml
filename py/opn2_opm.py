@@ -321,7 +321,7 @@ def write_vgm(rows, path, *, end, loop_start=None, loop_event_id=None):
 
 def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
             dcsg_present=False, dac_stream=None, dac=True, dcsg=True,
-            dac_gain=1.0, dcsg_gain=1.0, **options):
+            dac_gain=0.5, dcsg_gain=0.145, **options):
     """Reconstruct native Segments, project FM, reuse canonical OPM conversion."""
     from opm_conversion import convert as convert_opm
     source, outdir = Path(source), Path(outdir)

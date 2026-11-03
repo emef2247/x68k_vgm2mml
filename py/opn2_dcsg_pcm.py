@@ -349,7 +349,7 @@ class Opn2CombinedAnalysis(PcmAnalysis):
 
 def project_combined(raw, events, analysis, dcsg_analysis, *,
                      loop_start=None, loop_count=1, pcm_profile='standard',
-                     dac_gain=1.0, dcsg_gain=1.0):
+                     dac_gain=0.5, dcsg_gain=0.145):
     """Build one MSM6258 analysis for DAC playback mixed with DCSG.
 
     The MSM6258 side has a single stream, and in real Mega Drive
