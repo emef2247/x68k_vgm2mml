@@ -1,3 +1,24 @@
+# OPN2 bridge gains now reach the single-element paths (2026-11-03, claude/opn2-s4-dcsg)
+
+On the user's instruction, the bridge gains also apply when
+only one element sounds: project_dac takes dac_gain (applied
+at the waveform fill, clamped to int16) and project_dcsg
+takes dcsg_gain (applied to the rendered wave before
+slicing); convert passes both through, and each path records
+its gain in its stats. dac_waveform itself stays unscaled —
+the combined bridge scales at mix time, so scaling it too
+would double-apply (an edit briefly landed there and was
+moved; check both amplitude sites when touching this file).
+Verified on real data: Shinobi 03 (combined) is byte-
+identical to the approved half set; 18 (DCSG-only) changed
+and records dcsg_gain 0.145; project_dac on 03 at gains
+1.0/0.5 gives identical playback counts (150) and a decoded
+RMS ratio of exactly 0.500. Suite failure multiset identical
+(1193 tests, 22F+8E). Note the consequence: DCSG-only and
+DAC-only tracks now render quieter than in the round-2
+approved set (18 was approved unscaled); that re-balance is
+what the user asked for here.
+
 # OPN2 bridge gains become the defaults (2026-11-03, claude/opn2-s4-dcsg)
 
 Listening round 2 approved the half set ("no more

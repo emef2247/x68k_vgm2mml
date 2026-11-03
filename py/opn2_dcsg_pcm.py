@@ -296,18 +296,23 @@ def _bridge_from_wave(wave, *, source_end, loop_start, pcm_profile, lookup):
 
 
 def project_dcsg(raw, dcsg_analysis, *, source_end, loop_start=None,
-                 loop_count=1, pcm_profile='standard'):
+                 loop_count=1, pcm_profile='standard', dcsg_gain=0.145):
     """Build the MSM6258 analysis for a song's SN76489 (DCSG) traffic.
 
     The DCSG waveform is rendered from the native Segments and split
     into playbacks at silence gaps over 10 ms; runs also split at the
     replayed song-loop boundary, matching the DAC bridge.
+    ``dcsg_gain`` is the mapping-stage bridge balance, the same
+    factor the combined DAC+DCSG bridge applies to its DCSG element.
     """
     wave, stats = render_dcsg_wave(dcsg_analysis, source_end)
+    if dcsg_gain != 1.0:
+        wave = [max(-32768, min(32767, round(value * dcsg_gain)))
+                for value in wave]
     profile, samples, playbacks, event_rows, bridge_stats = _bridge_from_wave(
         wave, source_end=source_end, loop_start=loop_start,
         pcm_profile=pcm_profile, lookup=_event_id_lookup(dcsg_analysis))
-    stats.update(bridge_stats, profile=pcm_profile)
+    stats.update(bridge_stats, profile=pcm_profile, dcsg_gain=dcsg_gain)
     return Opn2DcsgAnalysis(
         source_end, tuple(samples), tuple(playbacks), (), (),
         TransferLog(b''), (), bytes(raw), profile.mdx_clock_hz, 4,

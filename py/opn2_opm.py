@@ -381,7 +381,8 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
                 raw, events, analysis,
                 loop_start=loop_meta['decoded_end_samples'] if repeating else None,
                 loop_count=2 if repeating else 1,
-                pcm_profile=options.get('pcm_profile', 'standard'))
+                pcm_profile=options.get('pcm_profile', 'standard'),
+                dac_gain=dac_gain)
             dac_stats = candidate.dac_stats
             if candidate.playbacks:
                 dac_candidate = candidate
@@ -422,7 +423,8 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
                     loop_start=(loop_meta['decoded_end_samples']
                                 if repeating else None),
                     loop_count=2 if repeating else 1,
-                    pcm_profile=options.get('pcm_profile', 'standard'))
+                    pcm_profile=options.get('pcm_profile', 'standard'),
+                    dcsg_gain=dcsg_gain)
                 dcsg_stats = candidate.dcsg_stats
                 if candidate.playbacks:
                     bridge = candidate

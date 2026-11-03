@@ -401,19 +401,21 @@ def dac_waveform(raw, events, analysis, *, loop_start=None):
 
 
 def project_dac(raw, events, analysis, *, loop_start=None, loop_count=1,
-                pcm_profile='standard'):
+                pcm_profile='standard', dac_gain=0.5):
     """Build the MSM6258 analysis for a song's YM2612 DAC traffic.
 
     ``events`` must be the caller's command_times pass in the same
     (possibly loop-expanded) coordinates as ``analysis``; loop_start
     is the replayed loop boundary in those coordinates, matching the
-    FM projection's declared loop point.
+    FM projection's declared loop point. ``dac_gain`` is the
+    mapping-stage bridge balance, the same factor the combined
+    DAC+DCSG bridge applies to its DAC element.
     """
     profile = get_profile(pcm_profile)
     timeline, issues, stats = dac_timeline(raw, events, analysis)
     source_end = analysis.source_end_vgmticks
     stats.update(runs=0, playbacks=0, unique_samples=0, profile=pcm_profile,
-                 subsample_runs_dropped=0)
+                 subsample_runs_dropped=0, dac_gain=dac_gain)
     # Split into runs at gaps; a run's last byte holds for the run's
     # median positive byte gap (one sample for a lone byte). Runs
     # also split at the replayed song-loop boundary: a PDX playback
@@ -450,7 +452,8 @@ def project_dac(raw, events, analysis, *, loop_start=None, loop_count=1,
         wave = array('h', bytes(2 * (stop - start)))
         for (tick, byte, _event_id, _origin), (next_tick, *_rest) in zip(
                 run, run[1:] + [(stop, 0, 0, '')]):
-            amplitude = (byte - 128) * 256
+            amplitude = max(-32768, min(32767,
+                                        round((byte - 128) * 256 * dac_gain)))
             wave[tick - start:next_tick - start] = \
                 array('h', [amplitude]) * (next_tick - tick)
         count = max(2, 2 * round(Fraction(len(wave), 1) / 44100
