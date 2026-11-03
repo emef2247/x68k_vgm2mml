@@ -469,3 +469,31 @@ wrapper in convert() copies the same set. Verified: Gradius II
 playbacks contain stops/holds/resets still end as
 pcm_replay_unavailable because soundlog 0.15.0 cannot preserve
 them in replay verification; the MDX/PDX themselves are produced.
+
+NES balance, third calibration (2026-11-03): BALANCE_GAINS pulse
+1.3 -> 2.0 and noise 0.8 -> 1.2. Gradius II's own data caps pulse
+volumes at 8 of 15, so the melodic lanes sat low against the ADPCM
+hits even after the bridge went to 0.4; the lanes now rise toward
+the PCM instead of only the PCM coming down (the SMB3 pattern from
+the MSX route). Triangle 0.75 / dpcm 0.625 / dpcm_adpcm 0.4 are
+unchanged. Full suite failure set identical before/after (28).
+User's listening check on the regenerated Gradius II export is the
+remaining step.
+
+Target VGM deliverable (2026-11-03): --emit-vgm on vgm2mml.py and
+export_mdx.py writes <stem>.target.vgm beside the MML for the
+projected routes (PSG/SCC incl. NES, DCSG, OPNA): the projected FM
+target VGM verbatim plus the PCM bridge's playbacks merged as
+MSM6258 streams, minus the playbacks the binding omitted (read from
+its omitted-playbacks CSV). New module py/target_vgm_emit.py; the
+export publishes tracks/<stem>.target.vgm and records it in
+results.csv. Native OPM routes print an explicit not-available note.
+Validation: Gradius II Tabidachi FM sequence identical to the
+projected target; 242/248 merged playbacks re-analyze issue-free
+(the rest are retrigger cuts with sole irregular_byte_supply, which
+the binding itself accepts); loop expansion lands exactly on
+total + loop_samples; ymfm renders the finite export at 19.20 s.
+OPNA real-data validation is still open (no YM2608 pack in the VM;
+hook covered by unit tests). opn2_opm on claude/opn2 /
+claude/opna-voice needs the same hook when the branches converge.
+Full suite failure set identical before/after (28).
