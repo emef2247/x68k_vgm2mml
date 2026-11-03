@@ -307,7 +307,8 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
         bank_input = pcm_original
         source_origin = getattr(pcm_original, 'source_origin', '')
         common_bank = (segapcm_pcm or c140_pcm or msm6295_pcm or pcm_analysis_override is None
-                       or source_origin.startswith('projected_msm6258_from_opna'))
+                       or source_origin.startswith('projected_msm6258_from_opna')
+                       or source_origin.startswith('projected_msm6258_from_opn2'))
         if common_bank and not (segapcm_pcm or c140_pcm or msm6295_pcm):
             if not dump_passes and not hasattr(pcm_original, 'align_to_clock'):
                 pcm_original.dump(outdir, source.stem)

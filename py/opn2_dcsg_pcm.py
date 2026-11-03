@@ -201,19 +201,9 @@ def _event_id_lookup(dcsg_analysis):
     return lookup
 
 
-def project_dcsg(raw, dcsg_analysis, *, source_end, loop_start=None,
-                 loop_count=1, pcm_profile='standard'):
-    """Build the MSM6258 analysis for a song's SN76489 (DCSG) traffic.
-
-    The DCSG waveform is rendered from the native Segments and split
-    into playbacks at silence gaps over 10 ms; runs also split at the
-    replayed song-loop boundary, matching the DAC bridge.
-    """
-    profile = get_profile(pcm_profile)
-    wave, stats = render_dcsg_wave(dcsg_analysis, source_end)
-    stats.update(runs=0, playbacks=0, unique_samples=0, profile=pcm_profile,
-                 subsample_runs_dropped=0)
-    lookup = _event_id_lookup(dcsg_analysis)
+def _slice_runs(wave, source_end, loop_start):
+    """Nonzero spans of a rendered wave, split at silence gaps over
+    RUN_GAP_SAMPLES and at the replayed song-loop boundary."""
     runs = []
     index = 0
     while index < source_end:
@@ -232,6 +222,20 @@ def project_dcsg(raw, dcsg_analysis, *, source_end, loop_start=None,
                 break
             index += 1
         runs.append((start, last_nonzero + 1))
+    return runs
+
+
+def _bridge_from_wave(wave, *, source_end, loop_start, pcm_profile, lookup):
+    """Slice a rendered wave into ADPCM samples and playbacks.
+
+    Mirrors opn2_pcm.project_dac's per-run construction: centered
+    linear resampling to the profile rate, MSM6258 encoding, and
+    deduplication by waveform hash.
+    """
+    profile = get_profile(pcm_profile)
+    stats = dict(runs=0, playbacks=0, unique_samples=0,
+                 subsample_runs_dropped=0)
+    runs = _slice_runs(wave, source_end, loop_start)
     stats['runs'] = len(runs)
     samples = []
     sample_ids = {}
@@ -288,6 +292,22 @@ def project_dcsg(raw, dcsg_analysis, *, source_end, loop_start=None,
             termination=termination))
     stats['playbacks'] = len(playbacks)
     stats['unique_samples'] = len(samples)
+    return profile, samples, playbacks, event_rows, stats
+
+
+def project_dcsg(raw, dcsg_analysis, *, source_end, loop_start=None,
+                 loop_count=1, pcm_profile='standard'):
+    """Build the MSM6258 analysis for a song's SN76489 (DCSG) traffic.
+
+    The DCSG waveform is rendered from the native Segments and split
+    into playbacks at silence gaps over 10 ms; runs also split at the
+    replayed song-loop boundary, matching the DAC bridge.
+    """
+    wave, stats = render_dcsg_wave(dcsg_analysis, source_end)
+    profile, samples, playbacks, event_rows, bridge_stats = _bridge_from_wave(
+        wave, source_end=source_end, loop_start=loop_start,
+        pcm_profile=pcm_profile, lookup=_event_id_lookup(dcsg_analysis))
+    stats.update(bridge_stats, profile=pcm_profile)
     return Opn2DcsgAnalysis(
         source_end, tuple(samples), tuple(playbacks), (), (),
         TransferLog(b''), (), bytes(raw), profile.mdx_clock_hz, 4,
@@ -295,3 +315,92 @@ def project_dcsg(raw, dcsg_analysis, *, source_end, loop_start=None,
         'DCSG analysis dump', loop_start, (),
         observations=(), loop_count=loop_count, pcm_profile=profile.name,
         dcsg_event_rows=tuple(event_rows), dcsg_stats=stats)
+
+
+@dataclass(frozen=True)
+class Opn2CombinedAnalysis(PcmAnalysis):
+    source_origin: str = 'projected_msm6258_from_opn2_dac_dcsg'
+    pcm_profile: str = 'standard'
+    dcsg_event_rows: tuple[dict, ...] = ()
+    dcsg_stats: dict | None = None
+    dac_stats: dict | None = None
+
+    def dump(self, outdir, stem):
+        super().dump(outdir, stem)
+        root = Path(outdir)
+        with (root / f'{stem}.opn2_dcsg.events.csv').open(
+                'w', newline='', encoding='utf-8') as stream:
+            writer = csv.DictWriter(
+                stream,
+                fieldnames=list(self.dcsg_event_rows[0])
+                if self.dcsg_event_rows else ['run_index'])
+            writer.writeheader()
+            writer.writerows(self.dcsg_event_rows)
+        path = root / f'{stem}.pcm_source.json'
+        report = json.loads(path.read_text(encoding='utf-8'))
+        report.update(source_origin=self.source_origin,
+                      consumption_origin='mixed_opn2_dac_and_sn76489_segments',
+                      pcm_profile=self.pcm_profile,
+                      opn2_dac=self.dac_stats,
+                      opn2_dcsg=self.dcsg_stats)
+        path.write_text(json.dumps(report, indent=2) + '\n',
+                        encoding='utf-8')
+
+
+def project_combined(raw, events, analysis, dcsg_analysis, *,
+                     loop_start=None, loop_count=1, pcm_profile='standard',
+                     dac_gain=1.0, dcsg_gain=1.0):
+    """Build one MSM6258 analysis for DAC playback mixed with DCSG.
+
+    The MSM6258 side has a single stream, and in real Mega Drive
+    material the DAC and the DCSG sound together most of the time,
+    so neither can simply win the channel: the decoded DAC waveform
+    and the rendered DCSG mix are summed first (the gains are the
+    mapping-stage balance), and the mix is sliced and encoded once.
+    """
+    from opn2_pcm import dac_waveform
+    source_end = analysis.source_end_vgmticks
+    dac_wave, issues, dac_stats, dac_spans = dac_waveform(
+        raw, events, analysis, loop_start=loop_start)
+    dcsg_wave, render_stats = render_dcsg_wave(dcsg_analysis, source_end)
+    wave = array('h', bytes(2 * source_end))
+    clipped = 0
+    for index in range(source_end):
+        value = round(dac_wave[index] * dac_gain
+                      + dcsg_wave[index] * dcsg_gain)
+        if value > 32767:
+            wave[index] = 32767
+            clipped += 1
+        elif value < -32768:
+            wave[index] = -32768
+            clipped += 1
+        else:
+            wave[index] = value
+    segment_lookup = _event_id_lookup(dcsg_analysis)
+    span_starts = [span[0] for span in dac_spans]
+
+    def lookup(tick):
+        from bisect import bisect_right
+        index = bisect_right(span_starts, tick) - 1
+        if index >= 0 and dac_spans[index][0] <= tick < dac_spans[index][1]:
+            span = dac_spans[index]
+            return span[2] if tick - span[0] <= span[1] - tick else span[3]
+        return segment_lookup(tick)
+
+    profile, samples, playbacks, event_rows, bridge_stats = _bridge_from_wave(
+        wave, source_end=source_end, loop_start=loop_start,
+        pcm_profile=pcm_profile, lookup=lookup)
+    dac_stats = dict(dac_stats, combined_playbacks=bridge_stats['playbacks'],
+                     combined_unique_samples=bridge_stats['unique_samples'])
+    dcsg_stats = dict(render_stats, **bridge_stats, profile=pcm_profile,
+                      dac_gain=dac_gain, dcsg_gain=dcsg_gain,
+                      mix_clipped_samples=clipped, combined=True)
+    return Opn2CombinedAnalysis(
+        source_end, tuple(samples), tuple(playbacks), (), (),
+        TransferLog(b''), (), bytes(raw), profile.mdx_clock_hz, 4,
+        'mixed YM2612 DAC waveform and rendered SN76489 segments; '
+        'native evidence retained in the source analyses',
+        loop_start, (), observations=tuple(issues),
+        loop_count=loop_count, pcm_profile=profile.name,
+        dcsg_event_rows=tuple(event_rows), dcsg_stats=dcsg_stats,
+        dac_stats=dac_stats)

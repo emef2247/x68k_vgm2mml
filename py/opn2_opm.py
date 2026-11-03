@@ -10,9 +10,10 @@ the DAC channel in place of ADPCM-B. While the DAC is enabled,
 channel 6 FM output is gated (the hardware disconnects it); the DAC
 sample stream is bridged to MSM6258 by py/opn2_pcm.py (S3). The
 companion SN76489 is rendered to MSM6258 by py/opn2_dcsg_pcm.py
-(S4) whenever it does not share the song with DAC playback; the
-combined DAC+DCSG renderer is a later stage, and until then that
-combination remains an explicit --force omission.
+(S4); when a song uses both the DAC and the DCSG, the two are
+mixed into a single MSM6258 stream by the same module, since the
+target has only one PCM channel and the two overlap most of the
+time in real material.
 """
 import csv
 import json
@@ -319,7 +320,8 @@ def write_vgm(rows, path, *, end, loop_start=None, loop_event_id=None):
 
 
 def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
-            dcsg_present=False, dac_stream=None, dac=True, dcsg=True, **options):
+            dcsg_present=False, dac_stream=None, dac=True, dcsg=True,
+            dac_gain=1.0, dcsg_gain=1.0, **options):
     """Reconstruct native Segments, project FM, reuse canonical OPM conversion."""
     from opm_conversion import convert as convert_opm
     source, outdir = Path(source), Path(outdir)
@@ -372,6 +374,7 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
             raise ValueError('Input has no OPN2 register evidence')
         clock_hz = clock_raw & 0x3fffffff
         bridge, dac_stats = None, None
+        dac_candidate = None
         if dac:
             from opn2_pcm import project_dac
             candidate = project_dac(
@@ -381,8 +384,7 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
                 pcm_profile=options.get('pcm_profile', 'standard'))
             dac_stats = candidate.dac_stats
             if candidate.playbacks:
-                bridge = candidate
-                bridge.dump(outdir, source.stem)
+                dac_candidate = candidate
             elif dac_stream.get('play_commands') and not (
                     dac_stats['manual_bytes'] or dac_stats['autonomous_bytes']):
                 candidate.dump(outdir, source.stem)
@@ -394,13 +396,26 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
                                     reason='dac_stream_not_decoded',
                                     play_commands=dac_stream['play_commands'],
                                     seek_commands=dac_stream.get('seek_commands', 0)))
-        dac_bridged = bridge is not None
         dcsg_stats = None
+        combined = False
         if dcsg_audible and dcsg:
             from dcsg import analyze as analyze_dcsg
-            from opn2_dcsg_pcm import project_dcsg
             dcsg_analysis = analyze_dcsg(raw, loop_count=2 if repeating else 1)
-            if bridge is None:
+            if dac_candidate is not None:
+                from opn2_dcsg_pcm import project_combined
+                bridge = project_combined(
+                    raw, events, analysis, dcsg_analysis,
+                    loop_start=(loop_meta['decoded_end_samples']
+                                if repeating else None),
+                    loop_count=2 if repeating else 1,
+                    pcm_profile=options.get('pcm_profile', 'standard'),
+                    dac_gain=dac_gain, dcsg_gain=dcsg_gain)
+                dac_stats = bridge.dac_stats
+                dcsg_stats = bridge.dcsg_stats
+                combined = True
+                bridge.dump(outdir, source.stem)
+            else:
+                from opn2_dcsg_pcm import project_dcsg
                 candidate = project_dcsg(
                     raw, dcsg_analysis,
                     source_end=analysis.source_end_vgmticks,
@@ -412,16 +427,23 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
                 if candidate.playbacks:
                     bridge = candidate
                     bridge.dump(outdir, source.stem)
-            elif not force:
-                raise ValueError('SN76489 (DCSG) together with DAC playback '
-                                 'needs the combined renderer (S4b); use '
-                                 '--force to omit the DCSG channels')
-            else:
-                omitted.append(dict(part='DEFG', source_chip='dcsg',
-                                    action='omit_source_engine',
-                                    reason='dcsg_combined_stage_pending',
-                                    audible_samples=dcsg_audible))
-                dcsg_stats = dict(audible_samples=dcsg_audible, projected=False)
+        elif dac_candidate is not None:
+            bridge = dac_candidate
+            bridge.dump(outdir, source.stem)
+        dac_bridged = dac_candidate is not None or combined
+        # The OPN2 bridges are derived renderings/transcodings, the
+        # class of source the PCM policy treats as best-effort under
+        # auto (as for the PSG/C140/MSM6295 projections). Engage it
+        # explicitly here: after bank preparation the analysis is
+        # re-origined to the native-bank view, so the policy
+        # selection there can no longer see the projected origin,
+        # and a strict resolution would block the bank reduction's
+        # recorded replacements. An explicit user policy stands.
+        policy_engagement = None
+        if bridge is not None and options.get('pcm_policy', 'auto') == 'auto':
+            options['pcm_policy'] = 'best-effort'
+            policy_engagement = dict(requested='auto', engaged='best-effort',
+                                     reason='opn2_projection_bridge')
         rows, losses = project(analysis, clock_raw=clock_raw,
                                pitch_policy=options.get('pitch_policy', 'clamp'), force=force,
                                dac_external=dac_bridged)
@@ -445,7 +467,7 @@ def convert(source, outdir, *, dump_passes=False, song_loop=True, force=False,
             channel_allocation=dict(model='OPNA route map: FM ch0-2 -> OPM 0-2, FM ch3-5 -> OPM 4-6; OPM ch3 reserved'),
             force_projection=dict(omitted=omitted, fm_omitted_writes=fm_force['omitted_writes'],
                                   fm_writes_csv=fm_force['writes_csv'], fm_omissions=fm_force['omissions']),
-            dac=dac_stats, dcsg=dcsg_stats,
+            dac=dac_stats, dcsg=dcsg_stats, pcm_policy_engagement=policy_engagement,
             source_end_vgmticks=analysis.source_end_vgmticks, excluded_or_approximated=losses,
             pitch='committed 11-bit FNUM; existing nominal OPM KC/KF projection',
             target_only_assumptions='unwritten counterpart controls/pitch use reset zero',

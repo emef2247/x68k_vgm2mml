@@ -234,6 +234,33 @@ class Opn2ConvertTests(unittest.TestCase):
             self.assertTrue(Path(mml).is_file())
             self.assertGreaterEqual(settings['dcsg']['playbacks'], 1)
             self.assertEqual(settings['force_projection']['omitted'], [])
+            self.assertEqual(settings['pcm_policy_engagement']['engaged'],
+                             'best-effort')
+            self.assertEqual(settings['pcm_policy_engagement']['reason'],
+                             'opn2_projection_bridge')
+
+    def test_dac_and_dcsg_project_via_combined_bridge(self):
+        generator = next((path for path in (
+            Path(__file__).resolve().parents[2] / 'scripts/mdx_fixture_generator/target/release/mdx-fixture-generator',
+            Path.home() / 'workspace/x68k_c140_worktree/scripts/mdx_fixture_generator/target/release/mdx-fixture-generator')
+            if path.is_file()), None)
+        if generator is None:
+            self.skipTest('MDX fixture generator is not built in this environment')
+        body = bytearray(dac_body()[:-1])
+        body.extend((0x50, 0xac, 0x50, 0x08, 0x50, 0xb5, 0x62, 0x50, 0xbf))
+        body.append(0x66)
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / 'song.vgm'
+            source.write_bytes(build_vgm(bytes(body)))
+            mml, settings = convert(source, Path(tmp) / 'out', dcsg_present=True,
+                                    pcm_generator=generator)
+            self.assertTrue(Path(mml).is_file())
+            self.assertTrue(settings['dcsg']['combined'])
+            self.assertGreaterEqual(settings['dcsg']['playbacks'], 1)
+            self.assertGreaterEqual(settings['dac']['combined_playbacks'], 1)
+            self.assertEqual(settings['force_projection']['omitted'], [])
+            self.assertEqual(settings['pcm_policy_engagement']['engaged'],
+                             'best-effort')
 
 
 if __name__ == '__main__':
