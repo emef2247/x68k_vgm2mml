@@ -66,9 +66,10 @@ class OpnaForceTests(unittest.TestCase):
                 self.assertFalse((out/('AUTH.opna_ssg.omissions'+suffix)).exists())
             self.assertFalse((out/'AUTH.mdx.mml').exists())
 
-    def test_unknown_register_writes_are_only_omitted_with_force(self):
-        writes = bytes(v for port in (0x56,0x57) for reg in (0x83,0x87,0x8b)
-                       for v in (port,reg,255)) + bytes.fromhex('56 21 01')
+    def test_unmapped_slots_tolerated_but_unknown_writes_still_gate(self):
+        slot_writes = bytes(v for port in (0x56,0x57) for reg in (0x83,0x87,0x8b)
+                            for v in (port,reg,255))
+        writes = slot_writes + bytes.fromhex('56 21 01')
         helper = fm_helpers.OpnaOpmTests()
         native = helper.analyze(writes + body((0,)))
         before = native.unmodeled_writes
@@ -79,12 +80,19 @@ class OpnaForceTests(unittest.TestCase):
         trajectory = lambda rows: [(r['source_vgmticks'],r['target_register'],r['target_data']) for r in rows]
         self.assertEqual(trajectory(forced), trajectory(ordinary))
         self.assertEqual(native.unmodeled_writes, before)
-        self.assertEqual(losses['forced_unmodeled_register_writes'],7)
+        self.assertEqual(losses['forced_unmodeled_register_writes'],1)
+        self.assertEqual(losses['unmapped_operator_slot_writes_ignored'],6)
+        slots_only, slot_losses = project_fm(
+            helper.analyze(slot_writes + body((0,))), clock_hz=7987200)
+        self.assertEqual(trajectory(slots_only), trajectory(ordinary))
+        self.assertEqual(slot_losses['unmapped_operator_slot_writes_ignored'],6)
         with tempfile.TemporaryDirectory() as temporary:
             report = dump_fm_omissions(native, temporary, 'AUTH', force=True)
             # Other already omitted rhythm/IRQ writes may be present in other fixtures.
             self.assertEqual(report['omitted_writes'],7)
             self.assertIn('unsupported_register_effect:uninterpreted',
+                          {r['reason'] for r in report['omissions']})
+            self.assertIn('unmapped_fm_operator_slot',
                           {r['reason'] for r in report['omissions']})
 
     def test_unsupported_fm_modes_gate_only_affected_channel_without_new_keys(self):
@@ -112,7 +120,7 @@ class OpnaForceTests(unittest.TestCase):
             self.assertIn('PDX: not generated (no retained PCM samples)',lines)
             self.assertFalse(any(str(out/'AUTH.mdx') in line or str(out/'AUTH.pdx') in line for line in lines))
 
-    def test_cli_lists_registers_and_strict_retry_clears_diagnostics(self):
+    def test_cli_lists_registers_and_strict_run_tolerates_slots(self):
         writes = bytes(v for port in (0x56,0x57) for reg in (0x83,0x87,0x8b)
                        for v in (port,reg,255))
         with tempfile.TemporaryDirectory() as temporary:
@@ -130,11 +138,10 @@ class OpnaForceTests(unittest.TestCase):
             registry=json.loads((out/'AUTH.opna_force.skipped_registers.json').read_text())
             self.assertTrue(registry['records'])
             strict=subprocess.run(command,capture_output=True,text=True,timeout=30)
-            self.assertNotEqual(strict.returncode,0)
-            self.assertIn('unknown register effect',strict.stderr)
-            for suffix in ('.csv','.json'):
-                self.assertFalse((out/('AUTH.opna_force.skipped_registers'+suffix)).exists())
-                self.assertFalse((out/('AUTH.opna_fm.omissions'+suffix)).exists())
+            self.assertEqual(strict.returncode,0,strict.stderr)
+            self.assertTrue((out/'AUTH.mdx.mml').is_file())
+            report=json.loads((out/'AUTH.conversion.json').read_text())
+            self.assertEqual(report['status'],'generated')
 
 
 if __name__ == '__main__':
