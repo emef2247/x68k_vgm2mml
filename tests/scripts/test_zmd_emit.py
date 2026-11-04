@@ -39,9 +39,10 @@ class ZmdEmitTest(unittest.TestCase):
                          performed_key=(state, (), ((48, state, ()),),
                                         (), (), state))
         rest = MusicUnit('A', 48, 96, 0, 0, 'rest', '', (), (), ())
+        loop = MusicUnit('A', 48, 48, 0, 0, 'song_loop', '', (), (), ())
         controls = MusicUnit('B', 0, 96, 0, 0, 'controls', '', (), (),
                              ((0, 0x18, 100, None), (10, 0x1B, 2, None)))
-        musical = MusicalMdx({'A': [note, rest], 'B': [controls]},
+        musical = MusicalMdx({'A': [note, loop, rest], 'B': [controls]},
                              (voice,), {}, {}, '', '', '', ())
         data, losses = render_zmd(musical, timer_value=199, title='test')
         self.assertEqual(losses, {})
@@ -54,6 +55,7 @@ class ZmdEmitTest(unittest.TestCase):
         self.assertIn(('tempo_timer', 199), track_a['events'])
         notes = [e for e in track_a['events'] if e[0] == 'note']
         self.assertEqual(notes, [('note', 60, 48, 48, False, 128)])
+        self.assertIn(('loop', []), track_a['events'])
         for track in parsed['tracks']:
             total = sum(e[1] if e[0] in ('rest', 'wait') else e[2]
                         for e in track['events']

@@ -2,13 +2,14 @@
 musical layer (MusicalMdx units + voices), the same intermediate
 the MDX renderer consumes.
 
-Scope of this first renderer: FM tracks only. Note units become
-ZMD notes (pitch from the performed state, intra-unit pitch or
-level changes become tied slices), rests become ZMD rests,
-control units become raw register writes ($bc) separated by
-waits ($81), voices become common-block VSET commands ($18).
-PCM tracks, song loops and phrase compression are not rendered
-yet and are reported as losses by the caller-visible summary.
+Scope of this renderer: FM tracks and the song loop. Note
+units become ZMD notes (pitch from the performed state,
+intra-unit pitch or level changes become tied slices), rests
+become ZMD rests, control units become raw register writes
+($bc) separated by waits ($81), voices become common-block
+VSET commands ($18), and the song-loop marker becomes the
+$f5 loop point. PCM tracks and phrase compression are not
+rendered yet and are reported as losses.
 
 Format ground truth: src/zmd.mac in kg68k/zmusic3 (header,
 track-info table, common commands, track commands). All
@@ -127,6 +128,15 @@ class _TrackWriter:
             self.data.append(0xB9)
             self.data.extend(struct.pack('>h', detune))
             self.detune = detune
+
+    def loop_point(self):
+        """Song loop point ([LOOP] / $f5): at the track end the
+        driver returns to just after this command. The offset
+        list names work locations to re-initialize on loop;
+        this renderer emits no constructs that need it, so the
+        list is just the terminating zero."""
+        self.data.append(0xF5)
+        self.data.extend(struct.pack('>I', 0))
 
     def note(self, number, step, gate, *, tie=False):
         self.data.append(number)
@@ -300,8 +310,8 @@ def render_zmd(musical, *, timer_value, title=''):
             elif unit.kind == 'controls':
                 _render_controls_unit(writer, unit)
             elif unit.kind == 'song_loop':
-                losses['song_loop_not_rendered'] = 1
                 writer.wait_to(unit.start_tick)
+                writer.loop_point()
             else:
                 losses[f'unit_kind_{unit.kind}_not_rendered'] = \
                     losses.get(f'unit_kind_{unit.kind}_not_rendered', 0) + 1
@@ -435,6 +445,16 @@ def parse_zmd(data):
                 events.append(('tempo_timer', struct.unpack_from('>H', data, p + 1)[0])); p += 3
             elif cmd == 0xC7:
                 events.append(('timbre', struct.unpack_from('>H', data, p + 1)[0])); p += 3
+            elif cmd == 0xF5:
+                offsets = []
+                p += 1
+                while True:
+                    value = struct.unpack_from('>I', data, p)[0]
+                    p += 4
+                    if value == 0:
+                        break
+                    offsets.append(value)
+                events.append(('loop', offsets))
             else:
                 raise ValueError(f'unhandled ZMD command {cmd:#x} at {p}')
         tracks.append(dict(type=typ, ch=ch, events=events))
