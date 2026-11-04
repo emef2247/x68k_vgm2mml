@@ -1,3 +1,21 @@
+# OPN2 DCSG bridge gain default lowered to 0.036 (2026-11-04, claude/mdx-large-layout)
+
+On the user's instruction after listening to the rescued Alien
+Soldier 07: at the previous default the PCM-rendered DCSG part
+sat too far forward, and a candidate at 25% (dcsg_gain 0.036)
+was approved ("battri"). The DCSG gain default therefore goes
+from 0.145 to 0.036; the DAC gain stays at 0.375. This supersedes
+the Shinobi-calibrated DCSG default for the release; per-song
+impressions now govern. Every default site was updated together:
+opn2_opm.convert, opn2_dcsg_pcm project_dcsg / project_combined,
+vgm2mml --opn2-dcsg-gain, export_mdx (argparse, run_batch
+signature and help text), and the export test that pins the
+default. Verified on Alien Soldier 07: no-option output is
+byte-identical to explicit --opn2-dcsg-gain 0.036 (PDX
+ed0d1b97...) and its MDX is unchanged from the 0.145 build.
+Focused suites pass (export_mdx, mdx_layout, opn2_dcsg_pcm,
+opn2_opm, opn2_pcm, opn2_source).
+
 # MDX layout fallback rescues oversize songs (2026-11-04, claude/mdx-large-layout)
 
 When the stock compile fails on MDX capacity (a track start offset
