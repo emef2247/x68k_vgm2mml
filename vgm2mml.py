@@ -201,7 +201,7 @@ def build_parser():
     parser.add_argument('--emit-vgm', action='store_true',
                         help='Also write <stem>.target.vgm beside the MML: the projected OPM stream the MML was built from, with bound PCM playbacks merged as MSM6258 streams (PSG/SCC, NES, DCSG and OPNA routes)')
     parser.add_argument('--emit-zmd', action='store_true',
-                        help='Also write <stem>.zmd beside the MML: a ZMUSIC version of the same musical layer, with the PCM projection embedded as a PDX block (native OPM, OPN2 and OPNA routes)')
+                        help='Also write <stem>.zmd beside the MML: a ZMUSIC version of the same musical layer, with the PCM projection embedded as a PDX block (all MDX routes)')
     diagnostic.add_argument('--debug', action='store_true',
                             help='Keep diagnostics (MGSDRV also keeps all chip MML variants)')
     diagnostic.add_argument('--pcm-generator', help='External typed PCM MDX/PDX helper path')
@@ -490,7 +490,7 @@ def main():
                 loops=not args.no_loops, song_loop=not args.no_song_loop,
                 normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms,
                 fm_state_ms=args.fm_state_ms, pitch_policy=args.opm_pitch_policy or 'clamp', force=args.force,
-                emit_vgm=args.emit_vgm)
+                emit_vgm=args.emit_vgm, musical_sink=zmd_sink)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()
@@ -505,6 +505,13 @@ def main():
                 print(f"Target VGM: {Path(song_dir) / (base_name + '.target.vgm')}")
             else:
                 print('Target VGM: not produced for this conversion')
+        if args.emit_zmd:
+            if 'path' in zmd_result:
+                print(f"ZMD: {zmd_result['path']}")
+                if zmd_result['losses']:
+                    print(f"ZMD losses: {zmd_result['losses']}")
+            else:
+                print('ZMD: not produced for this conversion')
         return
 
     if route == 'opna-fm-to-opm':
@@ -636,7 +643,7 @@ def main():
                                 dump_passes=args.dump_passes or args.debug,
                                 notation=args.notation, loops=not args.no_loops, song_loop=not args.no_song_loop,
                                 normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms,
-                                force=args.force, emit_vgm=args.emit_vgm)
+                                force=args.force, emit_vgm=args.emit_vgm, musical_sink=zmd_sink)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()
@@ -655,6 +662,13 @@ def main():
                 print(f"Target VGM: {Path(song_dir) / (base_name + '.target.vgm')}")
             else:
                 print('Target VGM: not available for the held-register compatibility projection')
+        if args.emit_zmd:
+            if 'path' in zmd_result:
+                print(f"ZMD: {zmd_result['path']}")
+                if zmd_result['losses']:
+                    print(f"ZMD losses: {zmd_result['losses']}")
+            else:
+                print('ZMD: not produced for this conversion')
         if normalize:
             with open(os.path.join(song_dir, base_name + '.mdx.normalization.json'), encoding='utf-8') as stream:
                 normalization = json.load(stream)

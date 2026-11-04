@@ -11,7 +11,7 @@ from vgm_loop import read_loop_metadata
 
 def convert(source, outdir, *, notation='structured', loops=True, song_loop=True, emit_vgm=False,
             title=None, normalize_lengths=None, normalization_ms=8, fm_state_ms=24,
-            pitch_policy='clamp', force=False):
+            pitch_policy='clamp', force=False, musical_sink=None):
     from dcsg import analyze, dump_analysis
     from dcsg_opm import project, dump_projection
     from opm_target_vgm import write_target_vgm
@@ -58,6 +58,7 @@ def convert(source, outdir, *, notation='structured', loops=True, song_loop=True
         notation=notation, loops=loops, song_loop=song_loop, replayed_song_loop=True,
         title=title or source.stem, normalize_lengths=normalize_lengths,
         normalization_ms=normalization_ms, fm_state_ms=fm_state_ms,
+        musical_sink=musical_sink,
         normalization_source_times={int(r['target_source_event_id']): int(r['vgmticks'])
                                     for r in source_map},
         normalization_validator=lambda candidate, report: _source_normalization_check(

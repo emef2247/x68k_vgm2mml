@@ -453,7 +453,7 @@ def main():
     parser.add_argument('--emit-vgm', action='store_true',
                         help='Also write <stem>.target.vgm per track: the projected OPM stream the MML was built from, with bound PCM playbacks merged as MSM6258 streams (projected routes)')
     parser.add_argument('--emit-zmd', action='store_true',
-                        help='Also write <stem>.zmd per track: a ZMUSIC version of the same musical layer, with the PCM projection embedded as a PDX block (native OPM, OPN2 and OPNA routes)')
+                        help='Also write <stem>.zmd per track: a ZMUSIC version of the same musical layer, with the PCM projection embedded as a PDX block (all MDX routes)')
     selection=parser.add_mutually_exclusive_group()
     selection.add_argument('--psg-only','--psg_only',action='store_true')
     selection.add_argument('--scc-only','--scc_only',action='store_true')
