@@ -345,7 +345,8 @@ def render_zmd(musical, *, timer_value, title=''):
     bpm = round(60_000_000 / (48 * (timer_value + 1)))
     header.extend(struct.pack('>H', min(65535, bpm)))         # tempo
     header.extend(struct.pack('>H', 0))                       # reserved
-    header.extend(struct.pack('>I', 0))                       # cmn flag
+    # cmn flag: bitmap of (common command code / 4); bit 6 = VSET
+    header.extend(struct.pack('>I', (1 << 6) if voices else 0))
     header.extend(struct.pack('>I', 0))                       # ctrl flag
     header.extend(struct.pack('>I', 0))                       # instrument
     header.extend(bytes((len(track_blobs), 0, 0, 0, 0, 0)))   # ch counts
