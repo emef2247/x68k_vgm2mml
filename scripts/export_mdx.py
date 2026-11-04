@@ -103,7 +103,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
               max_ticks=None,psg_model=None,psg_gain=None,scc_gain=None,scc_model=None,scc_voice_bank=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mmlx', mxc=None, run68=None,
               normalize_lengths=None, normalization_ms=8, fm_state_ms=24, no_vgm=True, song_loop=True, listening_layout=False, _title=None,
-              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output=None,segapcm_projection='auto',c140_projection='bank',c140_mix_gain_db=0.0,pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096,nes_balance=True,nes_gain=(),nes_dpcm=True,emit_vgm=False,opn2_dac_gain=0.375,opn2_dcsg_gain=0.036):
+              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output=None,segapcm_projection='auto',c140_projection='bank',c140_mix_gain_db=0.0,pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096,nes_balance=True,nes_gain=(),nes_dpcm=True,emit_vgm=False,emit_zmd=False,opn2_dac_gain=0.375,opn2_dcsg_gain=0.036):
     if listening_layout:
         from export_listening import run_listening_batch
         return run_listening_batch(source, output, core=run_batch, options=dict(
@@ -111,7 +111,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
             psg_model=psg_model,psg_gain=psg_gain,scc_gain=scc_gain,scc_model=scc_model,scc_voice_bank=scc_voice_bank,
             opm_pitch_policy=opm_pitch_policy, pcm_policy=pcm_policy, compiler=compiler,
             mxc=mxc, run68=run68, normalize_lengths=normalize_lengths, normalization_ms=normalization_ms, fm_state_ms=fm_state_ms, no_vgm=no_vgm, song_loop=song_loop, fm_only=fm_only, force=force,pcm_profile=pcm_profile,psg_only=psg_only,scc_only=scc_only,psg_output=psg_output,segapcm_projection=segapcm_projection,c140_projection=c140_projection,c140_mix_gain_db=c140_mix_gain_db,pcm_bank_merge=pcm_bank_merge,pdx_format=pdx_format,
-            pcm_buffer_kib=pcm_buffer_kib,pcm_loader=pcm_loader,pcm_buffer_margin_bytes=pcm_buffer_margin_bytes,emit_vgm=emit_vgm,opn2_dac_gain=opn2_dac_gain,opn2_dcsg_gain=opn2_dcsg_gain))
+            pcm_buffer_kib=pcm_buffer_kib,pcm_loader=pcm_loader,pcm_buffer_margin_bytes=pcm_buffer_margin_bytes,emit_vgm=emit_vgm,emit_zmd=emit_zmd,opn2_dac_gain=opn2_dac_gain,opn2_dcsg_gain=opn2_dcsg_gain))
     source, output = Path(source).resolve(), Path(output).resolve()
     from pcm_capacity import resolve_pcm_capacity
     resolve_pcm_capacity(buffer_kib=pcm_buffer_kib,loader=pcm_loader,margin_bytes=pcm_buffer_margin_bytes)
@@ -181,6 +181,8 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
         options.append('--fm-only')
     if emit_vgm:
         options.append('--emit-vgm')
+    if emit_zmd:
+        options.append('--emit-zmd')
     options.extend(['--normalization-ms', str(normalization_ms), '--fm-state-ms', str(fm_state_ms)])
     if normalize_lengths is not None:
         options.append('--normalize-lengths' if normalize_lengths else '--no-normalize-lengths')
@@ -450,6 +452,8 @@ def main():
                         help='Diagnostic OPM + SegaPCM export: explicitly omit SegaPCM from MDX; retain source evidence')
     parser.add_argument('--emit-vgm', action='store_true',
                         help='Also write <stem>.target.vgm per track: the projected OPM stream the MML was built from, with bound PCM playbacks merged as MSM6258 streams (projected routes)')
+    parser.add_argument('--emit-zmd', action='store_true',
+                        help='Also write <stem>.zmd per track: a ZMUSIC version of the same musical layer, with the PCM projection embedded as a PDX block (native OPM, OPN2 and OPNA routes)')
     selection=parser.add_mutually_exclusive_group()
     selection.add_argument('--psg-only','--psg_only',action='store_true')
     selection.add_argument('--scc-only','--scc_only',action='store_true')
@@ -512,7 +516,7 @@ def main():
                           normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms, no_vgm=args.no_vgm,
                           listening_layout=True, song_loop=args.song_loop, fm_only=args.fm_only, force=args.force,pcm_profile=args.pcm_profile,psg_only=args.psg_only,scc_only=args.scc_only,psg_output=args.psg_output,segapcm_projection=args.segapcm_projection,c140_projection=args.c140_projection,c140_mix_gain_db=args.c140_mix_gain_db,pcm_bank_merge=args.pcm_bank_merge,pdx_format=args.pdx_format,opn2_dac_gain=args.opn2_dac_gain,opn2_dcsg_gain=args.opn2_dcsg_gain,
                           pcm_buffer_kib=args.pcm_buffer_kib,pcm_loader=args.pcm_loader,pcm_buffer_margin_bytes=args.pcm_buffer_margin_bytes,
-                          nes_balance=args.nes_balance,nes_gain=args.nes_gain,nes_dpcm=args.nes_dpcm,emit_vgm=args.emit_vgm)
+                          nes_balance=args.nes_balance,nes_gain=args.nes_gain,nes_dpcm=args.nes_dpcm,emit_vgm=args.emit_vgm,emit_zmd=args.emit_zmd)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     success = sum(row['status'] == 'success' for row in rows)

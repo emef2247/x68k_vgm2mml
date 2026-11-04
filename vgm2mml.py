@@ -200,6 +200,8 @@ def build_parser():
                             help='Keep source/state/Segment CSVs and target analysis passes')
     parser.add_argument('--emit-vgm', action='store_true',
                         help='Also write <stem>.target.vgm beside the MML: the projected OPM stream the MML was built from, with bound PCM playbacks merged as MSM6258 streams (PSG/SCC, NES, DCSG and OPNA routes)')
+    parser.add_argument('--emit-zmd', action='store_true',
+                        help='Also write <stem>.zmd beside the MML: a ZMUSIC version of the same musical layer, with the PCM projection embedded as a PDX block (native OPM, OPN2 and OPNA routes)')
     diagnostic.add_argument('--debug', action='store_true',
                             help='Keep diagnostics (MGSDRV also keeps all chip MML variants)')
     diagnostic.add_argument('--pcm-generator', help='External typed PCM MDX/PDX helper path')
@@ -465,6 +467,16 @@ def main():
         record_report()
         parser.error(str(error))
 
+    zmd_result = {}
+    zmd_sink = None
+    if args.emit_zmd:
+        from zmd_sink import write_zmd
+
+        def zmd_sink(musical, pcm_plan):
+            path, losses = write_zmd(musical, pcm_plan,
+                                     outdir=song_dir, stem=base_name)
+            zmd_result.update(path=path, losses=losses)
+
     if route == 'dcsg-to-opm':
         from dcsg_conversion import convert
         from dcsg_opm import console_lines
@@ -506,7 +518,8 @@ def main():
                 normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms,
                 pcm_generator=args.pcm_generator, pcm_policy=args.pcm_policy or 'auto',pcm_profile=args.pcm_profile,
                 pcm_bank_merge=args.pcm_bank_merge, pdx_format=args.pdx_format, pcm_capacity=pcm_capacity,
-                pitch_policy=args.opm_pitch_policy or 'clamp', force=args.force)
+                pitch_policy=args.opm_pitch_policy or 'clamp', force=args.force,
+                musical_sink=zmd_sink)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()
@@ -519,6 +532,13 @@ def main():
                 print(f"Target VGM: {Path(song_dir) / (base_name + '.target.vgm')}")
             else:
                 print('Target VGM: not produced for this conversion')
+        if args.emit_zmd:
+            if 'path' in zmd_result:
+                print(f"ZMD: {zmd_result['path']}")
+                if zmd_result['losses']:
+                    print(f"ZMD losses: {zmd_result['losses']}")
+            else:
+                print('ZMD: not produced for this conversion')
         forced = settings['force_projection']
         if forced['omitted_intervals']:
             print(f"WARNING: --force muted {forced['omitted_intervals']} unsupported SSG intervals; "
@@ -577,7 +597,7 @@ def main():
                 dac_gain=args.opn2_dac_gain, dcsg_gain=args.opn2_dcsg_gain,
                 pcm_policy=args.pcm_policy or 'auto', pcm_profile=args.pcm_profile,
                 pcm_generator=args.pcm_generator, pdx_format=args.pdx_format,
-                pcm_capacity=pcm_capacity)
+                pcm_capacity=pcm_capacity, musical_sink=zmd_sink)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()
@@ -585,6 +605,13 @@ def main():
         report.update(status='generated', projection_settings=settings)
         record_report()
         print(f'MDX MML: {mml}')
+        if args.emit_zmd:
+            if 'path' in zmd_result:
+                print(f"ZMD: {zmd_result['path']}")
+                if zmd_result['losses']:
+                    print(f"ZMD losses: {zmd_result['losses']}")
+            else:
+                print('ZMD: not produced for this conversion')
         for omission in settings['force_projection']['omitted']:
             print(f"OPN2 projection: {omission['source_chip']} omitted ({omission['reason']})")
         for domain, count in settings['excluded_or_approximated'].items():
@@ -654,7 +681,7 @@ def main():
                                 segapcm_source=route == 'opm-segapcm-source',
                                 segapcm_pcm=route == 'opm-segapcm-source' and not args.fm_only,
                                 segapcm_projection=args.segapcm_projection, pcm_bank_merge=args.pcm_bank_merge, pdx_format=args.pdx_format,pcm_capacity=pcm_capacity,
-                                force=args.force)
+                                force=args.force, musical_sink=zmd_sink)
         except (OSError, ValueError) as error:
             report.update(status='blocked', reason=str(error))
             record_report()
@@ -669,6 +696,13 @@ def main():
             for line in capacity_lines(song_dir, base_name):
                 print(line)
         print(f'MDX MML: {mml}')
+        if args.emit_zmd:
+            if 'path' in zmd_result:
+                print(f"ZMD: {zmd_result['path']}")
+                if zmd_result['losses']:
+                    print(f"ZMD losses: {zmd_result['losses']}")
+            else:
+                print('ZMD: not produced for this conversion')
         from opna_force import pcm_artifact_lines
         for line in pcm_artifact_lines(song_dir, base_name):
             print(line)

@@ -30,7 +30,7 @@ def _record_pcm_assessment(assessment, outdir, stem, *, requires_pdx, retained=(
     assessment.dump(outdir, stem)
 
 
-def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='auto', normalization_validator=None, normalization_source_times=None, normalization_ms=8, fm_state_ms=24, pitch_policy='clamp', song_loop=True, replayed_song_loop=False, pcm_analysis_override=None, source_passes_outdir=None, segapcm_source=False, segapcm_pcm=False, force=False,pcm_profile='standard',segapcm_projection='auto',pcm_bank_merge='budget96',pdx_format='ex-pdx',c140_pcm=False,c140_projection='bank',msm6295_pcm=False,pcm_capacity=None,c140_mix_gain_db=0.0):
+def convert(source, outdir, *, dump_passes=False, track_layout='channels', notation='structured', loops=True, title=None, gd3_language='ja', normalize_lengths=None, pcm_generator=None, pcm_policy='auto', normalization_validator=None, normalization_source_times=None, normalization_ms=8, fm_state_ms=24, pitch_policy='clamp', song_loop=True, replayed_song_loop=False, pcm_analysis_override=None, source_passes_outdir=None, segapcm_source=False, segapcm_pcm=False, force=False,pcm_profile='standard',segapcm_projection='auto',pcm_bank_merge='budget96',pdx_format='ex-pdx',c140_pcm=False,c140_projection='bank',msm6295_pcm=False,pcm_capacity=None,c140_mix_gain_db=0.0,musical_sink=None):
     source, outdir = Path(source), Path(outdir)
     from pcm_capacity import PcmCapacityPolicy
     pcm_capacity = pcm_capacity or PcmCapacityPolicy()
@@ -442,6 +442,8 @@ def convert(source, outdir, *, dump_passes=False, track_layout='channels', notat
                 pcm_assessment.error(str(error))
                 record_pcm_assessment(pcm_assessment, requires_pdx=bool(pcm_plan))
             raise
+        if musical_sink is not None and notation == 'structured':
+            musical_sink(structure, pcm_plan)
         if notation == 'structured':
             rows=structure.short_state_rows
             with (outdir/(source.stem+'.fm.short_states.csv')).open('w',newline='',encoding='utf-8') as stream:
