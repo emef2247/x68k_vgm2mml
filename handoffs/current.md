@@ -3,7 +3,7 @@
 On the user's instruction after listening to the rescued Alien
 Soldier 07: at the previous default the PCM-rendered DCSG part
 sat too far forward, and a candidate at 25% (dcsg_gain 0.036)
-was approved ("battri"). The DCSG gain default therefore goes
+was approved by the user. The DCSG gain default therefore goes
 from 0.145 to 0.036; the DAC gain stays at 0.375. This supersedes
 the Shinobi-calibrated DCSG default for the release; per-song
 impressions now govern. Every default site was updated together:
