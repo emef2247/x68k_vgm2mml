@@ -296,7 +296,7 @@ def _bridge_from_wave(wave, *, source_end, loop_start, pcm_profile, lookup):
 
 
 def project_dcsg(raw, dcsg_analysis, *, source_end, loop_start=None,
-                 loop_count=1, pcm_profile='standard', dcsg_gain=0.145):
+                 loop_count=1, pcm_profile='standard', dcsg_gain=0.036):
     """Build the MSM6258 analysis for a song's SN76489 (DCSG) traffic.
 
     The DCSG waveform is rendered from the native Segments and split
@@ -354,7 +354,7 @@ class Opn2CombinedAnalysis(PcmAnalysis):
 
 def project_combined(raw, events, analysis, dcsg_analysis, *,
                      loop_start=None, loop_count=1, pcm_profile='standard',
-                     dac_gain=0.375, dcsg_gain=0.145):
+                     dac_gain=0.375, dcsg_gain=0.036):
     """Build one MSM6258 analysis for DAC playback mixed with DCSG.
 
     The MSM6258 side has a single stream, and in real Mega Drive

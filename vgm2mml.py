@@ -163,10 +163,10 @@ def build_parser():
                           help='Linear gain for the YM2612 DAC waveform in the '
                                'combined opn2-to-opm PCM bridge (default: 0.375; '
                                '0 mutes the DAC element)')
-    advanced.add_argument('--opn2-dcsg-gain', type=float, default=0.145,
+    advanced.add_argument('--opn2-dcsg-gain', type=float, default=0.036,
                           help='Linear gain for the rendered SN76489 (DCSG) '
                                'waveform in the combined opn2-to-opm PCM '
-                               'bridge (default: 0.145; 0 mutes the DCSG element)')
+                               'bridge (default: 0.036; 0 mutes the DCSG element)')
     selection=advanced.add_mutually_exclusive_group()
     selection.add_argument('--psg-only','--psg_only',action='store_true',help='Project only PSG; retain native source evidence')
     selection.add_argument('--scc-only','--scc_only',action='store_true',help='Project only SCC; retain native source evidence')

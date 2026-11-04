@@ -11,6 +11,7 @@ import subprocess
 import sys
 
 from pcm_capacity import PcmCapacityPolicy, PDX_TABLE_BYTES, packed_pdx_bytes, sample_byte_limit
+from mdx_layout import assemble_pcm_mdx, validate_assembled_layout
 from mdx_duration import duration_spelling
 from opm_mdx import mdx_tick, projected_samples
 from pcm_assessment import PcmAssessment, ProjectionError, PAN_EVIDENCE, select_pcm_policy
@@ -795,12 +796,24 @@ def write_mdx(plan, fm_structure, outdir, stem, *, generator=None):
         detail = result.stdout + result.stderr
         if re.search(r'MDX track \d+ offset exceeds the maximum 0xfffe|Combined native MDX exceeds 65535 bytes', detail):
             assessment = plan.assessment
-            assessment.add('format', 'lossy', 'mdx_capacity_exceeded',
-                           'The projected data exceed native MDX capacity; no truncation or splitting fallback is defined',
+            try:
+                assemble_pcm_mdx(fm, manifest, mdx, generator=executable, timeout=180)
+                validate_assembled_layout(mdx.read_bytes(),
+                                            active_tracks={u.track for u in plan.units})
+            except Exception:
+                assessment.add('format', 'lossy', 'mdx_capacity_exceeded',
+                               'The projected data exceed native MDX capacity; no truncation or splitting fallback is defined',
+                               cause='target_constraint', evidence=detail.strip())
+                assessment.block('MDX capacity exceeded; generated MML and PDX are retained')
+                raise ProjectionError('MDX capacity exceeded; generated MML and PDX are retained: ' + detail,
+                                      assessment)
+            assessment.add('format', 'pass', 'mdx_layout_fallback',
+                           'The stock layout exceeded 16-bit start offsets; the MDX was '
+                           'assembled from subset compiles with track A first, the tone '
+                           'block next and the largest remaining track last. Segment '
+                           'content is unchanged (verified against the subset compiles)',
                            cause='target_constraint', evidence=detail.strip())
-            assessment.block('MDX capacity exceeded; generated MML and PDX are retained')
-            raise ProjectionError('MDX capacity exceeded; generated MML and PDX are retained: ' + detail,
-                                  assessment)
+            return mdx
         raise ValueError('PCM MDX construction failed: ' + detail)
     try:
         validate_extended_layout(mdx.read_bytes(), active_tracks={u.track for u in plan.units})

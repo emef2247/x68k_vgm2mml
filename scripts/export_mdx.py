@@ -11,6 +11,7 @@ from export_report import write_export_report
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'py'))
+from mdx_layout import assemble_mdx
 from opm_mdx import mdx_tick
 from vgm_io import read_vgm_bytes
 from vgm_timing import command_times
@@ -102,7 +103,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
               max_ticks=None,psg_model=None,psg_gain=None,scc_gain=None,scc_model=None,scc_voice_bank=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mmlx', mxc=None, run68=None,
               normalize_lengths=None, normalization_ms=8, fm_state_ms=24, no_vgm=True, song_loop=True, listening_layout=False, _title=None,
-              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output=None,segapcm_projection='auto',c140_projection='bank',c140_mix_gain_db=0.0,pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096,nes_balance=True,nes_gain=(),nes_dpcm=True,emit_vgm=False,opn2_dac_gain=0.375,opn2_dcsg_gain=0.145):
+              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output=None,segapcm_projection='auto',c140_projection='bank',c140_mix_gain_db=0.0,pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096,nes_balance=True,nes_gain=(),nes_dpcm=True,emit_vgm=False,opn2_dac_gain=0.375,opn2_dcsg_gain=0.036):
     if listening_layout:
         from export_listening import run_listening_batch
         return run_listening_batch(source, output, core=run_batch, options=dict(
@@ -269,6 +270,7 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
             if limit is not None:
                 row['max_ticks'] = limit
             command = None
+            layout_fallback = False
             if pdx.is_file():
                 row['compiler'] = 'typed_pcm_mmlx'
                 if not pdx.stat().st_size or not artifacts[1].is_file() or not artifacts[1].stat().st_size:
@@ -292,13 +294,25 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
                 if no_vgm:
                     stage = 'compilation'
                     command = [str(generator), '--compile-only', str(artifacts[0]), str(artifacts[1])]
+                    layout_fallback = True
                 else:
                     command = [str(generator), *(str(p) for p in artifacts), '--max-ticks', str(limit)]
             if command is not None:
                 run = subprocess.run(command, cwd=ROOT, capture_output=True, text=True,
                                      encoding='utf-8', errors='replace', timeout=timeout)
                 if run.returncode:
-                    raise RuntimeError(run.stdout + run.stderr or f'Generator exited with {run.returncode}')
+                    message = run.stdout + run.stderr or f'Generator exited with {run.returncode}'
+                    if layout_fallback and 'offset exceeds the maximum' in message:
+                        try:
+                            report = assemble_mdx(artifacts[0], pdx if pdx.is_file() else None,
+                                                  artifacts[1], generator=generator, timeout=timeout)
+                        except Exception as fallback_error:
+                            raise RuntimeError(message + f'\nLayout fallback failed: {fallback_error}')
+                        row['detail'] = ('MDX layout fallback applied '
+                                         f"(size {report['size']}, max start offset "
+                                         f"{report['max_start_offset']})")
+                    else:
+                        raise RuntimeError(message)
             required = artifacts[:2] if no_vgm else artifacts
             if any(not p.is_file() or not p.stat().st_size for p in required):
                 raise RuntimeError('Generator did not produce all requested nonempty files')
@@ -472,8 +486,8 @@ def main():
                         help='NES APU route only: carry DPCM on ADPCM/PDX instead of SCC slices (export default: on)')
     parser.add_argument('--opn2-dac-gain',type=float,default=0.375,
                         help='OPN2 route only: linear gain for the DAC waveform in the combined PCM bridge (default: 0.375)')
-    parser.add_argument('--opn2-dcsg-gain',type=float,default=0.145,
-                        help='OPN2 route only: linear gain for the DCSG waveform in the combined PCM bridge (default: 0.145)')
+    parser.add_argument('--opn2-dcsg-gain',type=float,default=0.036,
+                        help='OPN2 route only: linear gain for the DCSG waveform in the combined PCM bridge (default: 0.036)')
     parser.add_argument('--pcm-bank-merge',choices=('budget96','similar','off'),default='budget96',
                         help='PCM sharing: budget96 (default) fits 96 samples and the PCM buffer budget; similar keeps quality bounds; off keeps exact sharing')
     # The export surface is intentionally small: the defaults below carry
