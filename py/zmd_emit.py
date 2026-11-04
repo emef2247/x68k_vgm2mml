@@ -8,15 +8,19 @@ intra-unit pitch or level changes become tied slices), rests
 become ZMD rests, control units become raw register writes
 ($bc) separated by waits ($81), voices become common-block
 VSET commands ($18), and the song-loop marker becomes the
-$f5 loop point. PCM tracks and phrase compression are not
-rendered yet and are reported as losses.
+$f5 loop point. When the caller supplies the PCM projection's
+typed commands and the packed PDX image, one ADPCM track and
+the embedded PDX block ($28, ID 2) are rendered as well.
+Phrase compression is not attempted.
 
 Format ground truth: src/zmd.mac in kg68k/zmusic3 (header,
 track-info table, common commands, track commands). All
 multi-byte fields are big-endian; every offset is relative to
 the address just after its own field.
 """
+import math
 import struct
+from fractions import Fraction
 
 MASTER_CLOCK = 192
 _OP_ORDER_ZMD = (0, 2, 1, 3)  # VSET operator groups are OP1, OP3, OP2, OP4
@@ -254,18 +258,113 @@ def _render_controls_unit(writer, unit):
     writer.wait_to(unit.end_tick)
 
 
-def render_zmd(musical, *, timer_value, title=''):
-    """Render a MusicalMdx object to ZMD bytes (FM tracks only).
+# The five standard MDX PCM rates (F0..F4), mirroring
+# pcm_mdx.RATES: the MSM6258 clock dividers the projection
+# quantises every playback to.
+PCM_RATES_HZ = tuple(
+    Fraction(clock, divider)
+    for clock, divider in ((4000000, 1024), (4000000, 768),
+                           (8000000, 1024), (8000000, 768),
+                           (8000000, 512)))
+# A PDX tone played at this note number is assumed to sound at
+# the top standard rate (15,625 Hz); other rates are note
+# offsets from it, the fractional part carried by the detune
+# command. One calibration constant for the TypeG check.
+PCM_REFERENCE_NOTE = 60
+PCM_REFERENCE_RATE = PCM_RATES_HZ[4]
 
-    Returns (bytes, losses dict)."""
+
+def _pcm_note_for_rate(rate_index):
+    """(note, detune in 1/64 semitones) reproducing a standard
+    rate against the reference note/rate pair."""
+    units = round(768 * math.log2(float(PCM_RATES_HZ[rate_index]
+                                        / PCM_REFERENCE_RATE)))
+    total = PCM_REFERENCE_NOTE * 64 + units
+    note, rem = divmod(total, 64)
+    if rem > 32:
+        note += 1
+        rem -= 64
+    return note, rem
+
+
+def _render_pcm_track(commands, losses):
+    """Render the projection's typed PCM commands (one MDX P
+    track) as one ZMD ADPCM track in tone mode: the timbre
+    command selects the PDX tone, the note pitch carries the
+    playback rate against the reference, and each playback's
+    setters become volume / pan commands. Returns the writer;
+    the caller finishes it at the song end tick."""
+    writer = _TrackWriter()
+    bank = 0
+    rate_index = 4
+    detune = None
+    tie_next = False
+    for row in commands:
+        kind = row['kind']
+        if kind == 'bank':
+            bank = int(row['value'])
+        elif kind == 'frequency':
+            rate_index = int(row['value'])
+        elif kind == 'pan':
+            writer.set_pan(_PAN_MAP[int(row['value'])])
+        elif kind == 'volume':
+            writer.set_volume(255 - int(row['value']))
+        elif kind == 'gate':
+            if int(row['value']) != 8:
+                losses['pcm_gate_approximated'] = 1
+        elif kind == 'hold':
+            tie_next = True
+        elif kind == 'note':
+            slot = int(row['value'])
+            ticks = int(row['ticks'])
+            if bank > 0:
+                losses['pcm_bank_tones_not_rendered'] = \
+                    losses.get('pcm_bank_tones_not_rendered', 0) + 1
+                writer.rest(writer.tick, writer.tick + ticks)
+                tie_next = False
+                continue
+            writer.timbre(slot)
+            note, det = _pcm_note_for_rate(rate_index)
+            if det != detune:
+                writer.set_detune(det)
+                detune = det
+            writer.note(note, ticks, ticks, tie=tie_next)
+            tie_next = False
+        elif kind == 'rest':
+            ticks = int(row['ticks'])
+            writer.rest(writer.tick, writer.tick + ticks)
+            tie_next = False
+        elif kind == 'song_loop':
+            writer.loop_point()
+        elif kind == 'end':
+            pass
+        else:
+            key = f'pcm_command_not_rendered:{kind}'
+            losses[key] = losses.get(key, 0) + 1
+    return writer
+
+
+def render_zmd(musical, *, timer_value, title='', pcm_commands=None,
+               pdx_bytes=None):
+    """Render a MusicalMdx object to ZMD bytes.
+
+    FM tracks come from the musical layer; when pcm_commands
+    (the projection's typed PCM command rows) and pdx_bytes
+    (the packed PDX image) are given, one ADPCM track and the
+    embedded PDX block are rendered as well. Returns
+    (bytes, losses dict)."""
     losses = {}
     units = musical.units
     voices = musical.voices
     fm_tracks = sorted(t for t in units if 'A' <= t <= 'H')
-    other = [t for t in units if t not in fm_tracks]
+    other = [t for t in units if t not in fm_tracks
+             and not (t == 'P' and pcm_commands is not None)]
     if other:
         losses['tracks_not_rendered'] = len(other)
-    end_tick = max((u.end_tick for track in fm_tracks
+    timed = list(fm_tracks)
+    if pcm_commands is not None and 'P' in units:
+        timed.append('P')
+    end_tick = max((u.end_tick for track in timed
                     for u in units[track]), default=0)
 
     # First performed state per voice, for the VSET LFO fields.
@@ -292,6 +391,15 @@ def render_zmd(musical, *, timer_value, title=''):
         common.extend(struct.pack('>H', voice_id))
         common.append(0)
         common.extend(_vset_data(voices[voice_id], state))
+    pcm_field_index = None
+    if pdx_bytes is not None:
+        # CMN_BLOCK_PCM ($28), data ID 2 = PDX format, followed
+        # by the offset of the embedded PDX image (patched once
+        # the layout is known).
+        pcm_field_index = len(common) + 2
+        common.append(0x28)
+        common.append(2)
+        common.extend(b'\x00\x00\x00\x00')
     common.append(0xFF)
 
     track_blobs = []
@@ -317,14 +425,24 @@ def render_zmd(musical, *, timer_value, title=''):
                     losses.get(f'unit_kind_{unit.kind}_not_rendered', 0) + 1
                 writer.wait_to(unit.end_tick)
         track_blobs.append(writer.finish(end_tick))
+    track_types = [(0, ord(t) - 65) for t in fm_tracks]
+    if pcm_commands is not None:
+        pcm_writer = _render_pcm_track(pcm_commands, losses)
+        track_blobs.append(pcm_writer.finish(end_tick))
+        track_types.append((1, 0))
 
     header_size = 80
     title_bytes = title.encode('ascii', 'replace') + b'\x00'
     comn_addr = header_size
     trk_table_addr = comn_addr + len(common)
     data_addr = trk_table_addr + 2 + 16 * len(track_blobs)
-    title_addr = data_addr + sum(len(b) for b in track_blobs)
+    pdx_addr = data_addr + sum(len(b) for b in track_blobs)
+    title_addr = pdx_addr + (len(pdx_bytes) if pdx_bytes else 0)
     total_size = title_addr + len(title_bytes)
+    if pcm_field_index is not None:
+        field_addr = comn_addr + pcm_field_index
+        struct.pack_into('>I', common, pcm_field_index,
+                         pdx_addr - (field_addr + 4))
     header = bytearray()
     header.extend(b'\x1aZmuSiC\x30')
     header.extend(struct.pack('>I', comn_addr - 12))          # comn @8
@@ -346,10 +464,16 @@ def render_zmd(musical, *, timer_value, title=''):
     header.extend(struct.pack('>H', min(65535, bpm)))         # tempo
     header.extend(struct.pack('>H', 0))                       # reserved
     # cmn flag: bitmap of (common command code / 4); bit 6 = VSET
-    header.extend(struct.pack('>I', (1 << 6) if voices else 0))
+    # cmn flag: bitmap of (common command code / 4); bit 6 =
+    # VSET ($18), bit 10 = BLOCK_PCM ($28)
+    cmn_flag = (1 << 6) if voices else 0
+    if pdx_bytes is not None:
+        cmn_flag |= 1 << 10
+    header.extend(struct.pack('>I', cmn_flag))
     header.extend(struct.pack('>I', 0))                       # ctrl flag
     header.extend(struct.pack('>I', 0))                       # instrument
-    header.extend(bytes((len(track_blobs), 0, 0, 0, 0, 0)))   # ch counts
+    nof_ad = 1 if pcm_commands is not None else 0
+    header.extend(bytes((len(fm_tracks), nof_ad, 0, 0, 0, 0)))  # ch counts
     header.extend(struct.pack('>H', 0))
     assert len(header) == header_size, len(header)
 
@@ -358,10 +482,11 @@ def render_zmd(musical, *, timer_value, title=''):
     cursor = data_addr
     entries = []
     for index, blob in enumerate(track_blobs):
+        typ, ch = track_types[index]
         entry = bytearray()
         entry.extend(bytes((0, 0, 0, 0)))                     # stat/mode/frq
-        entry.extend(struct.pack('>H', 0))                    # type FM
-        entry.extend(struct.pack('>H', ord(fm_tracks[index]) - 65))
+        entry.extend(struct.pack('>H', typ))                  # type
+        entry.extend(struct.pack('>H', ch))
         play_field_addr = trk_table_addr + 2 + 16 * index + 8
         entry.extend(struct.pack('>I', cursor - (play_field_addr + 4)))
         entry.extend(struct.pack('>I', 0))                    # extra info
@@ -376,6 +501,8 @@ def render_zmd(musical, *, timer_value, title=''):
     out.extend(table)
     for blob in track_blobs:
         out.extend(blob)
+    if pdx_bytes:
+        out.extend(pdx_bytes)
     out.extend(title_bytes)
     assert len(out) == total_size, (len(out), total_size)
     return bytes(out), losses
@@ -399,11 +526,19 @@ def parse_zmd(data):
     size = u32(20)
     title = 40 + u32(36)
     voices = []
+    pcm_block = None
     pos = comn
     while data[pos] != 0xFF:
-        assert data[pos] == 0x18, hex(data[pos])
-        voices.append(struct.unpack_from('>H', data, pos + 1)[0])
-        pos += 50
+        if data[pos] == 0x18:
+            voices.append(struct.unpack_from('>H', data, pos + 1)[0])
+            pos += 50
+        elif data[pos] == 0x28:
+            field = pos + 2
+            pcm_block = (data[pos + 1],
+                         field + 4 + struct.unpack_from('>I', data, field)[0])
+            pos += 6
+        else:
+            raise AssertionError(f'common command {data[pos]:#x}')
     pos += 1
     count = struct.unpack_from('>H', data, trk)[0] + 1
     tracks = []
@@ -460,4 +595,4 @@ def parse_zmd(data):
                 raise ValueError(f'unhandled ZMD command {cmd:#x} at {p}')
         tracks.append(dict(type=typ, ch=ch, events=events))
     return dict(size=size, title=data[title:data.index(b'\x00', title)].decode('ascii', 'replace'),
-                voices=voices, tracks=tracks)
+                voices=voices, tracks=tracks, pcm_block=pcm_block)

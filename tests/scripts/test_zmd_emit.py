@@ -65,6 +65,42 @@ class ZmdEmitTest(unittest.TestCase):
         self.assertEqual(registers,
                          [('register', 0x18, 100), ('register', 0x1B, 2)])
 
+    def test_pcm_track_and_embedded_pdx(self):
+        pdx = bytes(768) + b'ADPCMDATA'
+        commands = [
+            dict(kind='bank', value=0, ticks='', start_tick=0),
+            dict(kind='frequency', value=0, ticks='', start_tick=0),
+            dict(kind='pan', value=3, ticks='', start_tick=0),
+            dict(kind='gate', value=8, ticks='', start_tick=0),
+            dict(kind='volume', value=200, ticks='', start_tick=0),
+            dict(kind='note', value=1, ticks=48, start_tick=0),
+            dict(kind='rest', value='', ticks=48, start_tick=48),
+            dict(kind='song_loop', value='', ticks='', start_tick=96),
+            dict(kind='end', value='', ticks='', start_tick=96),
+        ]
+        musical = MusicalMdx({'P': []}, (), {}, {}, '', '', '', ())
+        data, losses = render_zmd(musical, timer_value=199,
+                                  pcm_commands=commands, pdx_bytes=pdx)
+        self.assertFalse(losses)
+        parsed = parse_zmd(data)
+        self.assertEqual(parsed['pcm_block'][0], 2)
+        start = parsed['pcm_block'][1]
+        self.assertEqual(data[start:start + len(pdx)], pdx)
+        self.assertEqual(len(parsed['tracks']), 1)
+        track = parsed['tracks'][0]
+        self.assertEqual((track['type'], track['ch']), (1, 0))
+        events = track['events']
+        self.assertIn(('timbre', 1), events)
+        self.assertIn(('volume', 55), events)
+        self.assertIn(('pan', 64), events)
+        self.assertIn(('loop', []), events)
+        notes = [e for e in events if e[0] == 'note']
+        # F0 = 15,625 / 4 Hz -> two octaves below the reference
+        self.assertEqual(notes[0][1], 36)
+        steps = sum(e[1] if e[0] == 'rest' else e[2]
+                    for e in events if e[0] in ('rest', 'note'))
+        self.assertEqual(steps, 96)
+
 
 if __name__ == '__main__':
     unittest.main()
