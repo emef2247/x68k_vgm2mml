@@ -157,10 +157,6 @@ To install the external tools automatically, use [scripts/setup_tools.sh](script
 | `--outdir OUTDIR` | Output directory for the conversion results |
 | `--force` | Omit unsupported performance elements, over-capacity PCM and the like within the tolerated range, with diagnostics, and continue |
 | `--vgm-song-loop` | Render the VGM's whole-song loop as a state-preserving second traversal (the default is an MDX that ends after one pass) |
-| `--no-song-loop` | Generate an MDX that ends after one pass instead of using the VGM's whole-song loop (the default; accepted for compatibility) |
-| `--psg-output {opm,pcm}` | Choose whether PSG performance information is converted to OPM or to PCM |
-| `--nes-balance` / `--no-nes-balance` | For NES APU sources, apply mapping gains that compensate the NES mixer balance (enabled by default in export_mdx) |
-| `--nes-dpcm` / `--no-nes-dpcm` | Play NES APU DPCM as MSM6258 ADPCM (PDX) instead of SCC waveform slices (enabled by default; only triggers with sample data) |
 | `--opn2-dac-gain FLOAT` | OPN2 route only: linear gain for the DAC waveform in the combined PCM bridge (default: 0.375) |
 | `--opn2-dcsg-gain FLOAT` | OPN2 route only: linear gain for the DCSG waveform in the combined PCM bridge (default: 0.036) |
 | `--timeout SECONDS` | Timeout for each input and each processing stage (default: 1200 seconds) |
@@ -173,10 +169,10 @@ Even with `--force`, not every input can be converted. If omissions or approxima
 |---|---|
 | OPM (YM2151) | Extracts the performance structure and converts it to MDX MML |
 | OPNA (YM2608) | Projects FM onto OPM. SSG and ADPCM-B are also converted within their supported ranges |
-| OPN2 (YM2612) | Projects FM onto OPM. The DAC and SN76489 (DCSG) are placed into PDX as a combined PCM bridge |
-| PSG / SSG (AY family) | Projects onto OPM. Projection onto PCM can also be selected |
+| OPN2 (YM2612) | Projects FM onto OPM. The DAC and SN76489 (DCSG) are placed into PDX |
+| PSG / SSG (AY family) | Projects onto OPM |
 | SCC | Approximates waveforms as OPM FM / additive-synthesis voices |
-| NES APU (N2A03) | Projects pulse / triangle / noise / FDS onto SCC and PSG noise, then converts to OPM. DPCM plays back as MSM6258 ADPCM (PDX); `--no-nes-dpcm` restores the SCC slice rendering. Can also be combined with an AY-family chip |
+| NES APU (N2A03) | Projects pulse / triangle / noise / FDS onto SCC  |
 | DCSG (SN76489 family, single and dual chip) | Approximates tones and the corresponding noise on OPM |
 | MSM6258-family PCM | Generates a PCM IR and places the corresponding data into PDX |
 | SegaPCM | Prefers a reusable sample bank, switching to the mix method when necessary |
@@ -189,10 +185,6 @@ The supported range varies with the combination of sound sources and the control
 A VGM records writes to sound-chip registers rather than notes, so MML generation interprets note onsets, volumes, timbres, pitches and so on. Projection onto a different sound source involves approximation.
 
 **MML generation, compilation to MDX/PDX, and playback confirmation on an X68000 are separate verification stages.** A successful compile does not guarantee agreement with the original audio, or successful playback on real hardware or an emulator.
-
-Conversion or playback may fail because of PCM capacity, MDX track size, player memory limits and so on. With `--vgm-song-loop` the MDX grows by the loop portion; if size is the cause of a failure, try the default one-pass output.
-
-For songs that do not fit the MDX limits under the normal track layout, the MDX is reassembled with the largest track placed last. In that case the total MDX size can exceed 64 KB.
 
 ## Layout
 
