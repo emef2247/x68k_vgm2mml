@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'py'))
 
 from opm import OpmRegisterState
 from opm_mdx_music import MusicalMdx, MusicUnit, tone_and_level
-from zmd_emit import parse_zmd, render_zmd
+from zmd_emit import pack_pdx, parse_zmd, render_zmd
 
 
 def _state():
@@ -100,6 +100,15 @@ class ZmdEmitTest(unittest.TestCase):
         steps = sum(e[1] if e[0] == 'rest' else e[2]
                     for e in events if e[0] in ('rest', 'note'))
         self.assertEqual(steps, 96)
+
+    def test_pack_pdx_layout(self):
+        image = pack_pdx({0: b'AAAA', 2: b'BB'})
+        self.assertEqual(len(image), 768 + 6)
+        import struct
+        self.assertEqual(struct.unpack_from('>II', image, 0), (768, 4))
+        self.assertEqual(struct.unpack_from('>II', image, 8), (0, 0))
+        self.assertEqual(struct.unpack_from('>II', image, 16), (772, 2))
+        self.assertEqual(image[768:], b'AAAABB')
 
 
 if __name__ == '__main__':

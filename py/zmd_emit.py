@@ -274,6 +274,27 @@ PCM_REFERENCE_NOTE = 60
 PCM_REFERENCE_RATE = PCM_RATES_HZ[4]
 
 
+def pack_pdx(samples_by_slot):
+    """Pack ADPCM sample bytes into a PDX image: a 96-entry
+    table of (offset, length) big-endian long pairs (unused
+    entries zero), then the sample bytes concatenated in slot
+    order from offset 768. Byte-identical to the image the
+    MDX generator packs from the same samples (verified
+    against its output files)."""
+    table = bytearray()
+    body = bytearray()
+    cursor = 96 * 8
+    for slot in range(96):
+        data = samples_by_slot.get(slot)
+        if data is None:
+            table.extend(struct.pack('>II', 0, 0))
+        else:
+            table.extend(struct.pack('>II', cursor, len(data)))
+            body.extend(data)
+            cursor += len(data)
+    return bytes(table + body)
+
+
 def _pcm_note_for_rate(rate_index):
     """(note, detune in 1/64 semitones) reproducing a standard
     rate against the reference note/rate pair."""
