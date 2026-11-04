@@ -1,3 +1,32 @@
+# ZMUSIC (ZMD) renderer added on claude/zmusic-renderer (2026-11-05)
+
+A second renderer beside MDX: --emit-zmd on vgm2mml.py and
+scripts/export_mdx.py writes <stem>.zmd in ZMUSIC V3 format
+(ZMD header ID 1A 'ZmuSiC' 30), grounded on the kg68k/zmusic3
+sources (zmd.mac is the format authority). py/zmd_emit.py renders
+the same inspectable MusicalMdx the MDX renderer consumes, plus
+the typed PCM plan; py/opm_conversion.py gained a musical_sink
+hook fired once per successful structured conversion, and
+py/zmd_sink.py packs the plan's PDX (byte-identical to the
+generator's packing) into a CMN_BLOCK_PCM record. The renderer
+holds no musical interpretation of its own: pitch comes from the
+performed run states (MIDI note + kf detune via $b9), raw writes
+become $bc, tempo uses the $c1 timer value from the MML @t, and
+the song loop is an empty $f5 initialisation list. MDX output is
+byte-invariant (verified on ASOLDR23; ASOLDER pack pass running).
+
+Route coverage: native OPM, C140, MSM6295, SegaPCM, OPN2, OPNA,
+DCSG and PSG/SCC all forward the sink; the NES APU front end
+rides the PSG/SCC route. OPLL stays MGS-only, as on the MDX
+side. Smoke-verified per route (OPNA and native fixtures, DCSG
+synthetic, NES FF18: 3 FM tracks, steps consistent, no losses).
+Known rough edge: a song whose MDX compile fails on capacity
+(ASOLDR11) still exits 2 even though its .zmd is written.
+Unverified until the user's TypeG check: ZP3 playback of the
+generated files, the CMN_VSET PAN/AF byte, $c1 timer equivalence
+with MXDRV @t, the PCM note-60 = 15,625 Hz anchor, and $c7 tone
+selection on the ADPCM track.
+
 # OPN2 DCSG bridge gain default lowered to 0.036 (2026-11-04, claude/mdx-large-layout)
 
 On the user's instruction after listening to the rescued Alien
