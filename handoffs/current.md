@@ -1,3 +1,48 @@
+# MDX layout fallback rescues oversize songs (2026-11-04, claude/mdx-large-layout)
+
+When the stock compile fails on MDX capacity (a track start offset
+past 0xfffe, or a combined size past 65535), the converter now
+reassembles the MDX from subset compiles: track A first (parsers
+derive the track count from A's offset), the tone block next, the
+remaining tracks in ascending size order and the largest last, so
+only total - largest must fit under 0xfffe. The stock success path
+is untouched, byte for byte. New module py/mdx_layout.py, hooked
+into both compile routes: scripts/export_mdx.py (plain
+--compile-only) and py/pcm_mdx.py write_mdx (typed PCM, where the
+OPN2 capacity failures actually occur).
+
+PCM-route specifics that the implementation had to honour: the
+--compile-pcm argument named "manifest" is the target plan
+(target.tsv); every subset compile must contain the tick-longest
+FM track (the generator rejects an FM document whose maximum
+end_tick differs from the plan's; tick length is probed by solo
+compiles with finite repeats expanded, mirroring the generator's
+own timing walk, because long tied notes make MML text size a bad
+predictor); subset MDX outputs must sit beside the final output
+(the compiler loads the PDX beside its output); the stock
+serializer zero-pads before the tone block, so segment extents
+are taken from the command census, not from neighbouring offsets;
+and the assembled file gets its own envelope check
+(validate_assembled_layout) because validate_extended_layout
+assumes offsets ascend with track index. The assembled file is
+verified against the subset compiles with the generator's own
+inspectors (tone table identical, every track's command sequence
+identical); any mismatch aborts the fallback and the original
+capacity error stands.
+
+Evidence (Alien Soldier pack, export --force): 23/24 generate.
+Rescued: 07 (69,874 bytes, max start 51,728), 08, 10, 12, 13, 15,
+20 (84,241). ASOLDR11 alone still fails: total 80,090 with
+total - largest = 66,095, 561 bytes over the placement budget -
+no placement can fix that; it is a ZMUSIC candidate. Previously
+succeeding tracks are byte-identical (14/16/17 checked). Suite:
+1217 tests, 22F+9E, skipped 88 on this VM; the failure multiset
+matches the origin/main baseline - the two extra errors
+(test_pcm_pdx_capacity real external packer, test_opna_ssg_opm
+binary generation) reproduce identically on unmodified main once
+the fixture generator is built, and the remaining count deltas
+are generator-presence skip differences.
+
 # OPN2 DAC bridge gain default lowered to 0.375 (2026-11-04, claude/opn2-dead-registers)
 
 On the user's instruction after listening to the Alien Soldier /
