@@ -31,6 +31,14 @@ python scripts/export_mdx.py INDIR --outdir OUTDIR --force
 python scripts/export_mdx.py INDIR --outdir OUTDIR --force --vgm-song-loop
 ```
 
+ZMUSIC（ZMD）形式でも出力できます。ZMDは外部コンパイラを使わず直接生成します。
+
+```bash
+python scripts/export_mdx.py INDIR --outdir OUTDIR --force --emit-zmd
+```
+
+出力はZMUSIC Ver.3系のZMDで、X68000側の再生にはZMUSIC（ZP3など）が必要です。既定の1周で終了する生成はZMDにも適用されます。
+
 MDXの生成にはMXCまたはmmlxなどのMDXコンパイラが必要です。PDXの生成にはsoundlogを利用しています。
 
 これらの環境構築については、[環境構築](docs/mdx_compiler_setup.ja.md) を参照してください。
@@ -45,6 +53,7 @@ MDXの生成にはMXCまたはmmlxなどのMDXコンパイラが必要です。P
 | `--outdir OUTDIR` | 変換結果の出力先ディレクトリ |
 | `--force` | 未対応の演奏要素や容量超過PCMなど、許容された範囲を診断付きで省略して続行 |
 | `--vgm-song-loop` | VGMの曲全体ループを状態保存つきの2周目再生として描く（既定は1周で終了するMDX） |
+| `--emit-zmd` | ZMUSIC（ZMD）形式も出力する（単体変換の `vgm2mml.py` でも指定可） |
 | `--opn2-dac-gain FLOAT` | OPN2音源のみ。合体PCMブリッジ内のDAC波形の線形ゲイン（既定0.375） |
 | `--opn2-dcsg-gain FLOAT` | OPN2音源のみ。合体PCMブリッジ内のDCSG波形の線形ゲイン（既定0.036） |
 | `--timeout SECONDS` | 各入力・各処理段階のタイムアウト（既定1200秒） |
@@ -144,6 +153,14 @@ By default the export generates an MDX that ends after one pass, without the VGM
 python scripts/export_mdx.py INDIR --outdir OUTDIR --force --vgm-song-loop
 ```
 
+The ZMUSIC (ZMD) format can also be written. ZMD is generated directly, without an external compiler.
+
+```bash
+python scripts/export_mdx.py INDIR --outdir OUTDIR --force --emit-zmd
+```
+
+The output is ZMD for ZMUSIC Ver.3; playback on the X68000 requires ZMUSIC (such as ZP3). The default single-pass rendering applies to ZMD as well.
+
 Generating MDX requires an MDX compiler such as MXC or mmlx. PDX generation uses soundlog.
 
 See [Environment setup](docs/mdx_compiler_setup.md) for setting these up.
@@ -157,6 +174,7 @@ To install the external tools automatically, use [scripts/setup_tools.sh](script
 | `--outdir OUTDIR` | Output directory for the conversion results |
 | `--force` | Omit unsupported performance elements, over-capacity PCM and the like within the tolerated range, with diagnostics, and continue |
 | `--vgm-song-loop` | Render the VGM's whole-song loop as a state-preserving second traversal (the default is an MDX that ends after one pass) |
+| `--emit-zmd` | Also write the ZMUSIC (ZMD) format (available on the single-file `vgm2mml.py` too) |
 | `--opn2-dac-gain FLOAT` | OPN2 route only: linear gain for the DAC waveform in the combined PCM bridge (default: 0.375) |
 | `--opn2-dcsg-gain FLOAT` | OPN2 route only: linear gain for the DCSG waveform in the combined PCM bridge (default: 0.036) |
 | `--timeout SECONDS` | Timeout for each input and each processing stage (default: 1200 seconds) |

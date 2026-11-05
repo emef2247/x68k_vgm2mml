@@ -6,17 +6,20 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 tools="$root/.tools"
 with_mdxtools=false
 with_psg_pcm=false
+with_zmusic=false
 for option in "$@"; do
     case "$option" in
         --with-mdxtools) with_mdxtools=true ;;
         --with-psg-pcm) with_psg_pcm=true ;;
+        --with-zmusic) with_zmusic=true ;;
         --help|-h)
-            printf '%s\n' 'Usage: bash scripts/setup_tools.sh [--with-mdxtools] [--with-psg-pcm]' \
+            printf '%s\n' 'Usage: bash scripts/setup_tools.sh [--with-mdxtools] [--with-psg-pcm] [--with-zmusic]' \
                 'Installs MXC v1.01, pinned run68x and the locked Rust helper.' \
                 '--with-mdxtools also builds mdxinfo, pdxinfo, mdxdump and mdx2mml.' \
                 '--with-psg-pcm also prepares the external emu2149 runtime.' \
+                '--with-zmusic also extracts the ZMUSIC 3.02C programs (ZMSC3.X, ZMC.X, ZP3.R) for ZMD playback checks.' \
                 'Requires Python 3, curl, git, CMake, make, a C compiler and Rust/Cargo.' \
-                'A fresh MXC installation also requires lha or lhasa (LH1 support).'
+                'A fresh MXC or ZMUSIC installation also requires lha or lhasa (LH1 support).'
             exit 0 ;;
         *) printf 'Unknown option: %s\n' "$option" >&2; exit 2 ;;
     esac
@@ -106,7 +109,46 @@ if "$with_mdxtools"; then
         CC=cc CFLAGS='-O2 -Wall -D_GNU_SOURCE -Ix68ksjis' LIBS=
 fi
 
-python3 - "$tools" "$root" "$with_mdxtools" <<'PY'
+# ZMUSIC is only a playback-check environment: the converter writes
+# ZMD directly and never invokes these programs. The executables
+# ship as an LZH archive inside the pinned zmusic3 checkout.
+zmusic_revision=ce859733704fa99fc1219488ad6f0c905261765f
+zmusic_archive_hash=14351bf19418dcf171e38062c82f2207a53ffd97f0ebcaaf21d23634fa515f49
+zmsc3_hash=93ffb4bb294b0adda0b2c7acd732f7772aa92302b0fc5f532c8aae55abf4130c
+zmc_hash=9028b064eb254185d33469fa70cc276259b8b8c8eaba28e24210c1849ba9662c
+zp3_hash=690eaea6e819f736b860144f3c1009d8187a2641adb6a37642fd62b5cec6375b
+if "$with_zmusic"; then
+    checkout https://github.com/kg68k/zmusic3.git "$tools/zmusic3" \
+        "$zmusic_revision"
+    zmusic_archive="$tools/zmusic3/archives/ZM302C_X.LZH"
+    if ! checksum "$zmusic_archive_hash" "$zmusic_archive"; then
+        printf 'ZMUSIC archive checksum mismatch: %s\n' "$zmusic_archive" >&2
+        exit 1
+    fi
+    mkdir -p "$tools/zmusic"
+    if ! checksum "$zmsc3_hash" "$tools/zmusic/ZMSC3.X" \
+        || ! checksum "$zmc_hash" "$tools/zmusic/ZMC.X" \
+        || ! checksum "$zp3_hash" "$tools/zmusic/ZP3.R"; then
+        for name in ZMSC3.X ZMC.X ZP3.R; do
+            if [[ -e "$tools/zmusic/$name" ]]; then
+                printf 'Existing ZMUSIC file hash differs; refusing to overwrite %s\n' \
+                    "$tools/zmusic/$name" >&2
+                exit 1
+            fi
+        done
+        decoder=$(command -v lha || command -v lhasa || true)
+        if [[ -z "$decoder" ]]; then
+            printf 'Missing LH1 decoder. On Ubuntu: sudo apt-get install lhasa\n' >&2
+            exit 1
+        fi
+        (cd "$tools/zmusic" && "$decoder" x "$zmusic_archive" ZMSC3.X ZMC.X ZP3.R)
+    fi
+    checksum "$zmsc3_hash" "$tools/zmusic/ZMSC3.X"
+    checksum "$zmc_hash" "$tools/zmusic/ZMC.X"
+    checksum "$zp3_hash" "$tools/zmusic/ZP3.R"
+fi
+
+python3 - "$tools" "$root" "$with_mdxtools" "$with_zmusic" <<'PY'
 import hashlib
 import json
 from pathlib import Path
@@ -122,6 +164,9 @@ binaries = {
 if sys.argv[3] == 'true':
     binaries.update((name, tools / 'mdxtools' / name)
                     for name in ('mdxinfo', 'pdxinfo', 'mdxdump', 'mdx2mml'))
+if sys.argv[4] == 'true':
+    binaries.update((name, tools / 'zmusic' / name)
+                    for name in ('ZMSC3.X', 'ZMC.X', 'ZP3.R'))
 for name, path in binaries.items():
     if not path.is_file() or not path.stat().st_size:
         raise RuntimeError(f'Missing installed binary: {path}')
@@ -136,6 +181,9 @@ report = {
 if sys.argv[3] == 'true':
     report['mdxtools_revision'] = subprocess.check_output(
         ['git', '-C', str(tools / 'mdxtools'), 'rev-parse', 'HEAD'], text=True).strip()
+if sys.argv[4] == 'true':
+    report['zmusic3_revision'] = subprocess.check_output(
+        ['git', '-C', str(tools / 'zmusic3'), 'rev-parse', 'HEAD'], text=True).strip()
 (tools / 'setup_manifest.json').write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
 print('Setup complete. Installed tools: ' + ', '.join(binaries))
 print('Manifest: ' + str(tools / 'setup_manifest.json'))

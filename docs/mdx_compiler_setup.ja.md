@@ -14,6 +14,8 @@ WSL上で実行してください。スクリプトは自身の配置場所か�
 bash scripts/setup_tools.sh
 # 調査用の独立したメタデータ解析・逆コンパイルツールもインストールする場合：
 bash scripts/setup_tools.sh --with-mdxtools
+# ZMDの再生確認用にZMUSICのプログラムもインストールする場合：
+bash scripts/setup_tools.sh --with-zmusic
 ```
 
 標準のセットアップでは、MXC v1.01、リビジョンを固定したrun68x、および `cargo build --release --locked` でビルドするRust製ヘルパー（mmlx 0.2.0 / soundlog 0.15.0）を導入します。
@@ -24,7 +26,9 @@ bash scripts/setup_tools.sh --with-mdxtools
 .tools/mdxtools/mdxinfo -u -H path/to/score.mdx
 ```
 
-必要な環境は、Python 3.10以降、Rust 2024 Editionに対応したRust/Cargo（Rust 1.85以降）、git、curl、CMake、make、Cコンパイラ、sha256sumです。MXCを新規に展開する場合は、Ubuntuの `lhasa`（またはLH1形式に対応した別の `lha`）も必要です。Ubuntu/WSLでは、以下のように導入できます。
+ZMUSIC用の構成では、固定リビジョン `ce859733704fa99fc1219488ad6f0c905261765f` のzmusic3チェックアウトに同梱された配布アーカイブから、ZMUSIC 3.02Cのプログラム `ZMSC3.X`、`ZMC.X`、`ZP3.R` を `.tools/zmusic/` へ展開します。変換ツールはZMDを直接生成し、これらのプログラムを実行することはありません。X68000側での再生確認（上記のrun68x経由など）のための環境です。
+
+必要な環境は、Python 3.10以降、Rust 2024 Editionに対応したRust/Cargo（Rust 1.85以降）、git、curl、CMake、make、Cコンパイラ、sha256sumです。MXCまたはZMUSICを新規に展開する場合は、Ubuntuの `lhasa`（またはLH1形式に対応した別の `lha`）も必要です。Ubuntu/WSLでは、以下のように導入できます。
 
 ```sh
 sudo apt-get update

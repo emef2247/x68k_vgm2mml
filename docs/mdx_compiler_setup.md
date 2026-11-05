@@ -16,6 +16,8 @@ Run from WSL (the script finds the repository from its own location):
 bash scripts/setup_tools.sh
 # Also install independent metadata/decompiler tools for research:
 bash scripts/setup_tools.sh --with-mdxtools
+# Also install the ZMUSIC programs for ZMD playback checks:
+bash scripts/setup_tools.sh --with-zmusic
 ```
 
 The default installs MXC v1.01, pinned run68x and the Rust helper built with
@@ -28,8 +30,15 @@ These executables are under `.tools/mdxtools/`; for example:
 .tools/mdxtools/mdxinfo -u -H path/to/score.mdx
 ```
 
+The ZMUSIC profile extracts the ZMUSIC 3.02C programs `ZMSC3.X`, `ZMC.X`
+and `ZP3.R` from the distribution archive inside the pinned zmusic3
+checkout (revision `ce859733704fa99fc1219488ad6f0c905261765f`) into
+`.tools/zmusic/`. The converter writes ZMD directly and never invokes
+them; they are a playback-check environment for the X68000 side (for
+example under the run68x installed above).
+
 Prerequisites: Python 3.10+, Rust/Cargo supporting edition 2024 (Rust 1.85+),
-git, curl, CMake, make, a C compiler and sha256sum. A fresh MXC extraction also
+git, curl, CMake, make, a C compiler and sha256sum. A fresh MXC or ZMUSIC extraction also
 needs Ubuntu `lhasa` (or another `lha` with LH1 support). For Ubuntu/WSL:
 
 ```sh
