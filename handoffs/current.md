@@ -1,3 +1,35 @@
+# ZMUSIC follow-up: pack verification resolved; README, setup, docs (2026-11-05)
+
+- S4 pack pass: 24/24 ZMD parse-verified, MDX byte-invariant.
+  The step-count gap against the two shared S3 files was a
+  front-end default, not the renderer: vgm2mml.py defaults
+  song_loop on (the declared loop is traversed twice) while
+  export_mdx.py defaults to one finite pass. Durations
+  reconcile exactly on every song; ASOLDR05 also showed the
+  tempo grid can differ between routes, so durations, not
+  step counts, are the comparable quantity. The user confirmed
+  the pack (finite) form is canonical and that the shared
+  files do not need re-issuing. Field note:
+  2026-11-05_zmusic_renderer_pack_and_frontend_defaults.md
+  in the notes repository.
+- README (JA/EN) now documents --emit-zmd briefly: direct
+  generation without a compiler, ZMUSIC Ver.3 output, ZP3
+  playback on the X68000, and the single-pass default
+  applying to ZMD as well.
+- setup_tools.sh --with-zmusic extracts ZMSC3.X, ZMC.X and
+  ZP3.R from the distribution archive inside the pinned
+  zmusic3 checkout (ce859733704fa99fc1219488ad6f0c905261765f)
+  into .tools/zmusic/; the archive hash and the three file
+  hashes are pinned, and the manifest records them with the
+  zmusic3 revision. Playback checks only; conversion never
+  invokes these programs. docs/mdx_compiler_setup.md and
+  .ja.md describe the profile next to --with-mdxtools.
+  Verified end-to-end twice in a scratch copy (fresh install
+  and re-run); this VM has no LH1 decoder, so the scratch run
+  stubbed the pre-existing MXC extraction (untouched by this
+  change) and decoded the ZMUSIC archive via lhafile.
+- Still unverified: ZP3 playback on the user's TypeG.
+
 # ZMUSIC (ZMD) renderer added on claude/zmusic-renderer (2026-11-05)
 
 A second renderer beside MDX: --emit-zmd on vgm2mml.py and
