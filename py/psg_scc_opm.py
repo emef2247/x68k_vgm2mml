@@ -189,7 +189,7 @@ class AdditivePlan:
 
 
 def project(psg, scc, *, psg_clock, scc_clock, end_vgmticks, psg_gain=None,
-            scc_gain=.125, psg_model='additive', pitch_policy=None, force=False, noise_source_ch='auto',
+            scc_gain=1.0, psg_model='additive', pitch_policy=None, force=False, noise_source_ch='auto',
             scc_model='additive',scc_voice_bank=None,source_selection='all',psg_output='opm'):
     if psg_output not in ('opm','pcm'):raise ValueError('PSG output must be opm or pcm')
     if source_selection=='scc' and psg_output=='pcm':raise ValueError('--scc-only cannot include PSG PCM output')
@@ -200,15 +200,15 @@ def project(psg, scc, *, psg_clock, scc_clock, end_vgmticks, psg_gain=None,
     pitch_policy = pitch_policy or ('clamp' if psg_model == 'fm' else 'error')
     if pitch_policy not in ('clamp', 'error'):
         raise ValueError('Pitch policy must be clamp or error')
-    psg_gain = (1. if psg_model == 'fm' else .125) if psg_gain is None else psg_gain
+    psg_gain = 1. if psg_gain is None else psg_gain
     # PCM output encodes the gain into ADPCM audio, where level buys SNR;
     # its ceiling is MAX_PSG_PCM_GAIN in psg_pcm_mdx. OPM projection gains
     # scale voice levels instead and keep their tighter model ranges.
-    gain_cap = 8. if psg_output=='pcm' else (1. if psg_model == 'fm' else .5)
+    gain_cap = 8. if psg_output=='pcm' else (1. if psg_model == 'fm' else 1.)
     if not math.isfinite(psg_gain) or not 0 < psg_gain <= gain_cap:
         raise ValueError('PSG gain exceeds the selected model range')
-    if not math.isfinite(scc_gain) or not 0 < scc_gain <= .5:
-        raise ValueError('SCC gain must be positive and at most 0.5')
+    if not math.isfinite(scc_gain) or not 0 < scc_gain <= 1.:
+        raise ValueError('SCC gain must be positive and at most 1.0')
     plan = AdditivePlan([], [], {}, end_vgmticks,
                         dict(psg_clock=psg_clock, scc_clock=scc_clock, target_clock=OPM_CLOCK,
                              psg_gain=psg_gain, scc_gain=scc_gain, psg_model=psg_model,

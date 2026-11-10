@@ -18,7 +18,7 @@ def main(argv=None):
     parser.add_argument('--frequency', type=float, default=440.)
     parser.add_argument('--check-frequency', type=float, action='append', help='Repeat to override default half/reference/double pitch checks')
     parser.add_argument('--clock', type=int, default=4000000)
-    parser.add_argument('--gain', type=float, default=.125)
+    parser.add_argument('--gain', type=float, default=1.0)
     parser.add_argument('--audio', action='store_true', help='Also save matched-scale source and candidate WAVs')
     args = parser.parse_args(argv)
     try:
