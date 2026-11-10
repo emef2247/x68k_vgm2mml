@@ -199,7 +199,7 @@ def _mark_projected_evidence(folder, source, target, performance, projection, no
         raise ValueError('Projected note clock exceeds the combined source timing bound')
 
 
-def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model='fm', pitch_policy=None,
+def _convert(source, out, *, psg_gain=None, scc_gain=1.0, title=None, psg_model='fm', pitch_policy=None,
              notation='structured', loops=True, normalize_lengths=None, projection_mode='musical', normalization_ms=8, fm_state_ms=24, song_loop=True, force=False,
              scc_model='additive',scc_voice_bank=None,source_selection='all',bank_outdir=None,psg_output='opm',pcm_policy='auto',pcm_profile='standard',pcm_generator=None,pdx_format='ex-pdx',pcm_capacity=None,nes_dpcm=None,emit_vgm=False):
     if psg_output=='pcm' and notation!='structured':raise ValueError('PSG PCM requires structured notation')
@@ -334,7 +334,7 @@ def _convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model
 
 
 
-def convert(source, out, *, psg_gain=None, scc_gain=.125, title=None, psg_model='fm', pitch_policy=None,
+def convert(source, out, *, psg_gain=None, scc_gain=1.0, title=None, psg_model='fm', pitch_policy=None,
             dump_passes=True, notation='structured', loops=True, normalize_lengths=None, projection_mode=None, normalization_ms=8, fm_state_ms=24, song_loop=True, force=False,
             scc_model='additive',scc_voice_bank=None,source_selection='all',bank_outdir=None,psg_output='opm',pcm_policy='auto',pcm_profile='standard',pcm_generator=None,pdx_format='ex-pdx',pcm_capacity=None,nes_dpcm=None,emit_vgm=False):
     """Keep native evidence on request; default standalone audit keeps all passes."""

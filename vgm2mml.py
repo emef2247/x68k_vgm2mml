@@ -134,7 +134,7 @@ def build_parser():
                         help='Native MDX tracks; conductor requires --notation registers')
     advanced.add_argument('--no-song-loop', action='store_true', help='Export one finite VGM pass instead of its declared song loop')
     advanced.add_argument('--no-loops', action='store_true', help='Disable MDX finite-repeat compression')
-    advanced.add_argument('--psg-gain', type=float, default=None, help='PSG projection gain: fm=1, additive=0.125')
+    advanced.add_argument('--psg-gain', type=float, default=None, help='PSG projection gain (default: 1.0)')
     advanced.add_argument('--psg-model', choices=['fm', 'additive'], default=None,
                          help='PSG-to-OPM tone model (default: fm); SCC model is selected separately')
     advanced.add_argument('--scc-model',choices=('additive','additive8','fm-additive','fm-fm'),default=None,
@@ -171,7 +171,7 @@ def build_parser():
     selection.add_argument('--psg-only','--psg_only',action='store_true',help='Project only PSG; retain native source evidence')
     selection.add_argument('--scc-only','--scc_only',action='store_true',help='Project only SCC; retain native source evidence')
     advanced.add_argument('--psg-output',choices=('opm','pcm'),default='opm',help='PSG target: OPM or continuous mixed ADPCM (requires best-effort)')
-    advanced.add_argument('--scc-gain', type=float, default=None, help='SCC-to-OPM gain (default: 0.125)')
+    advanced.add_argument('--scc-gain', type=float, default=None, help='SCC-to-OPM gain (default: 1.0)')
     fidelity = parser.add_argument_group('Target fidelity policies')
     fidelity.add_argument('--opm-pitch-policy', choices=['clamp', 'error'], default=None,
                         help='OPM pitch range policy: default native/FM=clamp, additive=error')
@@ -599,7 +599,7 @@ def main():
         try:
             mml, plan = convert(vgm_path, song_dir, psg_gain=args.psg_gain,
                                 nes_dpcm=nes_dpcm_spec,
-                                scc_gain=.125 if args.scc_gain is None else args.scc_gain,
+                                scc_gain=1.0 if args.scc_gain is None else args.scc_gain,
                                 scc_model=args.scc_model or ('additive' if compatibility_target=='opm-additive' else 'fm-additive'),
                                 scc_voice_bank=args.scc_voice_bank,source_selection=source_selection,psg_output=args.psg_output,
                                 pcm_policy=args.pcm_policy or "auto",pcm_profile=args.pcm_profile,pcm_generator=args.pcm_generator,pdx_format=args.pdx_format,pcm_capacity=pcm_capacity,
