@@ -375,7 +375,7 @@ class CliRoutes(unittest.TestCase):
             self.assertEqual(run.returncode, 0, run.stderr)
             settings = json.loads((root / 'volume_sweep.conversion.json').read_text())['projection_settings']
             self.assertEqual((settings['psg_model'], settings['psg_gain'], settings['pitch_policy']),
-                             ('additive', .125, 'error'))
+                             ('additive', 1.0, 'error'))
             run = self.run_cli(fixture, '--outdir', root, '--target', 'opm-additive', '--psg-model', 'fm')
             self.assertEqual(run.returncode, 2)
 

@@ -4,7 +4,7 @@ from pathlib import Path
 import shutil
 
 
-def generate(analysis,outdir,stem,*,artifact_outdir=None,scc_gain=.125):
+def generate(analysis,outdir,stem,*,artifact_outdir=None,scc_gain=1.0):
     waves=list(dict.fromkeys(bytes.fromhex(s.waveform_hex)
         for rows in analysis.segments.values() for s in rows
         if s.enabled and s.volume and s.tone_period>8))

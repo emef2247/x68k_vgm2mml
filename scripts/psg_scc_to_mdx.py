@@ -50,12 +50,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', type=Path, help='PSG/SCC VGM or directory to scan recursively')
     parser.add_argument('--outdir', type=Path, required=True)
-    parser.add_argument('--psg-gain', type=float, default=None, help='PSG gain: default fm=1, additive=0.125')
+    parser.add_argument('--psg-gain', type=float, default=None, help='PSG gain (default: 1.0)')
     parser.add_argument('--psg-model', choices=['fm', 'additive'], default='fm',
                         help='PSG tone model (default: fm); SCC remains additive')
     parser.add_argument('--opm-pitch-policy', choices=['clamp', 'error'], default=None,
                         help='Range policy: default fm=clamp, additive=error')
-    parser.add_argument('--scc-gain', type=float, default=.125)
+    parser.add_argument('--scc-gain', type=float, default=1.0)
     parser.add_argument('--notation', choices=['structured', 'registers'], default='structured')
     parser.add_argument('--no-loops', action='store_true')
     parser.add_argument('--normalize-lengths', action=argparse.BooleanOptionalAction, default=None,

@@ -143,7 +143,7 @@ def _additive(raw, gain, groups):
             for group in groups]
 
 
-def fit_waveform(raw, probe, gain=.125):
+def fit_waveform(raw, probe, gain=1.0):
     """Fit finite candidates; all scores include unwanted FFT bins and gain error."""
     np = probe.np
     raw = wave_bytes(raw)
@@ -228,7 +228,7 @@ def pitch_check(raw, parts, probe, gain):
                 reoptimized=False)
 
 
-def fit_bank(waveforms, probe, gain=.125, cache_dir=None, check_frequencies=None):
+def fit_bank(waveforms, probe, gain=1.0, cache_dir=None, check_frequencies=None):
     if not math.isfinite(gain) or not 0 < gain <= 1:
         raise ValueError('Reference gain must be finite and in (0,1]')
     requested = list(dict.fromkeys(check_frequencies if check_frequencies is not None else

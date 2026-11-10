@@ -106,7 +106,7 @@ class FmTargetTests(unittest.TestCase):
                 _, plan = convert(fixture, folder, **({'psg_model':model} if model=='additive' else {}))
                 self.assertEqual(plan.settings['psg_model'], model)
                 self.assertEqual(plan.settings['pitch_policy'], 'clamp' if model=='fm' else 'error')
-                self.assertEqual(plan.settings['psg_gain'], 1 if model=='fm' else .125)
+                self.assertEqual(plan.settings['psg_gain'], 1)
             # Native Segment evidence is identical for the two projections.
             self.assertEqual((Path(tmp)/'fm/volume_sweep.psg.segments.csv').read_bytes(),
                              (Path(tmp)/'additive/volume_sweep.psg.segments.csv').read_bytes())
