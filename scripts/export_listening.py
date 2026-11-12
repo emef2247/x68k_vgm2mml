@@ -155,7 +155,7 @@ def _check_planned_layout(planned, output):
         raise ValueError(f'Output artifact/directory collision: {artifacts[key]}')
 
 
-def run_listening_batch(source, output, *, core, options):
+def run_listening_batch(source, output, *, core, options, retain_diagnostics=True):
     """Publish one flat listening package per original input directory."""
     from export_mdx import _save_results
     source = Path(source).resolve()
@@ -280,8 +280,22 @@ def run_listening_batch(source, output, *, core, options):
             package_rows[package] = {r['input']: r for r in previous_rows}
         package_rows[package][key] = local_row
         _save_results(package, list(package_rows[package].values()))
-        aggregate = _bounded(output / '_diagnostics', output)
-        aggregate.mkdir(parents=True, exist_ok=True)
-        # Aggregate paths are relative to the overall output root, like API rows.
-        _save_results(aggregate, rows)
+        if retain_diagnostics:
+            aggregate = _bounded(output / '_diagnostics', output)
+            aggregate.mkdir(parents=True, exist_ok=True)
+            # Aggregate paths are relative to the overall output root, like API rows.
+            _save_results(aggregate, rows)
+        else:
+            # A normal run keeps only the published package: the core
+            # workspace and the staged source copy are diagnostics.
+            shutil.rmtree(diagnostics, ignore_errors=True)
+            try:
+                diagnostics.parent.rmdir()
+            except OSError:
+                pass
+            staged.unlink(missing_ok=True)
+            try:
+                staged.parent.rmdir()
+            except OSError:
+                pass
     return rows

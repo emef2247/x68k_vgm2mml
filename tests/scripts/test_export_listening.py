@@ -276,6 +276,22 @@ class ExportListeningTests(unittest.TestCase):
             self.assertTrue((out / '_diagnostics/results.csv').is_file())
             self.assertFalse((out / 'results.csv').exists())
 
+    def test_non_retained_run_omits_diagnostics_and_staged_sources(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            fixture(root / 'input/site/A/a.vgm')
+            out = root / 'out'
+            rows = run_listening_batch(root / 'input', out, core=core, options={},
+                                       retain_diagnostics=False)
+            self.assertEqual(rows[0]['status'], 'success')
+            package = out / 'site' / 'A'
+            self.assertTrue((package / 'tracks/a.mdx').is_file())
+            self.assertTrue((package / 'listening_manifest.json').is_file())
+            self.assertTrue((package / 'results.csv').is_file())
+            self.assertFalse((package / '_diagnostics').exists())
+            self.assertFalse((package / '_source_inputs').exists())
+            self.assertFalse((out / '_diagnostics').exists())
+
     def test_package_directories_cannot_overlap_planned_metadata_files(self):
         for name in ('results.csv', 'results.json', 'listening_manifest.json'):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
