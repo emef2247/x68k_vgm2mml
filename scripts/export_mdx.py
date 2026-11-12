@@ -103,10 +103,10 @@ def run_batch(source, output, *, target='mdx', generator=None, timeout=1200,
               max_ticks=None,psg_model=None,psg_gain=None,scc_gain=None,scc_model=None,scc_voice_bank=None,
               opm_pitch_policy=None, pcm_policy=None, compiler='mmlx', mxc=None, run68=None,
               normalize_lengths=None, normalization_ms=8, fm_state_ms=24, no_vgm=True, song_loop=True, listening_layout=False, _title=None,
-              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output=None,segapcm_projection='auto',c140_projection='bank',c140_mix_gain_db=0.0,pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096,nes_balance=True,nes_gain=(),nes_dpcm=True,emit_vgm=False,opn2_dac_gain=0.375,opn2_dcsg_gain=0.036):
+              _report_source=None, _display_name=None, fm_only=False, force=False,pcm_profile='standard',psg_only=False,scc_only=False,psg_output=None,segapcm_projection='auto',c140_projection='bank',c140_mix_gain_db=0.0,pcm_bank_merge='budget96',pdx_format='ex-pdx',pcm_buffer_kib=None,pcm_loader='direct',pcm_buffer_margin_bytes=4096,nes_balance=True,nes_gain=(),nes_dpcm=True,emit_vgm=False,opn2_dac_gain=0.375,opn2_dcsg_gain=0.036,retain_diagnostics=True):
     if listening_layout:
         from export_listening import run_listening_batch
-        return run_listening_batch(source, output, core=run_batch, options=dict(
+        return run_listening_batch(source, output, core=run_batch, retain_diagnostics=retain_diagnostics, options=dict(
             target=target, generator=generator, timeout=timeout, max_ticks=max_ticks,
             psg_model=psg_model,psg_gain=psg_gain,scc_gain=scc_gain,scc_model=scc_model,scc_voice_bank=scc_voice_bank,
             opm_pitch_policy=opm_pitch_policy, pcm_policy=pcm_policy, compiler=compiler,
@@ -490,6 +490,7 @@ def main():
                         help='OPN2 route only: linear gain for the DCSG waveform in the combined PCM bridge (default: 0.036)')
     parser.add_argument('--pcm-bank-merge',choices=('budget96','similar','off'),default='budget96',
                         help='PCM sharing: budget96 (default) fits 96 samples and the PCM buffer budget; similar keeps quality bounds; off keeps exact sharing')
+    parser.add_argument('--debug', action='store_true', help=argparse.SUPPRESS)
     # The export surface is intentionally small: the defaults below carry
     # the standard recipe, and the remaining options stay accepted but
     # unlisted, so --help shows only the everyday controls.
@@ -512,12 +513,16 @@ def main():
                           normalize_lengths=args.normalize_lengths, normalization_ms=args.normalization_ms, fm_state_ms=args.fm_state_ms, no_vgm=args.no_vgm,
                           listening_layout=True, song_loop=args.song_loop, fm_only=args.fm_only, force=args.force,pcm_profile=args.pcm_profile,psg_only=args.psg_only,scc_only=args.scc_only,psg_output=args.psg_output,segapcm_projection=args.segapcm_projection,c140_projection=args.c140_projection,c140_mix_gain_db=args.c140_mix_gain_db,pcm_bank_merge=args.pcm_bank_merge,pdx_format=args.pdx_format,opn2_dac_gain=args.opn2_dac_gain,opn2_dcsg_gain=args.opn2_dcsg_gain,
                           pcm_buffer_kib=args.pcm_buffer_kib,pcm_loader=args.pcm_loader,pcm_buffer_margin_bytes=args.pcm_buffer_margin_bytes,
-                          nes_balance=args.nes_balance,nes_gain=args.nes_gain,nes_dpcm=args.nes_dpcm,emit_vgm=args.emit_vgm)
+                          nes_balance=args.nes_balance,nes_gain=args.nes_gain,nes_dpcm=args.nes_dpcm,emit_vgm=args.emit_vgm,
+                          retain_diagnostics=args.debug)
     except (OSError, ValueError) as error:
         parser.error(str(error))
     success = sum(row['status'] == 'success' for row in rows)
     output_root = args.outdir or (args.input if args.input.is_dir() else args.input.parent)
-    print(f'{success}/{len(rows)} exported; results: {output_root / "_diagnostics/results.csv"}')
+    if args.debug:
+        print(f'{success}/{len(rows)} exported; results: {output_root / "_diagnostics/results.csv"}')
+    else:
+        print(f'{success}/{len(rows)} exported')
     return 0 if success == len(rows) and not any(row.get('report_status') == 'failed' for row in rows) else 1
 
 
